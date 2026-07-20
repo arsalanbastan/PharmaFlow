@@ -1,7 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-void main() {
-  runApp(const PharmaFlowApp());
+import 'core/database/database_service.dart';
+import 'core/router/app_router.dart';
+import 'core/theme/app_colors.dart';
+import 'core/theme/app_text_styles.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  debugPrint('1. Flutter initialized');
+
+  await DatabaseService.instance.initialize();
+
+  debugPrint('2. Database initialized');
+
+  runApp(
+    const ProviderScope(
+      child: PharmaFlowApp(),
+    ),
+  );
 }
 
 class PharmaFlowApp extends StatelessWidget {
@@ -9,38 +27,24 @@ class PharmaFlowApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MaterialApp.router(
       title: 'PharmaFlow',
       debugShowCheckedModeBanner: false,
-
+      routerConfig: AppRouter.router,
       theme: ThemeData(
-        colorSchemeSeed: Colors.indigo,
         useMaterial3: true,
-      ),
-
-      home: const DashboardPage(),
-    );
-  }
-}
-
-class DashboardPage extends StatelessWidget {
-  const DashboardPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('PharmaFlow'),
-      ),
-      body: const Center(
-        child: Text(
-          'PharmaFlow\nVersion 0.1',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
-          ),
+        fontFamily: AppTextStyles.fontFamily,
+        scaffoldBackgroundColor: AppColors.scaffold,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: AppColors.primary,
+          brightness: Brightness.light,
         ),
+        appBarTheme: const AppBarTheme(
+          centerTitle: true,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+        dividerColor: AppColors.divider,
       ),
     );
   }

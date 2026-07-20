@@ -13,9 +13,54 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
+
+  # ==========================
+  # State Management
+  # ==========================
   flutter_riverpod: ^2.6.1
+
+  # ==========================
+  # Routing
+  # ==========================
   go_router: ^16.3.0
+
+  # ==========================
+  # Localization & Formatting
+  # ==========================
   intl: ^0.20.3
+
+  # ==========================
+  # Networking
+  # ==========================
+  dio: ^5.10.0
+
+  # ==========================
+  # Models
+  # ==========================
+  freezed_annotation: ^3.1.0
+  json_annotation: ^4.12.0
+
+  # ==========================
+  # SQLite
+  # ==========================
+  sqlite3: ^2.9.3
+  sqlite3_flutter_libs: ^0.5.42
+
+  # ==========================
+  # Utilities
+  # ==========================
+  path: ^1.9.1
+  path_provider: ^2.1.6
+
+  # ==========================
+  # Secure Storage
+  # ==========================
+  flutter_secure_storage: ^9.2.4
+
+  # ==========================
+  # Logging
+  # ==========================
+  logger: ^2.7.0
 
 dev_dependencies:
   flutter_test:
@@ -23,8 +68,28 @@ dev_dependencies:
 
   flutter_lints: ^6.0.0
 
+  # ==========================
+  # Code Generation
+  # ==========================
+  build_runner: ^2.5.4
+  freezed: ^3.2.5
+  json_serializable: ^6.11.0
+
 flutter:
   uses-material-design: true
 
   assets:
     - assets/images/
+
+  fonts:
+    - family: Vazirmatn
+      fonts:
+        - asset: assets/fonts/Vazirmatn-Regular.ttf
+        - asset: assets/fonts/Vazirmatn-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Vazirmatn-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Vazirmatn-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Vazirmatn-ExtraBold.ttf
+          weight: 800
