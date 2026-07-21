@@ -147,6 +147,30 @@ class _CompanyFormPageState extends ConsumerState<CompanyFormPage> {
     }
   }
 
+  Future<void> _toggleArchiveStatus() async {
+    if (!_isEdit || widget.company?.id == null) {
+      return;
+    }
+
+    try {
+      if (widget.company?.archivedAt == null) {
+        await ref.read(companyProvider.notifier).archiveCompany(widget.company!.id!);
+      } else {
+        await ref.read(companyProvider.notifier).restoreCompany(widget.company!.id!);
+      }
+
+      if (!mounted) return;
+
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('عملیات با خطا روبرو شد.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -259,6 +283,24 @@ class _CompanyFormPageState extends ConsumerState<CompanyFormPage> {
                 },
               ),
               const SizedBox(height: 32),
+              if (_isEdit)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: ElevatedButton(
+                    onPressed: _toggleArchiveStatus,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: widget.company?.archivedAt == null
+                          ? Colors.red
+                          : Colors.green,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: Text(
+                      widget.company?.archivedAt == null
+                          ? 'غیرفعال‌سازی'
+                          : 'فعال‌سازی مجدد',
+                    ),
+                  ),
+                ),
               FilledButton.icon(
                 onPressed: _isSaving ? null : _save,
                 icon: _isSaving
