@@ -1,17 +1,17 @@
 import 'package:sqlite3/sqlite3.dart';
 
+import 'queries/bank_account_queries.dart';
 import 'queries/company_queries.dart';
 
 class MigrationManager {
   const MigrationManager._();
 
-  static const int currentVersion = 2;
+  static const int currentVersion = 3;
 
   static void migrate(Database db) {
-    final version =
-        db.select(
-          'PRAGMA user_version',
-        ).first['user_version'] as int;
+    final version = db.select(
+      'PRAGMA user_version',
+    ).first['user_version'] as int;
 
     if (version >= currentVersion) {
       return;
@@ -23,6 +23,10 @@ class MigrationManager {
 
     if (version < 2) {
       _addVisitorAndAccountantColumns(db);
+    }
+
+    if (version < 3) {
+      _createBankAccountsTable(db);
     }
 
     db.execute(
@@ -53,20 +57,54 @@ class MigrationManager {
       return;
     }
 
-    final columnsResult = db.select('PRAGMA table_info(companies)');
-    final columns = columnsResult.map((row) => row['name'] as String).toSet();
+    final columnsResult = db.select(
+      'PRAGMA table_info(companies)',
+    );
+
+    final columns =
+        columnsResult.map((row) => row['name'] as String).toSet();
 
     if (!columns.contains('visitor_name')) {
-      db.execute('ALTER TABLE companies ADD COLUMN visitor_name TEXT');
+      db.execute(
+        'ALTER TABLE companies ADD COLUMN visitor_name TEXT',
+      );
     }
+
     if (!columns.contains('visitor_phone')) {
-      db.execute('ALTER TABLE companies ADD COLUMN visitor_phone TEXT');
+      db.execute(
+        'ALTER TABLE companies ADD COLUMN visitor_phone TEXT',
+      );
     }
+
     if (!columns.contains('accountant_name')) {
-      db.execute('ALTER TABLE companies ADD COLUMN accountant_name TEXT');
+      db.execute(
+        'ALTER TABLE companies ADD COLUMN accountant_name TEXT',
+      );
     }
+
     if (!columns.contains('accountant_phone')) {
-      db.execute('ALTER TABLE companies ADD COLUMN accountant_phone TEXT');
+      db.execute(
+        'ALTER TABLE companies ADD COLUMN accountant_phone TEXT',
+      );
     }
+  }
+
+  static void _createBankAccountsTable(Database db) {
+    final tableExists = db.select(
+      "SELECT name FROM sqlite_master "
+      "WHERE type = 'table' AND name = 'bank_accounts'",
+    );
+
+    if (tableExists.isNotEmpty) {
+      return;
+    }
+
+    db.execute(
+      BankAccountQueries.createTable,
+    );
+
+    db.execute(
+      BankAccountQueries.createIndexes,
+    );
   }
 }

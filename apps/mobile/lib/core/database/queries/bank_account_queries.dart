@@ -2,28 +2,33 @@ class BankAccountQueries {
   const BankAccountQueries._();
 
   static const String createTable = '''
-CREATE TABLE bank_accounts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  CREATE TABLE bank_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-  account_title TEXT NOT NULL,
+    bank_name TEXT NOT NULL,
 
-  bank_name TEXT NOT NULL,
+    account_title TEXT NOT NULL,
 
-  bank_logo TEXT,
+    account_holder TEXT NOT NULL,
 
-  account_number TEXT NOT NULL,
+    account_number TEXT NOT NULL,
 
-  card_number TEXT NOT NULL,
+    card_number TEXT NOT NULL,
 
-  iban TEXT NOT NULL,
+    iban TEXT NOT NULL,
 
-  has_cheque_book INTEGER NOT NULL DEFAULT 0,
+    note TEXT,
 
-  is_active INTEGER NOT NULL DEFAULT 1,
+    archived_at INTEGER,
 
-  created_at TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
 
-  updated_at TEXT NOT NULL
-);
-''';
+    updated_at INTEGER NOT NULL
+  );
+  ''';
+
+  static const String createIndexes = '''
+  CREATE INDEX idx_bank_account_name
+  ON bank_accounts(account_title);
+  ''';
 }
