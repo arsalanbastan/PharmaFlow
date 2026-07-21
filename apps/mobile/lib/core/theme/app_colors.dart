@@ -27,6 +27,7 @@ abstract final class AppColors {
   // =========================
 
   static const Color scaffold = Color(0xFFF5F7FA);
+  static const Color background = scaffold;
   static const Color surface = Colors.white;
   static const Color card = Colors.white;
 

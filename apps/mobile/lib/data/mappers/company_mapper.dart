@@ -10,6 +10,10 @@ class CompanyMapper {
       nationalId: map['national_id'] as String?,
       economicCode: map['economic_code'] as String?,
       notes: map['notes'] as String?,
+      visitorName: map['visitor_name'] as String?,
+      visitorPhone: map['visitor_phone'] as String?,
+      accountantName: map['accountant_name'] as String?,
+      accountantPhone: map['accountant_phone'] as String?,
       archivedAt: map['archived_at'] == null
           ? null
           : DateTime.fromMillisecondsSinceEpoch(
@@ -31,6 +35,10 @@ class CompanyMapper {
       'national_id': company.nationalId,
       'economic_code': company.economicCode,
       'notes': company.notes,
+      'visitor_name': company.visitorName,
+      'visitor_phone': company.visitorPhone,
+      'accountant_name': company.accountantName,
+      'accountant_phone': company.accountantPhone,
       'archived_at': company.archivedAt?.millisecondsSinceEpoch,
       'created_at': company.createdAt.millisecondsSinceEpoch,
       'updated_at': company.updatedAt.millisecondsSinceEpoch,

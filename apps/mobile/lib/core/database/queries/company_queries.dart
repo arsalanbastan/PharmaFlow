@@ -13,6 +13,11 @@ CREATE TABLE companies (
 
   notes TEXT,
 
+  visitor_name TEXT,
+  visitor_phone TEXT,
+  accountant_name TEXT,
+  accountant_phone TEXT,
+
   archived_at INTEGER,
 
   created_at INTEGER NOT NULL,

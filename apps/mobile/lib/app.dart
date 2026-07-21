@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
-import 'features/dashboard/presentation/dashboard_page.dart';
+import 'features/company/presentation/pages/company_list_page.dart';
 
 class PharmaFlowApp extends StatelessWidget {
   const PharmaFlowApp({super.key});
@@ -21,7 +21,7 @@ class PharmaFlowApp extends StatelessWidget {
         );
       },
 
-      home: const DashboardPage(),
+      home: const CompanyListPage(),
     );
   }
 }

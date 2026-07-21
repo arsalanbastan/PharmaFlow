@@ -4,75 +4,48 @@ import '../../../../core/database/database_service.dart';
 import '../../../../data/models/company.dart';
 import '../../../../data/repositories/interfaces/company_repository.dart';
 import '../../../../data/repositories/local/local_company_repository.dart';
-
 import 'company_state.dart';
 
 final companyRepositoryProvider = Provider<CompanyRepository>((ref) {
-  return LocalCompanyRepository(
-    DatabaseService.instance,
-  );
+  return LocalCompanyRepository(DatabaseService.instance);
 });
 
-final companyProvider =
-    StateNotifierProvider<CompanyNotifier, CompanyState>(
-  (ref) {
-    return CompanyNotifier(
-      ref.read(companyRepositoryProvider),
-    );
-  },
+final companyProvider = StateNotifierProvider<CompanyNotifier, CompanyState>(
+  (ref) => CompanyNotifier(ref.read(companyRepositoryProvider)),
 );
 
-final similarCompaniesProvider =
-    StateProvider<List<Company>>((ref) => []);
+final similarCompaniesProvider = StateProvider<List<Company>>((ref) => []);
 
 class CompanyNotifier extends StateNotifier<CompanyState> {
-  CompanyNotifier(this._repository)
-      : super(const CompanyState());
+  CompanyNotifier(this._repository) : super(const CompanyState());
 
   final CompanyRepository _repository;
 
-  Future<void> loadCompanies() async {
-    state = state.copyWith(
-      isLoading: true,
-      clearError: true,
-    );
+  Future<void> loadCompanies({bool includeArchived = false}) async {
+    state = state.copyWith(isLoading: true, clearError: true);
 
     try {
-      final companies = await _repository.getAll();
+      final companies = await _repository.getAll(
+        includeArchived: includeArchived,
+      );
 
-      state = state.copyWith(
-        companies: companies,
-        isLoading: false,
-      );
+      state = state.copyWith(companies: companies, isLoading: false);
     } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        errorMessage: e.toString(),
-      );
+      state = state.copyWith(isLoading: false, errorMessage: e.toString());
     }
   }
 
-  Future<void> search(String query) async {
-    state = state.copyWith(
-      searchQuery: query,
-      isLoading: true,
-      clearError: true,
-    );
+  Future<void> search(String query, {bool includeArchived = false}) async {
+    state = state.copyWith(searchQuery: query, isLoading: true, clearError: true);
 
     try {
       final companies = query.trim().isEmpty
-          ? await _repository.getAll()
-          : await _repository.search(query);
+          ? await _repository.getAll(includeArchived: includeArchived)
+          : await _repository.search(query, includeArchived: includeArchived);
 
-      state = state.copyWith(
-        companies: companies,
-        isLoading: false,
-      );
+      state = state.copyWith(companies: companies, isLoading: false);
     } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        errorMessage: e.toString(),
-      );
+      state = state.copyWith(isLoading: false, errorMessage: e.toString());
     }
   }
 
@@ -99,9 +72,12 @@ class CompanyNotifier extends StateNotifier<CompanyState> {
     await loadCompanies();
   }
 
+  Future<void> restoreCompany(int id) async {
+    await _repository.restore(id);
+    await loadCompanies();
+  }
+
   void clearError() {
-    state = state.copyWith(
-      clearError: true,
-    );
+    state = state.copyWith(clearError: true);
   }
 }

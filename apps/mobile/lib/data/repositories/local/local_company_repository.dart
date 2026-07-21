@@ -17,7 +17,7 @@ class LocalCompanyRepository implements CompanyRepository {
   Database get _db => _databaseService.database;
 
   @override
-  Future<Company> insert(Company company) async {
+  Future<int> insert(Company company) async {
     final normalizedName = company.name.trim().replaceAll(RegExp(r'\s+'), ' ');
 
     if (normalizedName.isEmpty) {
@@ -35,8 +35,8 @@ class LocalCompanyRepository implements CompanyRepository {
     _databaseService.transaction((db) {
       final statement = db.prepare('''
         INSERT INTO companies (
-          name,national_id,economic_code,notes,archived_at,created_at,updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          name,national_id,economic_code,notes,visitor_name,visitor_phone,accountant_name,accountant_phone,archived_at,created_at,updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''');
 
       statement.execute([
@@ -44,6 +44,10 @@ class LocalCompanyRepository implements CompanyRepository {
         values['national_id'],
         values['economic_code'],
         values['notes'],
+        values['visitor_name'],
+        values['visitor_phone'],
+        values['accountant_name'],
+        values['accountant_phone'],
         values['archived_at'],
         values['created_at'],
         values['updated_at'],
@@ -53,10 +57,9 @@ class LocalCompanyRepository implements CompanyRepository {
     });
 
     final id = _db.select('SELECT last_insert_rowid() AS id').first['id'] as int;
-    return entity.copyWith(id: id);
+    return id;
   }
 
-  @override
   Future<bool> existsByName(String name) async {
     final result = _db.select('''
       SELECT COUNT(*) AS count
@@ -67,14 +70,12 @@ class LocalCompanyRepository implements CompanyRepository {
     return (result.first['count'] as int) > 0;
   }
 
-  @override
   Future<Company?> findById(int id) async {
     final result = _db.select('SELECT * FROM companies WHERE id=? LIMIT 1',[id]);
     if(result.isEmpty) return null;
     return CompanyMapper.fromMap(result.first);
   }
 
-  @override
   Future<Company?> findByName(String name) async {
     final result = _db.select('''
       SELECT *
@@ -96,9 +97,20 @@ class LocalCompanyRepository implements CompanyRepository {
   }
 
   @override
-  Future<List<Company>> search(String query) async {
+  Future<List<Company>> search(String query, {bool includeArchived = false}) async {
     final keyword='%${query.trim()}%';
-    final result=_db.select('''
+    final result=_db.select(includeArchived
+      ? '''
+      SELECT *
+      FROM companies
+      WHERE (
+        LOWER(name) LIKE LOWER(?)
+        OR national_id LIKE ?
+        OR economic_code LIKE ?
+      )
+      ORDER BY name COLLATE NOCASE
+    '''
+      : '''
       SELECT *
       FROM companies
       WHERE archived_at IS NULL
@@ -113,7 +125,7 @@ class LocalCompanyRepository implements CompanyRepository {
   }
 
   @override
-  Future<Company> update(Company company) async {
+  Future<void> update(Company company) async {
     if(company.id==null){
       throw const CompanyNotFoundException();
     }
@@ -147,6 +159,10 @@ class LocalCompanyRepository implements CompanyRepository {
         national_id=?,
         economic_code=?,
         notes=?,
+        visitor_name=?,
+        visitor_phone=?,
+        accountant_name=?,
+        accountant_phone=?,
         archived_at=?,
         updated_at=?
       WHERE id=?
@@ -155,12 +171,14 @@ class LocalCompanyRepository implements CompanyRepository {
       values['national_id'],
       values['economic_code'],
       values['notes'],
+      values['visitor_name'],
+      values['visitor_phone'],
+      values['accountant_name'],
+      values['accountant_phone'],
       values['archived_at'],
       values['updated_at'],
       company.id,
     ]);
-
-    return entity;
   }
 
   @override
@@ -180,7 +198,6 @@ class LocalCompanyRepository implements CompanyRepository {
     );
   }
 
-  @override
   Future<int> count({bool includeArchived=false}) async {
     final result=_db.select(includeArchived
       ? 'SELECT COUNT(*) AS count FROM companies'
