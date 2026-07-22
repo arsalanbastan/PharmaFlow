@@ -2,6 +2,8 @@
 /// PharmaFlow Spacing
 /// =======================================================
 
+library;
+
 abstract final class AppSpacing {
   AppSpacing._();
 

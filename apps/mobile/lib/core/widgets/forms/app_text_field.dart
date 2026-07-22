@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 
 class AppTextField extends StatelessWidget {
@@ -14,6 +15,8 @@ class AppTextField extends StatelessWidget {
     this.autofocus = false,
     this.maxLines = 1,
     this.autovalidateMode,
+    this.inputFormatters,
+    this.textAlign = TextAlign.start,
   });
 
   final TextEditingController controller;
@@ -27,16 +30,20 @@ class AppTextField extends StatelessWidget {
   final bool autofocus;
   final int maxLines;
   final AutovalidateMode? autovalidateMode;
+  final List<TextInputFormatter>? inputFormatters;
+  final TextAlign textAlign;
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
       controller: controller,
+      textAlign: textAlign,
       enabled: enabled,
       autofocus: autofocus,
       maxLines: maxLines,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
+      inputFormatters: inputFormatters,
       validator: validator,
       autovalidateMode: autovalidateMode,
       onChanged: onChanged,

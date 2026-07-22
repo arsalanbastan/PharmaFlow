@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../data/models/company.dart';
 import '../providers/company_provider.dart';
 import '../widgets/phone_action_row.dart';
 import 'company_form_page.dart';
@@ -41,7 +42,7 @@ class _CompanyListPageState extends ConsumerState<CompanyListPage> {
     }
   }
 
-  Future<void> _openEditPage(company) async {
+  Future<void> _openEditPage(Company company) async {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => CompanyFormPage(
@@ -168,7 +169,7 @@ class _CompanyListPageState extends ConsumerState<CompanyListPage> {
                     child: ListView.separated(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                       itemCount: filteredCompanies.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      separatorBuilder: (_, index) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final company = filteredCompanies[index];
 

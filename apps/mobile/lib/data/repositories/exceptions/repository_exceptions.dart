@@ -26,3 +26,8 @@ class CompanyNotFoundException extends RepositoryException {
   const CompanyNotFoundException()
       : super('Company not found.');
 }
+
+class DuplicateBankAccountNameException extends RepositoryException {
+  const DuplicateBankAccountNameException()
+      : super('A bank account with this title already exists.');
+}

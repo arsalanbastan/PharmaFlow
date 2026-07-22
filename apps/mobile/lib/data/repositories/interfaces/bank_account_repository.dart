@@ -5,7 +5,20 @@ abstract class BankAccountRepository {
     bool includeArchived = false,
   });
 
+  Future<List<BankAccount>> search(
+    String query, {
+    bool includeArchived = false,
+  });
+
   Future<BankAccount?> getById(int id);
+
+  Future<BankAccount?> findById(int id);
+
+  Future<bool> existsByName(String name);
+
+  Future<int> count({
+    bool includeArchived = false,
+  });
 
   Future<int> insert(BankAccount account);
 

@@ -50,7 +50,8 @@ class AppSectionTitle extends StatelessWidget {
           ),
         ),
 
-        if (trailing != null) trailing!,
+        // ignore: use_null_aware_elements
+        if (trailing case final widget?) widget,
       ],
     );
   }

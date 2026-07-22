@@ -2,7 +2,7 @@ class BankAccountQueries {
   const BankAccountQueries._();
 
   static const String createTable = '''
-  CREATE TABLE bank_accounts (
+  CREATE TABLE IF NOT EXISTS bank_accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 
     bank_name TEXT NOT NULL,
@@ -28,7 +28,7 @@ class BankAccountQueries {
   ''';
 
   static const String createIndexes = '''
-  CREATE INDEX idx_bank_account_name
+  CREATE INDEX IF NOT EXISTS idx_bank_account_name
   ON bank_accounts(account_title);
   ''';
 }

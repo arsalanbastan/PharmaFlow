@@ -3,6 +3,7 @@ import 'package:sqlite3/sqlite3.dart';
 import '../../../core/database/database_service.dart';
 import '../../mappers/bank_account_mapper.dart';
 import '../../models/bank_account.dart';
+import '../exceptions/repository_exceptions.dart';
 import '../interfaces/bank_account_repository.dart';
 
 class SqliteBankAccountRepository implements BankAccountRepository {
@@ -12,11 +13,35 @@ class SqliteBankAccountRepository implements BankAccountRepository {
 
   Database get _db => _databaseService.database;
 
+  String _normalizeAccountTitle(String value) {
+    return value.trim().replaceAll(
+      RegExp(r'\s+'),
+      ' ',
+    );
+  }
+
+  List<BankAccount> _mapAccounts(ResultSet result) {
+    return result.map(BankAccountMapper.fromMap).toList();
+  }
+
   @override
   Future<int> insert(BankAccount account) async {
+    final normalizedAccountTitle = _normalizeAccountTitle(
+      account.accountTitle,
+    );
+
+    if (normalizedAccountTitle.isEmpty) {
+      throw ArgumentError('Bank account title cannot be empty.');
+    }
+
+    if (await existsByName(normalizedAccountTitle)) {
+      throw const DuplicateBankAccountNameException();
+    }
+
     final values = BankAccountMapper.toMap(account);
 
     values.remove('id');
+    values['account_title'] = normalizedAccountTitle;
 
     _databaseService.transaction((db) {
       final statement = db.prepare('''
@@ -82,13 +107,59 @@ class SqliteBankAccountRepository implements BankAccountRepository {
             ''',
           );
 
-    return result
-        .map(BankAccountMapper.fromMap)
-        .toList();
+    return _mapAccounts(result);
+  }
+
+  @override
+  Future<List<BankAccount>> search(
+    String query, {
+    bool includeArchived = false,
+  }) async {
+    final keyword = '%${query.trim()}%';
+    final result = _db.select(
+      includeArchived
+          ? '''
+            SELECT *
+            FROM bank_accounts
+            WHERE (
+              LOWER(account_title) LIKE LOWER(?)
+              OR LOWER(bank_name) LIKE LOWER(?)
+              OR LOWER(account_holder) LIKE LOWER(?)
+              OR account_number LIKE ?
+              OR card_number LIKE ?
+              OR LOWER(iban) LIKE LOWER(?)
+            )
+            ORDER BY bank_name COLLATE NOCASE,
+                     account_title COLLATE NOCASE
+            '''
+          : '''
+            SELECT *
+            FROM bank_accounts
+            WHERE archived_at IS NULL
+              AND (
+                LOWER(account_title) LIKE LOWER(?)
+                OR LOWER(bank_name) LIKE LOWER(?)
+                OR LOWER(account_holder) LIKE LOWER(?)
+                OR account_number LIKE ?
+                OR card_number LIKE ?
+                OR LOWER(iban) LIKE LOWER(?)
+              )
+            ORDER BY bank_name COLLATE NOCASE,
+                     account_title COLLATE NOCASE
+            ''',
+      [keyword, keyword, keyword, keyword, keyword, keyword],
+    );
+
+    return _mapAccounts(result);
   }
 
   @override
   Future<BankAccount?> getById(int id) async {
+    return findById(id);
+  }
+
+  @override
+  Future<BankAccount?> findById(int id) async {
     final result = _db.select(
       '''
       SELECT *
@@ -105,13 +176,73 @@ class SqliteBankAccountRepository implements BankAccountRepository {
 
     return BankAccountMapper.fromMap(result.first);
   }
+
+  @override
+  Future<bool> existsByName(String name) async {
+    final normalizedName = _normalizeAccountTitle(name);
+
+    if (normalizedName.isEmpty) {
+      return false;
+    }
+
+    final result = _db.select(
+      '''
+      SELECT COUNT(*) AS count
+      FROM bank_accounts
+      WHERE archived_at IS NULL
+        AND LOWER(account_title) = LOWER(?)
+      ''',
+      [normalizedName],
+    );
+
+    return (result.first['count'] as int) > 0;
+  }
+
+  @override
+  Future<int> count({
+    bool includeArchived = false,
+  }) async {
+    final result = includeArchived
+        ? _db.select('SELECT COUNT(*) AS count FROM bank_accounts')
+        : _db.select(
+            'SELECT COUNT(*) AS count FROM bank_accounts WHERE archived_at IS NULL',
+          );
+
+    return result.first['count'] as int;
+  }
+
   @override
   Future<void> update(BankAccount account) async {
     if (account.id == null) {
       throw ArgumentError('Bank account id cannot be null.');
     }
 
+    final normalizedAccountTitle = _normalizeAccountTitle(
+      account.accountTitle,
+    );
+
+    if (normalizedAccountTitle.isEmpty) {
+      throw ArgumentError('Bank account title cannot be empty.');
+    }
+
+    final duplicate = _db.select(
+      '''
+      SELECT id
+      FROM bank_accounts
+      WHERE archived_at IS NULL
+        AND LOWER(account_title) = LOWER(?)
+        AND id <> ?
+      LIMIT 1
+      ''',
+      [normalizedAccountTitle, account.id],
+    );
+
+    if (duplicate.isNotEmpty) {
+      throw const DuplicateBankAccountNameException();
+    }
+
     final values = BankAccountMapper.toMap(account);
+    values['account_title'] = normalizedAccountTitle;
 
     _db.execute(
       '''

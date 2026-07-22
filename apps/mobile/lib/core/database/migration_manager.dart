@@ -9,6 +9,10 @@ class MigrationManager {
   static const int currentVersion = 3;
 
   static void migrate(Database db) {
+    db.execute(
+      'PRAGMA foreign_keys = ON;',
+    );
+
     final version = db.select(
       'PRAGMA user_version',
     ).first['user_version'] as int;
@@ -35,10 +39,6 @@ class MigrationManager {
   }
 
   static void _createVersion1(Database db) {
-    db.execute(
-      'PRAGMA foreign_keys = ON;',
-    );
-
     db.execute(
       CompanyQueries.createTable,
     );
@@ -90,15 +90,6 @@ class MigrationManager {
   }
 
   static void _createBankAccountsTable(Database db) {
-    final tableExists = db.select(
-      "SELECT name FROM sqlite_master "
-      "WHERE type = 'table' AND name = 'bank_accounts'",
-    );
-
-    if (tableExists.isNotEmpty) {
-      return;
-    }
-
     db.execute(
       BankAccountQueries.createTable,
     );
