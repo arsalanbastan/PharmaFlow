@@ -1,12 +1,13 @@
 import 'package:sqlite3/sqlite3.dart';
 
 import 'queries/bank_account_queries.dart';
+import 'queries/cheque_queries.dart';
 import 'queries/company_queries.dart';
 
 class MigrationManager {
   const MigrationManager._();
 
-  static const int currentVersion = 3;
+  static const int currentVersion = 4;
 
   static void migrate(Database db) {
     db.execute(
@@ -31,6 +32,10 @@ class MigrationManager {
 
     if (version < 3) {
       _createBankAccountsTable(db);
+    }
+
+    if (version < 4) {
+      _createChequesTable(db);
     }
 
     db.execute(
@@ -96,6 +101,16 @@ class MigrationManager {
 
     db.execute(
       BankAccountQueries.createIndexes,
+    );
+  }
+
+  static void _createChequesTable(Database db) {
+    db.execute(
+      ChequeQueries.createTable,
+    );
+
+    db.execute(
+      ChequeQueries.createIndexes,
     );
   }
 }
