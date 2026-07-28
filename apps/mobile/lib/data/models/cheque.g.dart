@@ -16,6 +16,7 @@ _Cheque _$ChequeFromJson(Map<String, dynamic> json) => _Cheque(
   dueDate: DateTime.parse(json['dueDate'] as String),
   status: $enumDecode(_$ChequeStatusEnumMap, json['status']),
   isRegisteredInSayad: json['isRegisteredInSayad'] as bool,
+  sayadId: json['sayadId'] as String?,
   receiverName: json['receiverName'] as String?,
   description: json['description'] as String?,
   archivedAt: json['archivedAt'] == null
@@ -36,6 +37,7 @@ Map<String, dynamic> _$ChequeToJson(_Cheque instance) => <String, dynamic>{
   'dueDate': instance.dueDate.toIso8601String(),
   'status': _$ChequeStatusEnumMap[instance.status]!,
   'isRegisteredInSayad': instance.isRegisteredInSayad,
+  'sayadId': instance.sayadId,
   'receiverName': instance.receiverName,
   'description': instance.description,
   'archivedAt': instance.archivedAt?.toIso8601String(),

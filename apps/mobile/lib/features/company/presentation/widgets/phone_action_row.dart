@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class PhoneActionRow extends StatelessWidget {
@@ -84,7 +85,7 @@ class PhoneActionRow extends StatelessWidget {
           const SizedBox(width: 6),
           IconButton(
             onPressed: () => _handleWhatsApp(context),
-            icon: const Icon(Icons.chat),
+            icon: const FaIcon(FontAwesomeIcons.whatsapp),
             tooltip: 'واتساپ',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),

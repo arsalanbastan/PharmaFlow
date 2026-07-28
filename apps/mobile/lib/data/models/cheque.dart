@@ -40,6 +40,7 @@ abstract class Cheque with _$Cheque {
     required DateTime dueDate,
     required ChequeStatus status,
     required bool isRegisteredInSayad,
+    String? sayadId,
     String? receiverName,
     String? description,
     DateTime? archivedAt,

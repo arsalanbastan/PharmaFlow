@@ -37,6 +37,7 @@ class _BankAccountFormPageState
     'بانک کشاورزی',
     'بانک آینده',
     'بانک شهر',
+    'بانک رفاه',
     'سایر...',
   ];
 
@@ -284,18 +285,25 @@ class _BankAccountFormPageState
 
                 const SizedBox(height: 16),
 
-                AppTextField(
-                  controller: _cardNumberController,
-                  label: 'شماره کارت',
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.next,
-                  textAlign: TextAlign.right,
-                  validator: BankAccountValidator.validateCardNumber,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    _CardNumberFormatter(),
-                  ],
+                Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: TextFormField(
+                    controller: _cardNumberController,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.next,
+                    textDirection: TextDirection.ltr,
+                    textAlign: TextAlign.left,
+                    validator: BankAccountValidator.validateCardNumber,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      _CardNumberFormatter(),
+                    ],
+                    decoration: const InputDecoration(
+                      labelText: 'شماره کارت',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
                 ),
 
                 const SizedBox(height: 16),

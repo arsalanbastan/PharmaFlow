@@ -7,7 +7,7 @@ import 'queries/company_queries.dart';
 class MigrationManager {
   const MigrationManager._();
 
-  static const int currentVersion = 4;
+  static const int currentVersion = 5;
 
   static void migrate(Database db) {
     db.execute(
@@ -36,6 +36,10 @@ class MigrationManager {
 
     if (version < 4) {
       _createChequesTable(db);
+    }
+
+    if (version < 5) {
+      _addChequeSayadIdColumn(db);
     }
 
     db.execute(
@@ -112,5 +116,27 @@ class MigrationManager {
     db.execute(
       ChequeQueries.createIndexes,
     );
+  }
+
+  static void _addChequeSayadIdColumn(Database db) {
+    final tableExists = db.select(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cheques'",
+    );
+
+    if (tableExists.isEmpty) {
+      return;
+    }
+
+    final columnsResult = db.select(
+      'PRAGMA table_info(cheques)',
+    );
+
+    final columns = columnsResult.map((row) => row['name'] as String).toSet();
+
+    if (!columns.contains('sayad_id')) {
+      db.execute(
+        'ALTER TABLE cheques ADD COLUMN sayad_id TEXT',
+      );
+    }
   }
 }

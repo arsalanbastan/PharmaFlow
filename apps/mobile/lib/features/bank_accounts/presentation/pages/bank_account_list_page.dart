@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../data/models/bank_account.dart';
 import '../providers/bank_account_provider.dart';
@@ -74,6 +76,82 @@ class _BankAccountListPageState
     if (result == true && mounted) {
       await _refreshAccounts();
     }
+  }
+
+  Future<void> _copyAccountNumber(BankAccount account) async {
+    await Clipboard.setData(
+      ClipboardData(text: account.accountNumber),
+    );
+
+    _showCopySnackBar('شماره حساب کپی شد.');
+  }
+
+  Future<void> _copyCardNumber(BankAccount account) async {
+    await Clipboard.setData(
+      ClipboardData(text: account.cardNumber),
+    );
+
+    _showCopySnackBar('شماره کارت کپی شد.');
+  }
+
+  Future<void> _copyIban(BankAccount account) async {
+    await Clipboard.setData(
+      ClipboardData(text: account.iban),
+    );
+
+    _showCopySnackBar('شماره شبا کپی شد.');
+  }
+
+  Future<void> _copyAllAccountInfo(BankAccount account) async {
+    final text = _formatAllAccountInfo(account);
+
+    await Clipboard.setData(
+      ClipboardData(text: text),
+    );
+
+    _showCopySnackBar('تمام اطلاعات حساب کپی شد.');
+  }
+
+  void _showCopySnackBar(String message) {
+    if (!mounted) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(milliseconds: 1200),
+        content: Text(message),
+      ),
+    );
+  }
+
+  Future<void> _shareAccount(BankAccount account) async {
+    final text = _formatAllAccountInfo(account);
+
+    await SharePlus.instance.share(
+      ShareParams(text: text),
+    );
+  }
+
+  String _formatAllAccountInfo(BankAccount account) {
+    return [
+      'نام بانک:',
+      account.bankName,
+      '',
+      'نام صاحب حساب:',
+      account.accountHolder,
+      '',
+      'شماره حساب:',
+      account.accountNumber,
+      '',
+      'شماره کارت:',
+      account.cardNumber,
+      '',
+      'شماره شبا:',
+      account.iban,
+    ].join('\n');
   }
 
   @override
@@ -185,6 +263,11 @@ class _BankAccountListPageState
                         return BankAccountCard(
                           account: account,
                           onTap: () => _openEditPage(account),
+                          onCopyAccountNumber: () => _copyAccountNumber(account),
+                          onCopyCardNumber: () => _copyCardNumber(account),
+                          onCopyIban: () => _copyIban(account),
+                          onCopyAll: () => _copyAllAccountInfo(account),
+                          onShare: () => _shareAccount(account),
                         );
                       },
                     ),

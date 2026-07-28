@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS cheques (
 
   is_registered_in_sayad INTEGER NOT NULL DEFAULT 0,
 
+  sayad_id TEXT,
+
   image_data BLOB,
 
   archived_at INTEGER,
@@ -76,6 +78,7 @@ INSERT INTO cheques (
   due_date,
   status,
   is_registered_in_sayad,
+  sayad_id,
   receiver_name,
   description,
   image_data,
@@ -91,6 +94,7 @@ INSERT INTO cheques (
   :dueDate,
   :status,
   :isRegisteredInSayad,
+  :sayadId,
   :receiverName,
   :description,
   :imageData,
@@ -109,6 +113,7 @@ SET
   due_date = :dueDate,
   status = :status,
   is_registered_in_sayad = :isRegisteredInSayad,
+  sayad_id = :sayadId,
   receiver_name = :receiverName,
   description = :description,
   image_data = :imageData,
@@ -130,6 +135,7 @@ SELECT
   c.status,
   c.description,
   c.is_registered_in_sayad,
+  c.sayad_id,
   c.image_data,
   c.archived_at,
   c.created_at,
@@ -158,6 +164,7 @@ SELECT
   c.status,
   c.description,
   c.is_registered_in_sayad,
+  c.sayad_id,
   c.image_data,
   c.archived_at,
   c.created_at,
@@ -171,7 +178,7 @@ INNER JOIN bank_accounts ba
   ON ba.id = c.bank_account_id
 WHERE
   (:includeCancelled = 1 OR c.status != 'Cancelled')
-  AND (:includeArchived = 1 OR c.archived_at IS NULL)
+  AND (:includeArchived = 1 OR (c.archived_at IS NULL OR c.archived_at = 0))
   AND (:fromDate IS NULL OR c.issue_date >= :fromDate)
   AND (:toDate IS NULL OR c.issue_date <= :toDate)
   AND (
@@ -182,7 +189,7 @@ WHERE
   )
   AND (:companyId IS NULL OR c.company_id = :companyId)
   AND (:bankAccountId IS NULL OR c.bank_account_id = :bankAccountId)
-ORDER BY c.issue_date DESC, c.cheque_number DESC;
+ORDER BY c.created_at DESC, c.id DESC;
 ''';
 
   static const String findByCompanyId = '''
@@ -198,6 +205,7 @@ SELECT
   c.status,
   c.description,
   c.is_registered_in_sayad,
+  c.sayad_id,
   c.image_data,
   c.archived_at,
   c.created_at,
@@ -212,7 +220,7 @@ INNER JOIN bank_accounts ba
 WHERE
   c.company_id = :companyId
   AND (:includeCancelled = 1 OR c.status != 'Cancelled')
-  AND (:includeArchived = 1 OR c.archived_at IS NULL)
+  AND (:includeArchived = 1 OR (c.archived_at IS NULL OR c.archived_at = 0))
   AND (:fromDate IS NULL OR c.issue_date >= :fromDate)
   AND (:toDate IS NULL OR c.issue_date <= :toDate)
   AND (
@@ -221,7 +229,7 @@ WHERE
     OR co.name LIKE '%' || :search || '%'
     OR c.cheque_number LIKE '%' || :search || '%'
   )
-ORDER BY c.issue_date DESC, c.cheque_number DESC;
+ORDER BY c.created_at DESC, c.id DESC;
 ''';
 
   static const String findByBankAccountId = '''
@@ -237,6 +245,7 @@ SELECT
   c.status,
   c.description,
   c.is_registered_in_sayad,
+  c.sayad_id,
   c.image_data,
   c.archived_at,
   c.created_at,
@@ -251,7 +260,7 @@ INNER JOIN bank_accounts ba
 WHERE
   c.bank_account_id = :bankAccountId
   AND (:includeCancelled = 1 OR c.status != 'Cancelled')
-  AND (:includeArchived = 1 OR c.archived_at IS NULL)
+  AND (:includeArchived = 1 OR (c.archived_at IS NULL OR c.archived_at = 0))
   AND (:fromDate IS NULL OR c.issue_date >= :fromDate)
   AND (:toDate IS NULL OR c.issue_date <= :toDate)
   AND (
@@ -260,7 +269,7 @@ WHERE
     OR co.name LIKE '%' || :search || '%'
     OR c.cheque_number LIKE '%' || :search || '%'
   )
-ORDER BY c.issue_date DESC, c.cheque_number DESC;
+ORDER BY c.created_at DESC, c.id DESC;
 ''';
 
   static const String findDuplicatesByBankAccountAndChequeNumber = '''
@@ -274,6 +283,7 @@ SELECT
   c.due_date,
   c.status,
   c.is_registered_in_sayad,
+  c.sayad_id,
   c.archived_at,
   c.created_at,
   c.updated_at,
@@ -304,7 +314,7 @@ INNER JOIN companies co
   ON co.id = c.company_id
 WHERE
   (:includeCancelled = 1 OR c.status != 'Cancelled')
-  AND (:includeArchived = 1 OR c.archived_at IS NULL)
+  AND (:includeArchived = 1 OR (c.archived_at IS NULL OR c.archived_at = 0))
   AND (:fromDate IS NULL OR c.issue_date >= :fromDate)
   AND (:toDate IS NULL OR c.issue_date <= :toDate)
   AND (
@@ -325,7 +335,7 @@ INNER JOIN companies co
 WHERE
   c.company_id = :companyId
   AND (:includeCancelled = 1 OR c.status != 'Cancelled')
-  AND (:includeArchived = 1 OR c.archived_at IS NULL)
+  AND (:includeArchived = 1 OR (c.archived_at IS NULL OR c.archived_at = 0))
   AND (:fromDate IS NULL OR c.issue_date >= :fromDate)
   AND (:toDate IS NULL OR c.issue_date <= :toDate)
   AND (
@@ -344,7 +354,7 @@ INNER JOIN companies co
 WHERE
   c.bank_account_id = :bankAccountId
   AND (:includeCancelled = 1 OR c.status != 'Cancelled')
-  AND (:includeArchived = 1 OR c.archived_at IS NULL)
+  AND (:includeArchived = 1 OR (c.archived_at IS NULL OR c.archived_at = 0))
   AND (:fromDate IS NULL OR c.issue_date >= :fromDate)
   AND (:toDate IS NULL OR c.issue_date <= :toDate)
   AND (

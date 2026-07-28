@@ -15,12 +15,11 @@ class LocalChequeRepository implements ChequeRepository {
 
   @override
   Future<int> insert(Cheque cheque) async {
-    final values = ChequeMapper.toMap(cheque);
-    values.remove('id');
+    final params = _writeParams(cheque)..remove('id');
 
     _databaseService.transaction((db) {
       final statement = db.prepare(ChequeQueries.insert);
-      statement.execute(_namedParams(values));
+      statement.executeWith(StatementParameters.named(_namedParams(params)));
       statement.dispose();
     });
 
@@ -29,24 +28,51 @@ class LocalChequeRepository implements ChequeRepository {
 
   @override
   Future<void> update(Cheque cheque) async {
-    final values = ChequeMapper.toMap(cheque);
+    final params = _writeParams(cheque);
     final statement = _db.prepare(ChequeQueries.updateEditableById);
 
     try {
-      statement.execute(_namedParams(values));
+      statement.executeWith(StatementParameters.named(_namedParams(params)));
     } finally {
       statement.dispose();
     }
   }
 
+  Map<String, Object?> _writeParams(Cheque cheque) {
+    return {
+      'id': cheque.id,
+      'companyId': cheque.companyId,
+      'bankAccountId': cheque.bankAccountId,
+      'chequeNumber': cheque.chequeNumber,
+      'amountRial': cheque.amountRial,
+      'issueDate': cheque.issueDate.millisecondsSinceEpoch,
+      'dueDate': cheque.dueDate.millisecondsSinceEpoch,
+      'status': _statusToDb(cheque.status),
+      'isRegisteredInSayad': cheque.isRegisteredInSayad ? 1 : 0,
+      'sayadId': cheque.sayadId,
+      'receiverName': cheque.receiverName,
+      'description': cheque.description,
+      'imageData': cheque.imageData,
+      'archivedAt': cheque.archivedAt?.millisecondsSinceEpoch,
+      'createdAt': cheque.createdAt.millisecondsSinceEpoch,
+      'updatedAt': cheque.updatedAt.millisecondsSinceEpoch,
+    };
+  }
+
+  String _statusToDb(ChequeStatus status) {
+    switch (status) {
+      case ChequeStatus.issued:
+        return 'Issued';
+      case ChequeStatus.registered:
+        return 'Registered';
+      case ChequeStatus.cancelled:
+        return 'Cancelled';
+    }
+  }
+
   @override
   Future<Cheque?> findById(int id) async {
-    final result = _select(
-      ChequeQueries.findById,
-      {
-        'id': id,
-      },
-    );
+    final result = _select(ChequeQueries.findById, {'id': id});
 
     if (result.isEmpty) {
       return null;
@@ -100,19 +126,16 @@ class LocalChequeRepository implements ChequeRepository {
     bool includeArchived = false,
     bool includeCancelled = false,
   }) async {
-    final result = _select(
-      ChequeQueries.findByCompanyId,
-      {
-        ..._listParams(
-          includeArchived: includeArchived,
-          includeCancelled: includeCancelled,
-          fromDate: fromDate,
-          toDate: toDate,
-          search: search,
-        ),
-        'companyId': companyId,
-      },
-    );
+    final result = _select(ChequeQueries.findByCompanyId, {
+      ..._listParams(
+        includeArchived: includeArchived,
+        includeCancelled: includeCancelled,
+        fromDate: fromDate,
+        toDate: toDate,
+        search: search,
+      ),
+      'companyId': companyId,
+    });
 
     return result.map(ChequeMapper.fromMap).toList();
   }
@@ -126,19 +149,16 @@ class LocalChequeRepository implements ChequeRepository {
     bool includeArchived = false,
     bool includeCancelled = false,
   }) async {
-    final result = _select(
-      ChequeQueries.findByBankAccountId,
-      {
-        ..._listParams(
-          includeArchived: includeArchived,
-          includeCancelled: includeCancelled,
-          fromDate: fromDate,
-          toDate: toDate,
-          search: search,
-        ),
-        'bankAccountId': bankAccountId,
-      },
-    );
+    final result = _select(ChequeQueries.findByBankAccountId, {
+      ..._listParams(
+        includeArchived: includeArchived,
+        includeCancelled: includeCancelled,
+        fromDate: fromDate,
+        toDate: toDate,
+        search: search,
+      ),
+      'bankAccountId': bankAccountId,
+    });
 
     return result.map(ChequeMapper.fromMap).toList();
   }
@@ -176,10 +196,7 @@ class LocalChequeRepository implements ChequeRepository {
   }) async {
     final result = _select(
       ChequeQueries.findDuplicatesByBankAccountAndChequeNumber,
-      {
-        'bankAccountId': bankAccountId,
-        'chequeNumber': chequeNumber,
-      },
+      {'bankAccountId': bankAccountId, 'chequeNumber': chequeNumber},
     );
 
     return result.map(ChequeMapper.fromMap).toList();
@@ -189,9 +206,7 @@ class LocalChequeRepository implements ChequeRepository {
   Future<String?> suggestLatestChequeNumber(int bankAccountId) async {
     final result = _select(
       ChequeQueries.findLatestChequeNumberByBankAccountId,
-      {
-        'bankAccountId': bankAccountId,
-      },
+      {'bankAccountId': bankAccountId},
     );
 
     if (result.isEmpty) {
@@ -214,8 +229,8 @@ class LocalChequeRepository implements ChequeRepository {
     final sql = companyId != null
         ? ChequeQueries.countByCompanyId
         : bankAccountId != null
-            ? ChequeQueries.countByBankAccountId
-            : ChequeQueries.countList;
+        ? ChequeQueries.countByBankAccountId
+        : ChequeQueries.countList;
 
     final params = _listParams(
       includeArchived: includeArchived,
@@ -235,7 +250,9 @@ class LocalChequeRepository implements ChequeRepository {
     final statement = _db.prepare(sql);
 
     try {
-      return statement.select(_namedParams(params));
+      return statement.selectWith(
+        StatementParameters.named(_namedParams(params)),
+      );
     } finally {
       statement.dispose();
     }

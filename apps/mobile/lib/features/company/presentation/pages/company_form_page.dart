@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/models/company.dart';
@@ -193,6 +194,8 @@ class _CompanyFormPageState extends ConsumerState<CompanyFormPage> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _nationalIdController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: const InputDecoration(
                   labelText: 'شناسه ملی',
                   border: OutlineInputBorder(),
@@ -212,6 +215,8 @@ class _CompanyFormPageState extends ConsumerState<CompanyFormPage> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _economicCodeController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: const InputDecoration(
                   labelText: 'کد اقتصادی',
                   border: OutlineInputBorder(),

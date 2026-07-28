@@ -101,7 +101,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
             '''
             SELECT *
             FROM bank_accounts
-            WHERE archived_at IS NULL
+            WHERE (archived_at IS NULL OR archived_at = 0)
             ORDER BY bank_name COLLATE NOCASE,
                      account_title COLLATE NOCASE
             ''',
@@ -135,7 +135,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
           : '''
             SELECT *
             FROM bank_accounts
-            WHERE archived_at IS NULL
+            WHERE (archived_at IS NULL OR archived_at = 0)
               AND (
                 LOWER(account_title) LIKE LOWER(?)
                 OR LOWER(bank_name) LIKE LOWER(?)
@@ -189,7 +189,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
       '''
       SELECT COUNT(*) AS count
       FROM bank_accounts
-      WHERE archived_at IS NULL
+      WHERE (archived_at IS NULL OR archived_at = 0)
         AND LOWER(account_title) = LOWER(?)
       ''',
       [normalizedName],
@@ -205,7 +205,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
     final result = includeArchived
         ? _db.select('SELECT COUNT(*) AS count FROM bank_accounts')
         : _db.select(
-            'SELECT COUNT(*) AS count FROM bank_accounts WHERE archived_at IS NULL',
+            'SELECT COUNT(*) AS count FROM bank_accounts WHERE (archived_at IS NULL OR archived_at = 0)',
           );
 
     return result.first['count'] as int;
@@ -229,7 +229,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
       '''
       SELECT id
       FROM bank_accounts
-      WHERE archived_at IS NULL
+      WHERE (archived_at IS NULL OR archived_at = 0)
         AND LOWER(account_title) = LOWER(?)
         AND id <> ?
       LIMIT 1

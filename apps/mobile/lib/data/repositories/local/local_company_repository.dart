@@ -64,7 +64,7 @@ class LocalCompanyRepository implements CompanyRepository {
     final result = _db.select('''
       SELECT COUNT(*) AS count
       FROM companies
-      WHERE archived_at IS NULL
+      WHERE (archived_at IS NULL OR archived_at = 0)
         AND LOWER(name)=LOWER(?)
     ''',[name.trim()]);
     return (result.first['count'] as int) > 0;
@@ -80,7 +80,7 @@ class LocalCompanyRepository implements CompanyRepository {
     final result = _db.select('''
       SELECT *
       FROM companies
-      WHERE archived_at IS NULL
+      WHERE (archived_at IS NULL OR archived_at = 0)
         AND LOWER(name)=LOWER(?)
       LIMIT 1
     ''',[name.trim()]);
@@ -92,7 +92,7 @@ class LocalCompanyRepository implements CompanyRepository {
   Future<List<Company>> getAll({bool includeArchived=false}) async {
     final result = _db.select(includeArchived
       ? 'SELECT * FROM companies ORDER BY name COLLATE NOCASE'
-      : 'SELECT * FROM companies WHERE archived_at IS NULL ORDER BY name COLLATE NOCASE');
+      : 'SELECT * FROM companies WHERE (archived_at IS NULL OR archived_at = 0) ORDER BY name COLLATE NOCASE');
     return result.map((e)=>CompanyMapper.fromMap(e)).toList();
   }
 
@@ -113,7 +113,7 @@ class LocalCompanyRepository implements CompanyRepository {
       : '''
       SELECT *
       FROM companies
-      WHERE archived_at IS NULL
+      WHERE (archived_at IS NULL OR archived_at = 0)
       AND (
         LOWER(name) LIKE LOWER(?)
         OR national_id LIKE ?
@@ -135,7 +135,7 @@ class LocalCompanyRepository implements CompanyRepository {
     final duplicate=_db.select('''
       SELECT id
       FROM companies
-      WHERE archived_at IS NULL
+      WHERE (archived_at IS NULL OR archived_at = 0)
         AND LOWER(name)=LOWER(?)
         AND id<>?
       LIMIT 1
@@ -201,7 +201,7 @@ class LocalCompanyRepository implements CompanyRepository {
   Future<int> count({bool includeArchived=false}) async {
     final result=_db.select(includeArchived
       ? 'SELECT COUNT(*) AS count FROM companies'
-      : 'SELECT COUNT(*) AS count FROM companies WHERE archived_at IS NULL');
+      : 'SELECT COUNT(*) AS count FROM companies WHERE (archived_at IS NULL OR archived_at = 0)');
     return result.first['count'] as int;
   }
 

@@ -1,6 +1,8 @@
 import 'package:go_router/go_router.dart';
 
-import '../../features/company/presentation/pages/company_list_page.dart';
+import '../../features/dashboard/presentation/pages/dashboard_page.dart';
+import '../../features/menu/presentation/pages/menu_page.dart';
+import '../../features/reports/presentation/pages/reports_page.dart';
 
 class AppRouter {
   AppRouter._();
@@ -10,8 +12,18 @@ class AppRouter {
     routes: [
       GoRoute(
         path: '/',
-        name: 'companies',
-        builder: (context, state) => const CompanyListPage(),
+        name: 'dashboard',
+        builder: (context, state) => const DashboardPage(),
+      ),
+      GoRoute(
+        path: '/reports',
+        name: 'reports',
+        builder: (context, state) => const ReportsPage(),
+      ),
+      GoRoute(
+        path: '/menu',
+        name: 'menu',
+        builder: (context, state) => const MenuPage(),
       ),
     ],
   );
