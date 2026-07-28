@@ -1,0 +1,12 @@
+name: pharmaflow_tools
+description: One-time CLI tools for PharmaFlow data import and maintenance.
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+
+dependencies:
+  excel: ^4.0.6
+  path: ^1.9.1
+  sqlite3: ^2.9.3
+  shamsi_date: ^1.1.1

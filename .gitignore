@@ -1,0 +1,22 @@
+# Flutter
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE
+.vs/
+.idea/
+*.iml
+
+# Local database
+*.db
+*.db-shm
+*.db-wal
+
+# Runtime exports
+*.base64
+
+# Screenshots / debug captures
+*.png
+*.xml
