@@ -20,10 +20,16 @@ class AppScaffold extends StatelessWidget {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(
-          title: Text(title),
+        appBar: title.isEmpty
+            ? null
+            : AppBar(
+                title: Text(title),
+              ),
+
+        body: SafeArea(
+          child: body,
         ),
-        body: SafeArea(child: body),
+
         bottomNavigationBar: AppBottomNavigation(
           currentDestination: currentDestination,
           onDestinationSelected: (destination) {
@@ -32,10 +38,12 @@ class AppScaffold extends StatelessWidget {
                 if (currentDestination != AppShellDestination.home) {
                   context.go('/');
                 }
+
               case AppShellDestination.reports:
                 if (currentDestination != AppShellDestination.reports) {
                   context.go('/reports');
                 }
+
               case AppShellDestination.menu:
                 if (currentDestination != AppShellDestination.menu) {
                   context.go('/menu');
