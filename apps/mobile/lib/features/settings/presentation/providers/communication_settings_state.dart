@@ -1,4 +1,5 @@
 import '../../../../core/settings/connection_profile.dart';
+import '../../../../core/network/models/health_response.dart';
 
 class CommunicationSettingsState {
   const CommunicationSettingsState({
@@ -18,6 +19,7 @@ class CommunicationSettingsState {
     required this.lastSuccessfulCheck,
     required this.connectionStatus,
     required this.databaseStatus,
+    this.healthResponse,
     this.responseTime,
     this.errorMessage,
   });
@@ -40,6 +42,7 @@ class CommunicationSettingsState {
       lastSuccessfulCheck: null,
       connectionStatus: 'Not tested',
       databaseStatus: 'Unknown',
+      healthResponse: null,
     );
   }
 
@@ -59,6 +62,7 @@ class CommunicationSettingsState {
   final DateTime? lastSuccessfulCheck;
   final String connectionStatus;
   final String databaseStatus;
+  final HealthResponse? healthResponse;
   final int? responseTime;
   final String? errorMessage;
 
@@ -81,6 +85,8 @@ class CommunicationSettingsState {
     bool clearLastSuccessfulCheck = false,
     String? connectionStatus,
     String? databaseStatus,
+    HealthResponse? healthResponse,
+    bool clearHealthResponse = false,
     int? responseTime,
     bool clearResponseTime = false,
     String? errorMessage,
@@ -105,6 +111,9 @@ class CommunicationSettingsState {
           : (lastSuccessfulCheck ?? this.lastSuccessfulCheck),
       connectionStatus: connectionStatus ?? this.connectionStatus,
       databaseStatus: databaseStatus ?? this.databaseStatus,
+      healthResponse: clearHealthResponse
+          ? null
+          : (healthResponse ?? this.healthResponse),
       responseTime: clearResponseTime
           ? null
           : (responseTime ?? this.responseTime),

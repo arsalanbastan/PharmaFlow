@@ -1,10 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/config/app_environment.dart';
-import '../../../../core/config/endpoints.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/settings/connection_profile.dart';
 import '../../../../core/settings/connection_settings_repository.dart';
@@ -85,6 +82,7 @@ class CommunicationSettingsNotifier
       lastSuccessfulCheck: settings.lastSuccessfulCheck,
       connectionStatus: 'Not tested',
       databaseStatus: 'Unknown',
+      healthResponse: null,
       clearResponseTime: true,
     );
   }
@@ -163,45 +161,47 @@ class CommunicationSettingsNotifier
       clearError: true,
       connectionStatus: 'Testing...',
       databaseStatus: 'Checking...',
+      healthResponse: null,
       clearResponseTime: true,
     );
 
-    final watch = Stopwatch()..start();
     final apiClient = _ref.read(apiClientProvider);
 
     try {
-      final payload = await apiClient.get(Endpoints.health);
-      watch.stop();
+      final health = await apiClient.checkHealth();
 
       final now = DateTime.now();
       await _settingsRepository.save(_buildSettings(lastSuccessfulCheck: now));
 
-      final dbStatus = _extractDatabaseStatus(payload);
+      final dbStatus = health.database?.status?.trim().isNotEmpty == true
+          ? health.database!.status!.trim()
+          : 'Unknown';
 
       state = state.copyWith(
         isTesting: false,
         connectionStatus: 'Connected',
         databaseStatus: dbStatus,
-        responseTime: watch.elapsedMilliseconds,
+        healthResponse: health,
+        responseTime: health.responseDuration.inMilliseconds,
         lastSuccessfulCheck: now,
-        errorMessage: 'Connection test passed.',
+        clearError: true,
       );
     } on ApiException catch (error) {
-      watch.stop();
       state = state.copyWith(
         isTesting: false,
-        connectionStatus: 'Unreachable',
+        connectionStatus: 'Failed',
         databaseStatus: 'Unknown',
-        responseTime: watch.elapsedMilliseconds,
+        clearHealthResponse: true,
+        clearResponseTime: true,
         errorMessage: _friendlyNetworkError(error),
       );
     } catch (_) {
-      watch.stop();
       state = state.copyWith(
         isTesting: false,
-        connectionStatus: 'Unreachable',
+        connectionStatus: 'Failed',
         databaseStatus: 'Unknown',
-        responseTime: watch.elapsedMilliseconds,
+        clearHealthResponse: true,
+        clearResponseTime: true,
         errorMessage:
             'Connection test failed. Please check your server settings.',
       );
@@ -237,38 +237,6 @@ class CommunicationSettingsNotifier
     }
 
     return null;
-  }
-
-  String _extractDatabaseStatus(dynamic payload) {
-    if (payload is Map<String, dynamic>) {
-      final directStatus = payload['databaseStatus'];
-      if (directStatus is String && directStatus.trim().isNotEmpty) {
-        return directStatus;
-      }
-
-      final db = payload['database'];
-      if (db is Map<String, dynamic>) {
-        final nestedStatus = db['status'];
-        if (nestedStatus is String && nestedStatus.trim().isNotEmpty) {
-          return nestedStatus;
-        }
-      }
-
-      final altDb = payload['db'];
-      if (altDb is Map<String, dynamic>) {
-        final nestedStatus = altDb['status'];
-        if (nestedStatus is String && nestedStatus.trim().isNotEmpty) {
-          return nestedStatus;
-        }
-      }
-
-      final status = payload['status'];
-      if (status is String && status.trim().isNotEmpty) {
-        return status;
-      }
-    }
-
-    return 'Healthy';
   }
 
   String _friendlyNetworkError(ApiException error) {

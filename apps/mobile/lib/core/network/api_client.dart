@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 import 'api_constants.dart';
+import 'models/health_response.dart';
 
 class ApiClient {
   ApiClient({AppConfig? appConfig, http.Client? httpClient, Duration? timeout})
@@ -79,6 +80,22 @@ class ApiClient {
     throw ApiDecodingException(
       'Expected a JSON list from GET ${ApiConstants.companiesEndpoint}.',
     );
+  }
+
+  Future<HealthResponse> checkHealth() async {
+    final stopwatch = Stopwatch()..start();
+    final payload = await get(ApiConstants.healthEndpoint);
+    stopwatch.stop();
+
+    if (payload is! Map<String, dynamic>) {
+      throw const ApiDecodingException(
+        'Expected a JSON object from GET /health.',
+      );
+    }
+
+    return HealthResponse.fromJson(
+      payload,
+    ).copyWith(responseDuration: stopwatch.elapsed);
   }
 
   Uri _buildUri(String endpoint, {Map<String, String>? queryParameters}) {

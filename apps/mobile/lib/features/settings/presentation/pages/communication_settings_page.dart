@@ -116,14 +116,36 @@ class CommunicationSettingsPage extends ConsumerWidget {
                         value: state.connectionStatus,
                       ),
                       DiagnosticsRow(
-                        label: 'Database Status',
-                        value: state.databaseStatus,
+                        label: 'Backend Service',
+                        value: state.healthResponse?.service ?? '-',
                       ),
                       DiagnosticsRow(
-                        label: 'Response Time',
-                        value: state.responseTime == null
+                        label: 'Backend Version',
+                        value: state.healthResponse?.version ?? '-',
+                      ),
+                      DiagnosticsRow(
+                        label: 'Environment',
+                        value: state.healthResponse?.environment ?? '-',
+                      ),
+                      DiagnosticsRow(
+                        label: 'Database Status',
+                        value:
+                            state.healthResponse?.database?.status ??
+                            state.databaseStatus,
+                      ),
+                      DiagnosticsRow(
+                        label: 'Server Time',
+                        value: _formatDateTime(
+                          state.healthResponse?.serverTime,
+                        ),
+                      ),
+                      DiagnosticsRow(
+                        label: 'Response Latency',
+                        value: state.healthResponse == null
                             ? '-'
-                            : '${state.responseTime} ms',
+                            : _formatDuration(
+                                state.healthResponse!.responseDuration,
+                              ),
                       ),
                       DiagnosticsRow(
                         label: 'Last Successful Check',
@@ -198,5 +220,14 @@ class CommunicationSettingsPage extends ConsumerWidget {
     final minute = local.minute.toString().padLeft(2, '0');
 
     return '${local.year}/$month/$day $hour:$minute';
+  }
+
+  String _formatDuration(Duration value) {
+    if (value.inMilliseconds < 1000) {
+      return '${value.inMilliseconds} ms';
+    }
+
+    final seconds = value.inMilliseconds / 1000;
+    return '${seconds.toStringAsFixed(2)} s';
   }
 }
