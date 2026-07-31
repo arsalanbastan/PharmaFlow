@@ -4,19 +4,26 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import '../auth/auth_token_storage.dart';
 import '../config/app_config.dart';
 import 'api_constants.dart';
 import 'models/health_response.dart';
 
 class ApiClient {
-  ApiClient({AppConfig? appConfig, http.Client? httpClient, Duration? timeout})
-    : _httpClient = httpClient ?? http.Client(),
-      _appConfig = appConfig ?? AppConfig.defaults(),
-      _timeoutOverride = timeout;
+  ApiClient({
+    AppConfig? appConfig,
+    http.Client? httpClient,
+    Duration? timeout,
+    AuthTokenStorage? authTokenStorage,
+  }) : _httpClient = httpClient ?? http.Client(),
+       _appConfig = appConfig ?? AppConfig.defaults(),
+       _timeoutOverride = timeout,
+       _authTokenStorage = authTokenStorage ?? AuthTokenStorage();
 
   final http.Client _httpClient;
   final AppConfig _appConfig;
   final Duration? _timeoutOverride;
+  final AuthTokenStorage _authTokenStorage;
 
   Duration get _timeout {
     final override = _timeoutOverride;
@@ -35,16 +42,11 @@ class ApiClient {
     Map<String, String>? queryParameters,
   }) async {
     final uri = _buildUri(endpoint, queryParameters: queryParameters);
+    final requestHeaders = await _buildHeaders(headers: headers);
 
     try {
       final response = await _httpClient
-          .get(
-            uri,
-            headers: {
-              HttpHeaders.acceptHeader: 'application/json',
-              ...?headers,
-            },
-          )
+          .get(uri, headers: requestHeaders)
           .timeout(_timeout);
 
       return _handleResponse(response);
@@ -108,6 +110,23 @@ class ApiClient {
     return baseUri
         .resolve(normalizedEndpoint)
         .replace(queryParameters: queryParameters);
+  }
+
+  Future<Map<String, String>> _buildHeaders({
+    Map<String, String>? headers,
+  }) async {
+    final requestHeaders = <String, String>{
+      HttpHeaders.acceptHeader: 'application/json',
+      ...?headers,
+    };
+
+    final token = await _authTokenStorage.getToken();
+    if (token != null && token.trim().isNotEmpty) {
+      requestHeaders[HttpHeaders.authorizationHeader] =
+          'Bearer ${token.trim()}';
+    }
+
+    return requestHeaders;
   }
 
   dynamic _handleResponse(http.Response response) {

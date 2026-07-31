@@ -6,8 +6,7 @@ import 'connection_profile.dart';
 
 class ConnectionSettingsRepository {
   ConnectionSettingsRepository({Future<SharedPreferences>? sharedPreferences})
-    : _sharedPreferences =
-          sharedPreferences ?? SharedPreferences.getInstance();
+    : _sharedPreferences = sharedPreferences ?? SharedPreferences.getInstance();
 
   final Future<SharedPreferences> _sharedPreferences;
 
