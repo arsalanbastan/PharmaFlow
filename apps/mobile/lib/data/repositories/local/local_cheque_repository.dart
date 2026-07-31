@@ -2,6 +2,10 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../../../core/database/database_service.dart';
 import '../../../core/database/queries/cheque_queries.dart';
+import '../../../core/database/queries/sync_queue_queries.dart';
+import '../../../core/sync/sync_operation.dart';
+import '../../../core/sync/sync_queue_item.dart';
+import '../../../core/sync/sync_status.dart';
 import '../../mappers/cheque_mapper.dart';
 import '../../models/cheque.dart';
 import '../interfaces/cheque_repository.dart';
@@ -16,14 +20,43 @@ class LocalChequeRepository implements ChequeRepository {
   @override
   Future<int> insert(Cheque cheque) async {
     final params = _writeParams(cheque)..remove('id');
+    var insertedId = 0;
 
     _databaseService.transaction((db) {
       final statement = db.prepare(ChequeQueries.insert);
-      statement.executeWith(StatementParameters.named(_namedParams(params)));
-      statement.dispose();
+
+      try {
+        statement.executeWith(StatementParameters.named(_namedParams(params)));
+
+        insertedId =
+            db.select('SELECT last_insert_rowid() AS id').first['id'] as int;
+
+        final syncStatement = db.prepare(SyncQueueQueries.insert);
+
+        try {
+          syncStatement.executeWith(
+            StatementParameters.named(
+              _namedParams({
+                'entityType': syncEntityTypeCheque,
+                'entityId': insertedId,
+                'operation': SyncOperation.create.dbValue,
+                'status': SyncStatus.pending.dbValue,
+                'retryCount': 0,
+                'createdAt': DateTime.now().millisecondsSinceEpoch,
+                'lastAttemptAt': null,
+                'errorMessage': null,
+              }),
+            ),
+          );
+        } finally {
+          syncStatement.dispose();
+        }
+      } finally {
+        statement.dispose();
+      }
     });
 
-    return _db.select('SELECT last_insert_rowid() AS id').first['id'] as int;
+    return insertedId;
   }
 
   @override

@@ -3,20 +3,18 @@ import 'package:sqlite3/sqlite3.dart';
 import 'queries/bank_account_queries.dart';
 import 'queries/cheque_queries.dart';
 import 'queries/company_queries.dart';
+import 'queries/sync_queue_queries.dart';
 
 class MigrationManager {
   const MigrationManager._();
 
-  static const int currentVersion = 5;
+  static const int currentVersion = 6;
 
   static void migrate(Database db) {
-    db.execute(
-      'PRAGMA foreign_keys = ON;',
-    );
+    db.execute('PRAGMA foreign_keys = ON;');
 
-    final version = db.select(
-      'PRAGMA user_version',
-    ).first['user_version'] as int;
+    final version =
+        db.select('PRAGMA user_version').first['user_version'] as int;
 
     if (version >= currentVersion) {
       return;
@@ -42,19 +40,17 @@ class MigrationManager {
       _addChequeSayadIdColumn(db);
     }
 
-    db.execute(
-      'PRAGMA user_version = $currentVersion',
-    );
+    if (version < 6) {
+      _createSyncQueueTable(db);
+    }
+
+    db.execute('PRAGMA user_version = $currentVersion');
   }
 
   static void _createVersion1(Database db) {
-    db.execute(
-      CompanyQueries.createTable,
-    );
+    db.execute(CompanyQueries.createTable);
 
-    db.execute(
-      CompanyQueries.createIndexes,
-    );
+    db.execute(CompanyQueries.createIndexes);
   }
 
   static void _addVisitorAndAccountantColumns(Database db) {
@@ -66,56 +62,37 @@ class MigrationManager {
       return;
     }
 
-    final columnsResult = db.select(
-      'PRAGMA table_info(companies)',
-    );
+    final columnsResult = db.select('PRAGMA table_info(companies)');
 
-    final columns =
-        columnsResult.map((row) => row['name'] as String).toSet();
+    final columns = columnsResult.map((row) => row['name'] as String).toSet();
 
     if (!columns.contains('visitor_name')) {
-      db.execute(
-        'ALTER TABLE companies ADD COLUMN visitor_name TEXT',
-      );
+      db.execute('ALTER TABLE companies ADD COLUMN visitor_name TEXT');
     }
 
     if (!columns.contains('visitor_phone')) {
-      db.execute(
-        'ALTER TABLE companies ADD COLUMN visitor_phone TEXT',
-      );
+      db.execute('ALTER TABLE companies ADD COLUMN visitor_phone TEXT');
     }
 
     if (!columns.contains('accountant_name')) {
-      db.execute(
-        'ALTER TABLE companies ADD COLUMN accountant_name TEXT',
-      );
+      db.execute('ALTER TABLE companies ADD COLUMN accountant_name TEXT');
     }
 
     if (!columns.contains('accountant_phone')) {
-      db.execute(
-        'ALTER TABLE companies ADD COLUMN accountant_phone TEXT',
-      );
+      db.execute('ALTER TABLE companies ADD COLUMN accountant_phone TEXT');
     }
   }
 
   static void _createBankAccountsTable(Database db) {
-    db.execute(
-      BankAccountQueries.createTable,
-    );
+    db.execute(BankAccountQueries.createTable);
 
-    db.execute(
-      BankAccountQueries.createIndexes,
-    );
+    db.execute(BankAccountQueries.createIndexes);
   }
 
   static void _createChequesTable(Database db) {
-    db.execute(
-      ChequeQueries.createTable,
-    );
+    db.execute(ChequeQueries.createTable);
 
-    db.execute(
-      ChequeQueries.createIndexes,
-    );
+    db.execute(ChequeQueries.createIndexes);
   }
 
   static void _addChequeSayadIdColumn(Database db) {
@@ -127,16 +104,18 @@ class MigrationManager {
       return;
     }
 
-    final columnsResult = db.select(
-      'PRAGMA table_info(cheques)',
-    );
+    final columnsResult = db.select('PRAGMA table_info(cheques)');
 
     final columns = columnsResult.map((row) => row['name'] as String).toSet();
 
     if (!columns.contains('sayad_id')) {
-      db.execute(
-        'ALTER TABLE cheques ADD COLUMN sayad_id TEXT',
-      );
+      db.execute('ALTER TABLE cheques ADD COLUMN sayad_id TEXT');
     }
+  }
+
+  static void _createSyncQueueTable(Database db) {
+    db.execute(SyncQueueQueries.createTable);
+
+    db.execute(SyncQueueQueries.createIndexes);
   }
 }
