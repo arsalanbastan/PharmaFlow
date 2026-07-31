@@ -1,23 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart' show NumberFormat;
 
-class TomorrowCommitmentCard extends StatelessWidget {
+import '../providers/dashboard_provider.dart';
+import 'dashboard_visuals.dart';
+
+class TomorrowCommitmentCard extends ConsumerWidget {
   const TomorrowCommitmentCard({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summaryAsync = ref.watch(dashboardSummaryProvider);
+
     return Directionality(
       textDirection: TextDirection.rtl,
 
       child: Card(
-        elevation: 0,
+        elevation: 0.3,
+        shadowColor: DashboardThemeColors.shadow,
+        surfaceTintColor: Colors.transparent,
         margin: EdgeInsets.zero,
 
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: Colors.black.withValues(alpha: 0.05),
-            width: 0.8,
-          ),
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: DashboardThemeColors.border, width: 0.8),
         ),
 
         child: Padding(
@@ -29,34 +35,78 @@ class TomorrowCommitmentCard extends StatelessWidget {
             children: [
               const Text(
                 'تعهدات فردا',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: DashboardThemeColors.ink,
+                ),
               ),
 
               const SizedBox(height: 8),
 
-              const SizedBox(
-                height: 30,
-                child: _BankCommitmentRow(
-                  bankName: 'حساب جاری رفاه',
-                  amount: '123,454,000 ریال',
-                ),
-              ),
+              summaryAsync.when(
+                data: (summary) {
+                  final commitments = summary.tomorrow.bankCommitments;
 
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 2),
-                child: Divider(
-                  height: 1,
-                  thickness: 0.6,
-                  color: Color(0x1A000000),
-                ),
-              ),
+                  if (commitments.isEmpty) {
+                    return const Text(
+                      'فردا تعهد مالی ثبت نشده است',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: DashboardThemeColors.muted,
+                      ),
+                    );
+                  }
 
-              const SizedBox(
-                height: 30,
-                child: _BankCommitmentRow(
-                  bankName: 'حساب سامان آدورا',
-                  amount: '56,898,000 ریال',
-                ),
+                  return Column(
+                    children: [
+                      for (var i = 0; i < commitments.length; i++) ...[
+                        SizedBox(
+                          height: 30,
+                          child: _BankCommitmentRow(
+                            bankName: commitments[i].bankName,
+                            amount: NumberFormat.decimalPattern(
+                              'en',
+                            ).format(commitments[i].amount),
+                            amountColor: dashboardAmountColor(
+                              commitments[i].amount,
+                            ),
+                          ),
+                        ),
+                        if (i < commitments.length - 1)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 2),
+                            child: Divider(
+                              height: 1,
+                              thickness: 0.6,
+                              color: Color(0x1A000000),
+                            ),
+                          ),
+                      ],
+                    ],
+                  );
+                },
+                loading: () {
+                  return const SizedBox(
+                    height: 30,
+                    child: Center(
+                      child: SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  );
+                },
+                error: (error, stack) {
+                  return const Text(
+                    'خطا در بارگذاری تعهدات فردا',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: DashboardThemeColors.muted,
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -67,10 +117,15 @@ class TomorrowCommitmentCard extends StatelessWidget {
 }
 
 class _BankCommitmentRow extends StatelessWidget {
-  const _BankCommitmentRow({required this.bankName, required this.amount});
+  const _BankCommitmentRow({
+    required this.bankName,
+    required this.amount,
+    required this.amountColor,
+  });
 
   final String bankName;
   final String amount;
+  final Color amountColor;
 
   @override
   Widget build(BuildContext context) {
@@ -82,7 +137,11 @@ class _BankCommitmentRow extends StatelessWidget {
         Expanded(
           child: Row(
             children: [
-              const Icon(Icons.account_balance_outlined, size: 16),
+              Icon(
+                Icons.account_balance_outlined,
+                size: 16,
+                color: amountColor,
+              ),
 
               const SizedBox(width: 6),
 
@@ -93,7 +152,8 @@ class _BankCommitmentRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
+                    color: DashboardThemeColors.ink,
                   ),
                 ),
               ),
@@ -104,9 +164,13 @@ class _BankCommitmentRow extends StatelessWidget {
         const SizedBox(width: 8),
 
         Text(
-          amount,
+          '$amount ریال',
           textAlign: TextAlign.left,
-          style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w800,
+            color: amountColor,
+          ),
         ),
       ],
     );

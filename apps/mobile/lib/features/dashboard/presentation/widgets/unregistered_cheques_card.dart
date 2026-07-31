@@ -1,0 +1,364 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart' show NumberFormat;
+import 'package:shamsi_date/shamsi_date.dart';
+
+import '../../../../data/models/cheque.dart';
+import '../providers/dashboard_provider.dart';
+import 'dashboard_visuals.dart';
+
+class UnregisteredChequesCard extends ConsumerStatefulWidget {
+  const UnregisteredChequesCard({super.key});
+
+  @override
+  ConsumerState<UnregisteredChequesCard> createState() =>
+      _UnregisteredChequesCardState();
+}
+
+class _UnregisteredChequesCardState
+    extends ConsumerState<UnregisteredChequesCard> {
+  final Set<int> _pendingChequeIds = <int>{};
+  final Set<int> _hiddenChequeIds = <int>{};
+
+  @override
+  Widget build(BuildContext context) {
+    final dataAsync = ref.watch(unregisteredChequesCardProvider);
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Card(
+        elevation: 0.3,
+        shadowColor: DashboardThemeColors.shadow,
+        surfaceTintColor: Colors.transparent,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: DashboardThemeColors.border, width: 0.8),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              dataAsync.when(
+                data: (data) {
+                  final cheques = data.cheques
+                      .where((cheque) {
+                        return !_hiddenChequeIds.contains(cheque.id);
+                      })
+                      .toList(growable: false);
+
+                  final title = 'چک‌های ثبت نشده (${cheques.length})';
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: DashboardThemeColors.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      if (cheques.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 6),
+                          child: Text(
+                            'همه برگه‌های چک ثبت شده‌اند',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: DashboardThemeColors.muted,
+                            ),
+                          ),
+                        )
+                      else
+                        SizedBox(
+                          height: 166,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: cheques.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 10),
+                            itemBuilder: (context, index) {
+                              final cheque = cheques[index];
+                              final companyName =
+                                  data.companyNames[cheque.companyId] ?? '—';
+                              final bankName =
+                                  data.bankAccountNames[cheque.bankAccountId] ??
+                                  '—';
+                              final isPending = _pendingChequeIds.contains(
+                                cheque.id,
+                              );
+
+                              return SizedBox(
+                                width: 280,
+                                child: _UnregisteredChequeItem(
+                                  cheque: cheque,
+                                  companyName: companyName,
+                                  bankName: bankName,
+                                  isPending: isPending,
+                                  onChecked: () => _markAsRegistered(cheque),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  );
+                },
+                loading: () {
+                  return const Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'چک‌های ثبت نشده',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: DashboardThemeColors.ink,
+                        ),
+                      ),
+                      SizedBox(height: 10),
+                      SizedBox(
+                        height: 96,
+                        child: Center(
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+                error: (error, stack) {
+                  return const Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'چک‌های ثبت نشده (0)',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: DashboardThemeColors.ink,
+                        ),
+                      ),
+                      SizedBox(height: 10),
+                      Padding(
+                        padding: EdgeInsets.symmetric(vertical: 6),
+                        child: Text(
+                          'خطا در بارگذاری چک‌های ثبت نشده',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: DashboardThemeColors.muted,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _markAsRegistered(Cheque cheque) async {
+    if (_pendingChequeIds.contains(cheque.id)) {
+      return;
+    }
+
+    setState(() {
+      _pendingChequeIds.add(cheque.id);
+      _hiddenChequeIds.add(cheque.id);
+    });
+
+    try {
+      final markRegistered = ref.read(markChequeAsRegisteredProvider);
+      await markRegistered(cheque);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _hiddenChequeIds.remove(cheque.id);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'به‌روزرسانی وضعیت ثبت در صیاد با خطا مواجه شد.',
+            textAlign: TextAlign.right,
+          ),
+        ),
+      );
+    } finally {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _pendingChequeIds.remove(cheque.id);
+      });
+    }
+  }
+}
+
+class _UnregisteredChequeItem extends StatelessWidget {
+  const _UnregisteredChequeItem({
+    required this.cheque,
+    required this.companyName,
+    required this.bankName,
+    required this.isPending,
+    required this.onChecked,
+  });
+
+  final Cheque cheque;
+  final String companyName;
+  final String bankName;
+  final bool isPending;
+  final VoidCallback onChecked;
+
+  @override
+  Widget build(BuildContext context) {
+    final due = Jalali.fromDateTime(cheque.dueDate);
+    final dueText = _toPersianDigits(
+      '${due.year.toString().padLeft(4, '0')}/${due.month.toString().padLeft(2, '0')}/${due.day.toString().padLeft(2, '0')}',
+    );
+    final amount = _toPersianDigits(
+      NumberFormat.decimalPattern('en').format(cheque.amountRial),
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: DashboardThemeColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _infoRow('شرکت', companyName)),
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: isPending
+                        ? const CircularProgressIndicator(strokeWidth: 2)
+                        : Checkbox(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            fillColor: WidgetStateProperty.resolveWith((
+                              states,
+                            ) {
+                              if (states.contains(WidgetState.selected)) {
+                                return DashboardThemeColors.green;
+                              }
+
+                              return Colors.white;
+                            }),
+                            checkColor: Colors.white,
+                            side: const BorderSide(
+                              color: DashboardThemeColors.green,
+                              width: 1.2,
+                            ),
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: const VisualDensity(
+                              horizontal: -4,
+                              vertical: -4,
+                            ),
+                            value: false,
+                            onChanged: (value) {
+                              if (value == true) {
+                                onChecked();
+                              }
+                            },
+                          ),
+                  ),
+                  const SizedBox(width: 5),
+                  const Text(
+                    'ثبت نشده',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: DashboardThemeColors.ink,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          _infoRow('حساب', bankName),
+          const SizedBox(height: 6),
+          _infoRow('شماره چک', cheque.chequeNumber),
+          const SizedBox(height: 6),
+          _infoRow('سررسید', dueText),
+          const SizedBox(height: 6),
+          _infoRow('مبلغ', '$amount ریال'),
+          const Spacer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(String label, String value) {
+    return Row(
+      children: [
+        Text(
+          '$label: ',
+          style: const TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w700,
+            color: DashboardThemeColors.ink,
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11.5,
+              color: DashboardThemeColors.muted,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _toPersianDigits(String value) {
+    const english = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    const persian = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+
+    var result = value;
+    for (var i = 0; i < english.length; i++) {
+      result = result.replaceAll(english[i], persian[i]);
+    }
+
+    return result;
+  }
+}

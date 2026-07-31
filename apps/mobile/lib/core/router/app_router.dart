@@ -1,5 +1,8 @@
 import 'package:go_router/go_router.dart';
 
+import '../../features/dashboard/domain/models/commitment_period.dart';
+import '../../features/dashboard/presentation/pages/commitment_period_detail_page.dart';
+import '../../features/dashboard/presentation/pages/jalali_commitment_calendar_page.dart';
 import '../../features/dashboard/presentation/pages/dashboard_page.dart';
 import '../../features/dashboard/presentation/pages/dashboard_test_page.dart';
 import '../../features/menu/presentation/pages/menu_page.dart';
@@ -10,6 +13,7 @@ class AppRouter {
 
   static final GoRouter router = GoRouter(
     initialLocation: '/',
+
     routes: [
       GoRoute(
         path: '/',
@@ -20,8 +24,7 @@ class AppRouter {
       GoRoute(
         path: '/dashboard-test',
         name: 'dashboard-test',
-        builder: (context, state) =>
-            const DashboardTestPage(),
+        builder: (context, state) => const DashboardTestPage(),
       ),
 
       GoRoute(
@@ -31,9 +34,26 @@ class AppRouter {
       ),
 
       GoRoute(
+        path: '/jalali-calendar',
+        name: 'jalali-calendar',
+        builder: (context, state) => const JalaliCommitmentCalendarPage(),
+      ),
+
+      GoRoute(
         path: '/menu',
         name: 'menu',
         builder: (context, state) => const MenuPage(),
+      ),
+
+      GoRoute(
+        path: '/commitment-period-detail',
+        name: 'commitment-period-detail',
+
+        builder: (context, state) {
+          final period = state.extra as CommitmentPeriod;
+
+          return CommitmentPeriodDetailPage(period: period);
+        },
       ),
     ],
   );

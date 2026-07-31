@@ -28,14 +28,41 @@ class LocalChequeRepository implements ChequeRepository {
 
   @override
   Future<void> update(Cheque cheque) async {
-    final params = _writeParams(cheque);
+    final params = _updateParams(cheque);
     final statement = _db.prepare(ChequeQueries.updateEditableById);
 
     try {
       statement.executeWith(StatementParameters.named(_namedParams(params)));
+
+      final changedRowCount =
+          (_db.select('SELECT changes() AS changed_rows').first['changed_rows']
+                  as num)
+              .toInt();
+
+      if (changedRowCount == 0) {
+        throw StateError('Cheque update affected 0 rows for id ${cheque.id}');
+      }
     } finally {
       statement.dispose();
     }
+  }
+
+  Map<String, Object?> _updateParams(Cheque cheque) {
+    return {
+      'id': cheque.id,
+      'chequeNumber': cheque.chequeNumber,
+      'amountRial': cheque.amountRial,
+      'issueDate': cheque.issueDate.millisecondsSinceEpoch,
+      'dueDate': cheque.dueDate.millisecondsSinceEpoch,
+      'status': _statusToDb(cheque.status),
+      'isRegisteredInSayad': cheque.isRegisteredInSayad ? 1 : 0,
+      'sayadId': cheque.sayadId,
+      'receiverName': cheque.receiverName,
+      'description': cheque.description,
+      'imageData': cheque.imageData,
+      'archivedAt': cheque.archivedAt?.millisecondsSinceEpoch,
+      'updatedAt': cheque.updatedAt.millisecondsSinceEpoch,
+    };
   }
 
   Map<String, Object?> _writeParams(Cheque cheque) {
