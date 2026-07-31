@@ -16,11 +16,7 @@ Future<void> main() async {
 
   debugPrint('2. Database initialized');
 
-  runApp(
-    const ProviderScope(
-      child: PharmaFlowApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: PharmaFlowApp()));
 }
 
 class PharmaFlowApp extends StatelessWidget {
@@ -37,10 +33,7 @@ class PharmaFlowApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('fa'),
-        Locale('en'),
-      ],
+      supportedLocales: const [Locale('fa'), Locale('en')],
       locale: const Locale('fa'),
       theme: ThemeData(
         useMaterial3: true,

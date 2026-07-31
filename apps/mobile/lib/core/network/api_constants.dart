@@ -1,9 +1,10 @@
+import '../config/endpoints.dart';
+
 abstract final class ApiConstants {
   ApiConstants._();
 
-  static const String baseUrl = 'http://192.168.1.215:3000/api/v1';
-
-  static const String companiesEndpoint = '/companies';
-  static const String bankAccountsEndpoint = '/bank-accounts';
-  static const String chequesEndpoint = '/cheques';
+  static const String companiesEndpoint = Endpoints.companies;
+  static const String bankAccountsEndpoint = Endpoints.bankAccounts;
+  static const String chequesEndpoint = Endpoints.cheques;
+  static const String healthEndpoint = Endpoints.health;
 }

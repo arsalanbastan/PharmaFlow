@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../bank_accounts/presentation/pages/bank_account_list_page.dart';
 import '../../../cheques/presentation/pages/cheque_list_page.dart';
 import '../../../company/presentation/pages/company_list_page.dart';
+import '../../../settings/presentation/pages/settings_page.dart';
 import '../../../../shared/app_shell/app_bottom_navigation.dart';
 import '../../../../shared/app_shell/app_scaffold.dart';
 
@@ -34,18 +35,13 @@ class MenuPage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.person_outline),
             title: const Text('کاربران', textAlign: TextAlign.right),
-            onTap: () => _open(
-              context,
-              const _ModulePlaceholderPage(title: 'کاربران'),
-            ),
+            onTap: () =>
+                _open(context, const _ModulePlaceholderPage(title: 'کاربران')),
           ),
           ListTile(
             leading: const Icon(Icons.settings_outlined),
             title: const Text('تنظیمات', textAlign: TextAlign.right),
-            onTap: () => _open(
-              context,
-              const _ModulePlaceholderPage(title: 'تنظیمات'),
-            ),
+            onTap: () => _open(context, const SettingsPage()),
           ),
         ],
       ),
@@ -53,9 +49,7 @@ class MenuPage extends StatelessWidget {
   }
 
   static Future<void> _open(BuildContext context, Widget page) {
-    return Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => page),
-    );
+    return Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
   }
 }
 

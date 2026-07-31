@@ -4,16 +4,29 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import '../config/app_config.dart';
 import 'api_constants.dart';
 
 class ApiClient {
-  ApiClient({
-    http.Client? httpClient,
-    this._timeout = const Duration(seconds: 15),
-  }) : _httpClient = httpClient ?? http.Client();
+  ApiClient({AppConfig? appConfig, http.Client? httpClient, Duration? timeout})
+    : _httpClient = httpClient ?? http.Client(),
+      _appConfig = appConfig ?? AppConfig.defaults(),
+      _timeoutOverride = timeout;
 
   final http.Client _httpClient;
-  final Duration _timeout;
+  final AppConfig _appConfig;
+  final Duration? _timeoutOverride;
+
+  Duration get _timeout {
+    final override = _timeoutOverride;
+    if (override != null) {
+      return override;
+    }
+
+    final milliseconds = _appConfig.connectTimeout + _appConfig.receiveTimeout;
+
+    return Duration(milliseconds: milliseconds);
+  }
 
   Future<dynamic> get(
     String endpoint, {
@@ -73,7 +86,7 @@ class ApiClient {
         ? endpoint.substring(1)
         : endpoint;
 
-    final baseUri = Uri.parse('${ApiConstants.baseUrl}/');
+    final baseUri = Uri.parse('${_appConfig.baseUrl}/');
 
     return baseUri
         .resolve(normalizedEndpoint)

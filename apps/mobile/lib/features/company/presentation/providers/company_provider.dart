@@ -1,13 +1,22 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/database/database_service.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../data/models/company.dart';
 import '../../../../data/repositories/interfaces/company_repository.dart';
 import '../../../../data/repositories/local/local_company_repository.dart';
+import '../../../../data/repositories/offline_first/offline_first_company_repository.dart';
+import '../../../../data/repositories/remote/remote_company_repository.dart';
 import 'company_state.dart';
 
 final companyRepositoryProvider = Provider<CompanyRepository>((ref) {
-  return LocalCompanyRepository(DatabaseService.instance);
+  final localRepository = LocalCompanyRepository(DatabaseService.instance);
+  final remoteRepository = RemoteCompanyRepository(ApiClient());
+
+  return OfflineFirstCompanyRepository(
+    localRepository: localRepository,
+    remoteRepository: remoteRepository,
+  );
 });
 
 final companyProvider = StateNotifierProvider<CompanyNotifier, CompanyState>(
@@ -36,7 +45,11 @@ class CompanyNotifier extends StateNotifier<CompanyState> {
   }
 
   Future<void> search(String query, {bool includeArchived = false}) async {
-    state = state.copyWith(searchQuery: query, isLoading: true, clearError: true);
+    state = state.copyWith(
+      searchQuery: query,
+      isLoading: true,
+      clearError: true,
+    );
 
     try {
       final companies = query.trim().isEmpty
