@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsDateString,
   IsNumber,
   IsOptional,
@@ -19,6 +20,10 @@ export class CreateChequeDto {
   @IsDateString()
   chequeDate: string;
 
+  @IsOptional()
+  @IsDateString()
+  dueDate?: string;
+
   @IsUUID()
   companyId: string;
 
@@ -31,7 +36,23 @@ export class CreateChequeDto {
 
   @IsOptional()
   @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isRegisteredInSayad?: boolean;
+
+  @IsOptional()
+  @IsString()
+  sayadId?: string;
+
+  @IsOptional()
+  @IsString()
   imagePath?: string;
+
+  @IsOptional()
+  @IsString()
+  imageData?: string;
 
   @IsOptional()
   @IsString()

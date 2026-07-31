@@ -21,6 +21,10 @@ model Company {
   shebaNumber   String?
 
   notes         String?
+  visitorName   String?
+  visitorPhone  String?
+  accountantName String?
+  accountantPhone String?
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -35,6 +39,8 @@ model BankAccount {
   id            String    @id @default(uuid()) @db.Uuid
 
   bankName      String
+  accountTitle  String?
+  accountHolder String?
   accountNumber String?
   cardNumber    String?
   shebaNumber   String?
@@ -56,12 +62,17 @@ model Cheque {
   chequeNumber  String
   amount        Decimal
   chequeDate    DateTime
+  dueDate       DateTime?
+  status        String?
 
   companyId     String      @db.Uuid
   bankAccountId String      @db.Uuid
 
   sayadStatus   String?
+  isRegisteredInSayad Boolean?
+  sayadId       String?
   imagePath     String?
+  imageData     String?
   description   String?
 
   createdAt     DateTime    @default(now())
@@ -71,5 +82,6 @@ model Cheque {
   company       Company     @relation(fields: [companyId], references: [id])
   bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
 
+  @@index([bankAccountId, chequeNumber, deletedAt], map: "cheques_bankAccountId_chequeNumber_deletedAt_idx")
   @@map("cheques")
 }

@@ -34,4 +34,20 @@ export class CreateCompanyDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  visitorName?: string;
+
+  @IsOptional()
+  @IsString()
+  visitorPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  accountantName?: string;
+
+  @IsOptional()
+  @IsString()
+  accountantPhone?: string;
 }

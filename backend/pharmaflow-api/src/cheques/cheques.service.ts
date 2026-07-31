@@ -51,6 +51,9 @@ export class ChequesService {
       data: {
         ...createChequeDto,
         chequeDate: new Date(createChequeDto.chequeDate),
+        ...(createChequeDto.dueDate
+          ? { dueDate: new Date(createChequeDto.dueDate) }
+          : {}),
       },
     });
   }
@@ -102,6 +105,9 @@ export class ChequesService {
         ...updateChequeDto,
         ...(updateChequeDto.chequeDate
           ? { chequeDate: new Date(updateChequeDto.chequeDate) }
+          : {}),
+        ...(updateChequeDto.dueDate
+          ? { dueDate: new Date(updateChequeDto.dueDate) }
           : {}),
       },
     });

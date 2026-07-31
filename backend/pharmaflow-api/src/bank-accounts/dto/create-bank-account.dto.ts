@@ -9,6 +9,14 @@ export class CreateBankAccountDto {
 
   @IsOptional()
   @IsString()
+  accountTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  accountHolder?: string;
+
+  @IsOptional()
+  @IsString()
   accountNumber?: string;
 
   @IsOptional()
