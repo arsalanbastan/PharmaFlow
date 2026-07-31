@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id            String    @id @default(uuid()) @db.Uuid
+
+  name          String    @unique
+
+  nationalId    String?
+  economicCode  String?
+
+  bankName      String?
+  accountNumber String?
+  cardNumber    String?
+  shebaNumber   String?
+
+  notes         String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  cheques       Cheque[]
+
+  @@map("companies")
+}
+
+model BankAccount {
+  id            String    @id @default(uuid()) @db.Uuid
+
+  bankName      String
+  accountNumber String?
+  cardNumber    String?
+  shebaNumber   String?
+
+  notes         String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  cheques       Cheque[]
+
+  @@map("bank_accounts")
+}
+
+model Cheque {
+  id            String      @id @default(uuid()) @db.Uuid
+
+  chequeNumber  String
+  amount        Decimal
+  chequeDate    DateTime
+
+  companyId     String      @db.Uuid
+  bankAccountId String      @db.Uuid
+
+  sayadStatus   String?
+  imagePath     String?
+  description   String?
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
+
+  company       Company     @relation(fields: [companyId], references: [id])
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  @@map("cheques")
+}
