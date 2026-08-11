@@ -44,10 +44,7 @@ export class ChequesController {
     @Param('id') id: string,
     @Body() updateChequeDto: UpdateChequeDto,
   ) {
-    return this.chequesService.update(
-      id,
-      updateChequeDto,
-    );
+    return this.chequesService.update(id, updateChequeDto);
   }
 
   @Delete(':uuid')

@@ -103,7 +103,7 @@ export class ChequesService {
       );
     }
 
-    return this.prisma.cheque.update({
+    const prismaUpdateInput = {
       where: {
         id,
       },
@@ -116,7 +116,9 @@ export class ChequesService {
           ? { dueDate: new Date(updateChequeDto.dueDate) }
           : {}),
       },
-    });
+    };
+
+    return this.prisma.cheque.update(prismaUpdateInput);
   }
 
   async remove(uuid: string) {
