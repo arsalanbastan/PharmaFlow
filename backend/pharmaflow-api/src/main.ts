@@ -5,25 +5,27 @@ import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
-import { UpdateChequeDto } from './cheques/dto/update-cheque.dto';
 
-const CHEQUE_PATCH_ROUTE_REGEX = /^\/api\/v1\/cheques\/[^/]+$/;
+const DEFAULT_PORT = 3000;
 
-function isChequePatchRequest(request: Request): boolean {
-  return (
-    request.method === 'PATCH' &&
-    CHEQUE_PATCH_ROUTE_REGEX.test(request.originalUrl)
-  );
-}
+function parsePort(value: string | undefined): number {
+  const parsedPort = Number.parseInt(value ?? '', 10);
 
-function extractChequePatchId(request: Request): string | null {
-  const match = request.originalUrl.match(CHEQUE_PATCH_ROUTE_REGEX);
-
-  if (!match) {
-    return null;
+  if (!Number.isInteger(parsedPort) || parsedPort <= 0 || parsedPort > 65535) {
+    return DEFAULT_PORT;
   }
 
-  return request.originalUrl.split('/').at(-1) ?? null;
+  return parsedPort;
+}
+
+function isSwaggerEnabled(): boolean {
+  const nodeEnv = process.env.NODE_ENV?.trim().toLowerCase();
+
+  if (nodeEnv !== 'production') {
+    return true;
+  }
+
+  return process.env.ENABLE_SWAGGER?.trim().toLowerCase() === 'true';
 }
 
 async function bootstrap() {
@@ -31,100 +33,48 @@ async function bootstrap() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ limit: '10mb', extended: true }));
   app.use((request: Request, response: Response, next: NextFunction) => {
-    if (isChequePatchRequest(request)) {
-      const chequeId = extractChequePatchId(request);
+    response.on('finish', () => {
+      const correlationId =
+        request.headers['x-request-id'] ?? request.headers['x-correlation-id'];
+      const correlationSuffix = correlationId
+        ? ` correlationId=${String(correlationId)}`
+        : '';
+      const category =
+        response.statusCode >= 500 ? 'server_error' : 'request_completed';
 
       console.log(
-        JSON.stringify({
-          requestReceived: 'yes',
-          responseStatus: null,
-          exception: null,
-          file: 'src/main.ts',
-          method: 'chequePatchInstrumentationMiddleware',
-          line: 39,
-          incomingUrl: request.originalUrl,
-          pathParameter: chequeId,
-          requestBody: request.body,
-        }),
+        `[HTTP] ${request.method} ${request.originalUrl} status=${response.statusCode} category=${category}${correlationSuffix}`,
       );
-
-      response.on('finish', () => {
-        console.log(
-          JSON.stringify({
-            requestReceived: 'yes',
-            responseStatus: response.statusCode,
-            exception: null,
-            file: 'src/main.ts',
-            method: 'chequePatchInstrumentationMiddleware.responseFinish',
-            line: 58,
-          }),
-        );
-      });
-    }
+    });
 
     next();
   });
-  app.use((request: Request, _response: Response, next: NextFunction) => {
-    const contentLength = request.headers['content-length'] ?? 'unknown';
-
-    console.log(
-      `[HTTP] ${request.method} ${request.originalUrl} content-length=${contentLength}`,
-    );
-
-    next();
-  });
-app.useGlobalFilters(
-  new PrismaExceptionFilter(),
-);
-app.useGlobalPipes(
-  new ValidationPipe({
-    whitelist: true,
-    transform: true,
-    exceptionFactory: (errors) => {
-      const validationError = new BadRequestException(errors);
-
-      const isChequeUpdateValidation = errors.some(
-        (error) => error.target instanceof UpdateChequeDto,
-      );
-
-      if (!isChequeUpdateValidation) {
-        return validationError;
-      }
-
-      console.error(
-        JSON.stringify({
-          requestReceived: 'yes',
-          responseStatus: 400,
-          exception: 'ValidationError[]',
-          file: 'src/main.ts',
-          method: 'validationExceptionFactory',
-          line: 100,
-          validationErrors: errors,
-        }),
-      );
-
-      return validationError;
-    },
-  }),
-);
+  app.useGlobalFilters(new PrismaExceptionFilter());
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      exceptionFactory: (errors) => new BadRequestException(errors),
+    }),
+  );
   const config = new DocumentBuilder()
     .setTitle('PharmaFlow API')
     .setDescription('PharmaFlow Pharmacy Management System API')
     .setVersion('1.0')
     .build();
 
-  const document = SwaggerModule.createDocument(
-    app,
-    config,
-  );
+  if (isSwaggerEnabled()) {
+    const document = SwaggerModule.createDocument(app, config);
 
-  SwaggerModule.setup(
-    'api/docs',
-    app,
-    document,
-  );
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
-  await app.listen(3000, '0.0.0.0');
+  await app.listen(parsePort(process.env.PORT), '0.0.0.0');
 }
 
-bootstrap();
+bootstrap().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : 'Unknown bootstrap error';
+
+  console.error(`[Startup] Bootstrap failed: ${message}`);
+  process.exitCode = 1;
+});

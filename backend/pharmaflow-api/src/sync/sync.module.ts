@@ -12,12 +12,14 @@ import { PrismaModule } from '../database/prisma/prisma.module';
 import { SyncController } from './sync.controller';
 import { SyncChequesDto } from './dto/sync-cheques.dto';
 import { SyncService } from './sync.service';
-import { sanitizeLogBody } from '../common/logging/sanitize-log-body';
 
 type ValidationFailure = {
   field: string;
   messages: string[];
 };
+
+const isSyncDebugLoggingEnabled =
+  process.env.SYNC_DEBUG_LOGGING?.trim().toLowerCase() === 'true';
 
 function flattenValidationErrors(
   errors: ValidationError[],
@@ -59,19 +61,11 @@ class SyncValidationDebugMiddleware {
     if (errors.length > 0) {
       const failures = flattenValidationErrors(errors);
 
-      console.error(
-        '[SyncDebug] DTO validation errors:',
-        JSON.stringify(sanitizeLogBody(errors), null, 2),
-      );
-      console.error(
-        '[SyncDebug] Validation failure fields:',
-        JSON.stringify(sanitizeLogBody(failures), null, 2),
-      );
-
-      for (const failure of failures) {
-        console.error(
-          `[SyncDebug] Validation failed at ${failure.field}: ${failure.messages.join('; ')}`,
-        );
+      if (isSyncDebugLoggingEnabled) {
+        console.error('[SyncDebug] Sync cheques validation failed:', {
+          failureCount: failures.length,
+          fields: failures.map((failure) => failure.field),
+        });
       }
     }
 

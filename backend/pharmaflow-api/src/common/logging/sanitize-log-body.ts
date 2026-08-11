@@ -1,5 +1,20 @@
 type JsonLike = Record<string, unknown>;
 
+const SENSITIVE_KEYS = new Set([
+  'amount',
+  'apiKey',
+  'authorization',
+  'chequeNumber',
+  'id',
+  'imageData',
+  'nationalId',
+  'password',
+  'refreshToken',
+  'secret',
+  'token',
+  'uuid',
+]);
+
 function estimateBase64Kilobytes(value: string): number {
   const dataPart = value.includes(',') ? value.split(',').pop() ?? '' : value;
   const normalized = dataPart.replace(/\s/g, '');
@@ -34,12 +49,14 @@ function sanitizeValue(value: unknown, seen: WeakSet<object>): unknown {
     const sanitized: JsonLike = {};
 
     for (const [key, currentValue] of Object.entries(source)) {
-      if (key === 'imageData') {
+      if (SENSITIVE_KEYS.has(key)) {
         const sizeKb =
           typeof currentValue === 'string'
             ? estimateBase64Kilobytes(currentValue)
             : 0;
-        sanitized[key] = `<omitted, ${sizeKb} KB>`;
+        sanitized[key] = key === 'imageData'
+          ? `<omitted, ${sizeKb} KB>`
+          : '<omitted>';
         continue;
       }
 

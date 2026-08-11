@@ -27,15 +27,11 @@ export class PrismaExceptionFilter
     ) {
       console.error(
         JSON.stringify({
-          requestReceived: 'yes',
           responseStatus: exception.code === 'P2002' ? 409 : 500,
           exception: exception.name,
           file: 'src/common/filters/prisma-exception.filter.ts',
           method: 'catch',
-          line: 30,
           prismaErrorCode: exception.code,
-          prismaErrorMessage: exception.message,
-          stackTrace: exception.stack,
         }),
       );
     }
