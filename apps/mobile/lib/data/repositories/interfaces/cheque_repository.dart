@@ -5,7 +5,11 @@ abstract class ChequeRepository {
 
   Future<void> update(Cheque cheque);
 
+  Future<void> requestDelete(int id);
+
   Future<Cheque?> findById(int id);
+
+  Future<List<Cheque>> getActiveCheques();
 
   Future<List<Cheque>> getAll({
     bool includeArchived = false,

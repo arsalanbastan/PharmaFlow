@@ -4,5 +4,6 @@ abstract final class Endpoints {
   static const String companies = '/companies';
   static const String bankAccounts = '/bank-accounts';
   static const String cheques = '/cheques';
+  static const String syncCheques = '/sync/cheques';
   static const String health = '/health';
 }

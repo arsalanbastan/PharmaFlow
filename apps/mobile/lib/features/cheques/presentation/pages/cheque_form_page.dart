@@ -1,9 +1,12 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 
+import '../../../../features/dashboard/presentation/widgets/jalali_commitment_calendar_view.dart';
+import '../../../../shared/widgets/date_picker/pharmaflow_date_picker.dart';
 import '../../../../data/models/bank_account.dart';
 import '../../../../data/models/cheque.dart';
 import '../../../../data/models/company.dart';
@@ -11,14 +14,20 @@ import '../../../../data/repositories/local/local_bank_account_repository.dart';
 import '../../../../data/repositories/local/local_cheque_repository.dart';
 import '../../../../data/repositories/local/local_company_repository.dart';
 import '../../../../core/database/database_service.dart';
-import '../../../../shared/widgets/date_picker/pharmaflow_date_picker.dart';
+import '../../../dashboard/presentation/providers/dashboard_provider.dart';
+import '../providers/active_cheques_provider.dart';
+import '../utils/cheque_image_debug_logger.dart';
+import '../utils/cheque_image_optimizer.dart';
 import '../utils/cheque_input_formatters.dart';
 import '../utils/cheque_text_utils.dart';
 import '../widgets/cheque_compact_card.dart';
 import '../widgets/searchable_selector_field.dart';
 
 class ChequeFormPage extends StatefulWidget {
-  const ChequeFormPage({super.key});
+  const ChequeFormPage({super.key, this.chequeId, this.pageTitle});
+
+  final int? chequeId;
+  final String? pageTitle;
 
   @override
   State<ChequeFormPage> createState() => _ChequeFormPageState();
@@ -39,12 +48,15 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
 
   bool _isLoading = true;
   bool _isSaving = false;
-  final bool _isRegisteredInSayad = false;
+  bool _isRegisteredInSayad = false;
   bool _showValidationErrors = false;
 
   String? _loadError;
   Uint8List? _imageData;
+  Jalali? _issueDate;
   Jalali? _dueDate;
+  ChequeStatus _status = ChequeStatus.issued;
+  Cheque? _editingCheque;
   Company? _selectedCompany;
   BankAccount? _selectedBankAccount;
 
@@ -82,6 +94,11 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     try {
       final companies = await _companyRepository.getAll();
       final accounts = await _bankAccountRepository.getAll();
+      Cheque? existing;
+
+      if (widget.chequeId != null) {
+        existing = await _chequeRepository.findById(widget.chequeId!);
+      }
 
       if (!mounted) {
         return;
@@ -90,6 +107,28 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
       setState(() {
         _companies = companies;
         _bankAccounts = accounts;
+        if (existing != null) {
+          _editingCheque = existing;
+          _chequeNumberController.text = existing.chequeNumber;
+          _amountController.text = existing.amountRial.toString();
+          _sayadIdController.text = existing.sayadId ?? '';
+          _descriptionController.text = existing.description ?? '';
+          _imageData = existing.imageData;
+          _issueDate = Jalali.fromDateTime(existing.issueDate);
+          _dueDate = Jalali.fromDateTime(existing.dueDate);
+          _status = existing.status;
+          _isRegisteredInSayad = existing.isRegisteredInSayad;
+          _selectedCompany = companies
+              .where((item) => item.id == existing!.companyId)
+              .cast<Company?>()
+              .firstWhere((item) => item != null, orElse: () => null);
+          _selectedBankAccount = accounts
+              .where((item) => item.id == existing!.bankAccountId)
+              .cast<BankAccount?>()
+              .firstWhere((item) => item != null, orElse: () => null);
+        } else {
+          _issueDate = Jalali.now();
+        }
         _isLoading = false;
       });
     } catch (e, stackTrace) {
@@ -147,10 +186,54 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     return 'تاریخ سررسید الزامی است.';
   }
 
+  String? get _issueDateError {
+    if (!_showValidationErrors || _issueDate != null) {
+      return null;
+    }
+    return 'تاریخ صدور الزامی است.';
+  }
+
   Future<void> _pickDueDate() async {
+    final initialDate = _dueDate?.toDateTime();
+
+    final picked = await showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.9,
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: JalaliCommitmentCalendarView(
+              initialSelectedDate: initialDate,
+              firstDate: Jalali(1390, 1, 1).toDateTime(),
+              lastDate: Jalali(1450, 12, 29).toDateTime(),
+              requireExplicitSelection: true,
+              confirmSelectionText: 'انتخاب تاریخ',
+              onDateSelected: (date) {
+                Navigator.of(sheetContext).pop(date);
+              },
+            ),
+          ),
+        );
+      },
+    );
+
+    if (picked == null) {
+      return;
+    }
+
+    setState(() {
+      _dueDate = Jalali.fromDateTime(picked);
+    });
+  }
+
+  Future<void> _pickIssueDate() async {
     final picked = await PharmaFlowDatePicker.show(
       context: context,
-      initialDate: _dueDate ?? Jalali.now(),
+      initialDate: _issueDate ?? Jalali.now(),
       firstDate: Jalali(1390, 1, 1),
       lastDate: Jalali(1450, 12, 29),
       autoConfirm: false,
@@ -161,7 +244,7 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     }
 
     setState(() {
-      _dueDate = picked;
+      _issueDate = picked;
     });
   }
 
@@ -181,7 +264,9 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
       _selectedBankAccount = selected;
     });
 
-    await _suggestNextChequeNumber(selected.id);
+    if (_editingCheque == null) {
+      await _suggestNextChequeNumber(selected.id);
+    }
   }
 
   Future<void> _selectCompany() async {
@@ -246,12 +331,26 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     }
 
     final bytes = await picked.readAsBytes();
+    debugPrint(
+      ChequeImageDebugLogger.describeBytes(
+        bytes,
+        stage: 'ChequeFormPage picked image',
+      ),
+    );
+    final optimizedBytes = ChequeImageOptimizer.optimize(bytes);
+    debugPrint(
+      ChequeImageDebugLogger.describeBytes(
+        optimizedBytes,
+        stage: 'ChequeFormPage compressed image',
+      ),
+    );
+
     if (!mounted) {
       return;
     }
 
     setState(() {
-      _imageData = bytes;
+      _imageData = optimizedBytes;
     });
   }
 
@@ -281,6 +380,7 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     final customValid =
         _selectedBankAccount != null &&
         _selectedCompany != null &&
+        _issueDate != null &&
         _dueDate != null;
 
     return formValid && customValid;
@@ -289,12 +389,13 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
   Future<bool> _confirmDuplicateIfNeeded(
     int bankAccountId,
     String chequeNumber,
+    int? currentChequeId,
   ) async {
-    final duplicates = await _chequeRepository
-        .findDuplicatesByBankAccountAndChequeNumber(
+    final duplicates =
+        (await _chequeRepository.findDuplicatesByBankAccountAndChequeNumber(
           bankAccountId: bankAccountId,
           chequeNumber: chequeNumber,
-        );
+        )).where((item) => item.id != currentChequeId).toList();
 
     if (!mounted) {
       return false;
@@ -340,6 +441,48 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     return continueSave ?? false;
   }
 
+  Future<bool> _confirmPastDueIfNeeded(Jalali dueDate) async {
+    final dueGregorian = dueDate.toDateTime();
+    final dueDateOnly = DateTime(
+      dueGregorian.year,
+      dueGregorian.month,
+      dueGregorian.day,
+    );
+    final now = DateTime.now();
+    final todayOnly = DateTime(now.year, now.month, now.day);
+
+    if (!dueDateOnly.isBefore(todayOnly)) {
+      return true;
+    }
+
+    final daysDiff = todayOnly.difference(dueDateOnly).inDays;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) {
+        return AlertDialog(
+          title: const Text('Past Due Date'),
+          content: Text(
+            'The due date of this cheque is $daysDiff days before today.\n\nDo you want to continue?',
+            textAlign: TextAlign.left,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Continue'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmed == true;
+  }
+
   Future<void> _save() async {
     setState(() {
       _showValidationErrors = true;
@@ -352,11 +495,13 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     final bankId = _selectedBankAccount!.id;
     final companyId = _selectedCompany!.id;
     final amount = _amountValue;
+    final issueDate = _issueDate;
     final dueDate = _dueDate;
 
     if (bankId == null ||
         companyId == null ||
         amount == null ||
+        issueDate == null ||
         dueDate == null) {
       return;
     }
@@ -366,8 +511,14 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     final shouldContinue = await _confirmDuplicateIfNeeded(
       bankId,
       chequeNumber,
+      _editingCheque?.id,
     );
     if (!shouldContinue) {
+      return;
+    }
+
+    final pastDueConfirmed = await _confirmPastDueIfNeeded(dueDate);
+    if (!pastDueConfirmed) {
       return;
     }
 
@@ -381,33 +532,55 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
       final description = _descriptionController.text.trim();
 
       final cheque = Cheque(
-        id: 0,
+        id: _editingCheque?.id ?? 0,
+        serverUuid: _editingCheque?.serverUuid,
         companyId: companyId,
         bankAccountId: bankId,
         chequeNumber: chequeNumber,
         amountRial: amount,
-        issueDate: DateTime(now.year, now.month, now.day),
+        issueDate: issueDate.toDateTime(),
         dueDate: dueDate.toDateTime(),
-        status: ChequeStatus.issued,
+        status: _status,
         isRegisteredInSayad: _isRegisteredInSayad,
         sayadId: sayadIdDigits.isEmpty ? null : sayadIdDigits,
         description: description.isEmpty ? null : description,
-        receiverName: null,
-        archivedAt: null,
+        receiverName: _editingCheque?.receiverName,
+        archivedAt: _editingCheque?.archivedAt,
+        deleteRequestedAt: _editingCheque?.deleteRequestedAt,
         imageData: _imageData,
-        createdAt: now,
+        createdAt: _editingCheque?.createdAt ?? now,
         updatedAt: now,
       );
 
-      await _chequeRepository.insert(cheque);
+      if (_editingCheque == null) {
+        await _chequeRepository.insert(cheque);
+      } else {
+        await _chequeRepository.update(cheque);
+      }
+
+      if (mounted) {
+        final providerContainer = ProviderScope.containerOf(
+          context,
+          listen: false,
+        );
+        invalidateChequeDependentProviders(providerContainer);
+        providerContainer.invalidate(dashboardSummaryProvider);
+        providerContainer.invalidate(unregisteredChequesCardProvider);
+      }
 
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('چک با موفقیت ثبت شد.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _editingCheque == null
+                ? 'چک با موفقیت ثبت شد.'
+                : 'چک با موفقیت به‌روزرسانی شد.',
+          ),
+        ),
+      );
 
       Navigator.of(context).pop(true);
     } catch (e, stackTrace) {
@@ -428,6 +601,73 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
         });
       }
     }
+  }
+
+  Future<void> _requestDeleteFromDetails() async {
+    final cheque = _editingCheque;
+    if (cheque == null) {
+      return;
+    }
+
+    final companyName = _selectedCompany?.name ?? '—';
+    final providerContainer = ProviderScope.containerOf(context, listen: false);
+
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Delete Cheque'),
+          content: Text(
+            'Are you sure you want to delete cheque\n'
+            '${cheque.chequeNumber}\n'
+            'for company\n'
+            '$companyName ?\n\n'
+            'This action cannot be undone after synchronization.',
+            textAlign: TextAlign.left,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(dialogContext).colorScheme.error,
+                foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete != true) {
+      return;
+    }
+
+    try {
+      await _chequeRepository.requestDelete(cheque.id);
+      invalidateChequeDependentProviders(providerContainer);
+      providerContainer.invalidate(dashboardSummaryProvider);
+      providerContainer.invalidate(unregisteredChequesCardProvider);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Unable to delete cheque.')));
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.of(context).pop(true);
   }
 
   Future<T?> _showSearchSelector<T>({
@@ -460,7 +700,12 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
 
     if (_loadError != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('ثبت چک')),
+        appBar: AppBar(
+          title: Text(
+            widget.pageTitle ??
+                (_editingCheque == null ? 'ثبت چک' : 'جزئیات چک'),
+          ),
+        ),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -485,7 +730,21 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(title: const Text('ثبت چک')),
+        appBar: AppBar(
+          title: Text(
+            widget.pageTitle ??
+                (_editingCheque == null ? 'ثبت چک' : 'جزئیات چک'),
+          ),
+          actions: [
+            if (_editingCheque != null)
+              IconButton(
+                tooltip: 'Delete Cheque',
+                onPressed: _isSaving ? null : _requestDeleteFromDetails,
+                icon: const Icon(Icons.delete_outline),
+                color: Theme.of(context).colorScheme.error,
+              ),
+          ],
+        ),
         body: SafeArea(
           child: Form(
             key: _formKey,
@@ -575,6 +834,29 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
                   const SizedBox(height: 12),
                   InkWell(
                     borderRadius: BorderRadius.circular(12),
+                    onTap: _pickIssueDate,
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'تاریخ صدور *',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: const Icon(Icons.calendar_today_outlined),
+                        errorText: _issueDateError,
+                      ),
+                      child: Text(
+                        _issueDate == null
+                            ? 'انتخاب کنید'
+                            : _formatJalali(_issueDate!),
+                        style: _issueDate == null
+                            ? Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).hintColor,
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(12),
                     onTap: _pickDueDate,
                     child: InputDecorator(
                       decoration: InputDecoration(
@@ -596,12 +878,55 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  DropdownButtonFormField<ChequeStatus>(
+                    initialValue: _status,
+                    decoration: const InputDecoration(
+                      labelText: 'وضعیت',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: ChequeStatus.issued,
+                        child: Text('Issued'),
+                      ),
+                      DropdownMenuItem(
+                        value: ChequeStatus.registered,
+                        child: Text('Registered'),
+                      ),
+                      DropdownMenuItem(
+                        value: ChequeStatus.cancelled,
+                        child: Text('Cancelled'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) {
+                        return;
+                      }
+                      setState(() {
+                        _status = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('ثبت در سامانه صیاد'),
+                    value: _isRegisteredInSayad,
+                    onChanged: (value) {
+                      setState(() {
+                        _isRegisteredInSayad = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
                   TextFormField(
                     controller: _sayadIdController,
                     decoration: const InputDecoration(
                       labelText: 'شناسه ۱۶ رقمی صیاد',
                       border: OutlineInputBorder(),
                     ),
+                    textDirection: TextDirection.ltr,
+                    textAlign: TextAlign.left,
                     keyboardType: TextInputType.number,
                     inputFormatters: const [SayadIdFormatter()],
                     validator: (value) {
@@ -715,6 +1040,19 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  if (_editingCheque != null) ...[
+                    Text(
+                      'Created At: ${_editingCheque!.createdAt.toLocal()}',
+                      textAlign: TextAlign.right,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Updated At: ${_editingCheque!.updatedAt.toLocal()}',
+                      textAlign: TextAlign.right,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  const SizedBox(height: 4),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
@@ -725,7 +1063,11 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
                               height: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('ثبت چک'),
+                          : Text(
+                              _editingCheque == null
+                                  ? 'ثبت چک'
+                                  : 'ذخیره تغییرات',
+                            ),
                     ),
                   ),
                 ],
@@ -758,9 +1100,23 @@ class _SearchSelectionSheet<T> extends StatefulWidget {
 
 class _SearchSelectionSheetState<T> extends State<_SearchSelectionSheet<T>> {
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      _searchFocusNode.requestFocus();
+    });
+  }
 
   @override
   void dispose() {
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -803,6 +1159,8 @@ class _SearchSelectionSheetState<T> extends State<_SearchSelectionSheet<T>> {
                   const SizedBox(height: 8),
                   TextField(
                     controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    autofocus: true,
                     decoration: const InputDecoration(
                       hintText: 'جستجو...',
                       prefixIcon: Icon(Icons.search),

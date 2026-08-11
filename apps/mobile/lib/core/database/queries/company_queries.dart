@@ -5,6 +5,8 @@ class CompanyQueries {
 CREATE TABLE companies (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
 
+  server_uuid TEXT,
+
   name TEXT NOT NULL UNIQUE,
 
   national_id TEXT,

@@ -16,10 +16,7 @@ class SqliteCompanyRepository implements CompanyRepository {
 
   @override
   Future<int> insert(Company company) async {
-    final normalizedName = company.name.trim().replaceAll(
-      RegExp(r'\s+'),
-      ' ',
-    );
+    final normalizedName = company.name.trim().replaceAll(RegExp(r'\s+'), ' ');
 
     if (normalizedName.isEmpty) {
       throw ArgumentError('Company name cannot be empty.');
@@ -32,9 +29,7 @@ class SqliteCompanyRepository implements CompanyRepository {
     _validateNationalId(company.nationalId);
     _validateEconomicCode(company.economicCode);
 
-    final entity = company.copyWith(
-      name: normalizedName,
-    );
+    final entity = company.copyWith(name: normalizedName);
 
     final values = CompanyMapper.toMap(entity);
 
@@ -43,6 +38,7 @@ class SqliteCompanyRepository implements CompanyRepository {
     _databaseService.transaction((db) {
       final statement = db.prepare('''
         INSERT INTO companies (
+          server_uuid,
           name,
           national_id,
           economic_code,
@@ -55,10 +51,11 @@ class SqliteCompanyRepository implements CompanyRepository {
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''');
 
       statement.execute([
+        values['server_uuid'],
         values['name'],
         values['national_id'],
         values['economic_code'],
@@ -111,7 +108,9 @@ class SqliteCompanyRepository implements CompanyRepository {
   }
 
   Future<Company?> findById(int id) async {
-    final result = _db.select('SELECT * FROM companies WHERE id = ? LIMIT 1', [id]);
+    final result = _db.select('SELECT * FROM companies WHERE id = ? LIMIT 1', [
+      id,
+    ]);
 
     if (result.isEmpty) {
       return null;
@@ -151,7 +150,10 @@ class SqliteCompanyRepository implements CompanyRepository {
   }
 
   @override
-  Future<List<Company>> search(String query, {bool includeArchived = false}) async {
+  Future<List<Company>> search(
+    String query, {
+    bool includeArchived = false,
+  }) async {
     final keyword = '%${query.trim()}%';
     final result = _db.select(
       includeArchived
@@ -244,6 +246,7 @@ class SqliteCompanyRepository implements CompanyRepository {
       '''
       UPDATE companies
       SET
+        server_uuid = ?,
         name = ?,
         national_id = ?,
         economic_code = ?,
@@ -257,6 +260,7 @@ class SqliteCompanyRepository implements CompanyRepository {
       WHERE id = ?
       ''',
       [
+        values['server_uuid'],
         values['name'],
         values['national_id'],
         values['economic_code'],
@@ -287,5 +291,27 @@ class SqliteCompanyRepository implements CompanyRepository {
       return normalizedCompany.contains(normalizedInput) ||
           normalizedInput.contains(normalizedCompany);
     }).toList();
+  }
+
+  Future<void> updateServerUuid({
+    required int localId,
+    required String serverUuid,
+  }) async {
+    final normalized = serverUuid.trim();
+
+    if (normalized.isEmpty) {
+      throw ArgumentError('serverUuid cannot be empty.');
+    }
+
+    _db.execute(
+      '''
+      UPDATE companies
+      SET
+        server_uuid = ?,
+        updated_at = ?
+      WHERE id = ?
+      ''',
+      [normalized, DateTime.now().millisecondsSinceEpoch, localId],
+    );
   }
 }

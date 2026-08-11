@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -48,10 +50,11 @@ export class ChequesController {
     );
   }
 
-  @Delete(':id')
+  @Delete(':uuid')
+  @HttpCode(HttpStatus.NO_CONTENT)
   remove(
-    @Param('id') id: string,
+    @Param('uuid') uuid: string,
   ) {
-    return this.chequesService.remove(id);
+    return this.chequesService.remove(uuid);
   }
 }

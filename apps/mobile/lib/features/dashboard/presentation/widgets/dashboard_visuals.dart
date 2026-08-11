@@ -1,12 +1,23 @@
 import 'package:flutter/material.dart';
 
 class DashboardAmountThresholds {
-  DashboardAmountThresholds._();
+  const DashboardAmountThresholds({
+    required this.green,
+    required this.orange,
+    required this.red,
+  });
 
-  /// Version 1 thresholds. These can later move to Settings without UI changes.
-  static const int greenMaxExclusive = 6000000000;
-  static const int orangeMaxExclusive = 7000000000;
+  final int green;
+  final int orange;
+  final int red;
 }
+
+const DashboardAmountThresholds defaultDashboardAmountThresholds =
+    DashboardAmountThresholds(
+      green: 600000000,
+      orange: 700000000,
+      red: 800000000,
+    );
 
 class DashboardThemeColors {
   DashboardThemeColors._();
@@ -34,20 +45,30 @@ class DashboardThemeColors {
   static const Color headerHighlight = Color(0x26FFFFFF);
 }
 
-DashboardAmountTone dashboardAmountTone(int amount) {
-  if (amount < DashboardAmountThresholds.greenMaxExclusive) {
+DashboardAmountTone dashboardAmountTone(
+  int amount, {
+  required DashboardAmountThresholds thresholds,
+}) {
+  if (amount < thresholds.green) {
     return DashboardAmountTone.green;
   }
 
-  if (amount < DashboardAmountThresholds.orangeMaxExclusive) {
+  if (amount < thresholds.orange) {
     return DashboardAmountTone.orange;
+  }
+
+  if (amount < thresholds.red) {
+    return DashboardAmountTone.red;
   }
 
   return DashboardAmountTone.red;
 }
 
-Color dashboardAmountColor(int amount) {
-  switch (dashboardAmountTone(amount)) {
+Color dashboardAmountColor(
+  int amount, {
+  required DashboardAmountThresholds thresholds,
+}) {
+  switch (dashboardAmountTone(amount, thresholds: thresholds)) {
     case DashboardAmountTone.green:
       return DashboardThemeColors.green;
     case DashboardAmountTone.orange:
@@ -57,8 +78,11 @@ Color dashboardAmountColor(int amount) {
   }
 }
 
-Color dashboardSoftAmountColor(int amount) {
-  switch (dashboardAmountTone(amount)) {
+Color dashboardSoftAmountColor(
+  int amount, {
+  required DashboardAmountThresholds thresholds,
+}) {
+  switch (dashboardAmountTone(amount, thresholds: thresholds)) {
     case DashboardAmountTone.green:
       return DashboardThemeColors.greenSoft;
     case DashboardAmountTone.orange:
@@ -68,8 +92,11 @@ Color dashboardSoftAmountColor(int amount) {
   }
 }
 
-Color dashboardSoftAmountBorderColor(int amount) {
-  switch (dashboardAmountTone(amount)) {
+Color dashboardSoftAmountBorderColor(
+  int amount, {
+  required DashboardAmountThresholds thresholds,
+}) {
+  switch (dashboardAmountTone(amount, thresholds: thresholds)) {
     case DashboardAmountTone.green:
       return DashboardThemeColors.greenSoftAlt;
     case DashboardAmountTone.orange:

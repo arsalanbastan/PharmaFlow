@@ -8,6 +8,7 @@ class ChequeMapper {
   static Cheque fromMap(Map<String, Object?> map) {
     return Cheque(
       id: _toRequiredInt(map['id'], 'id'),
+      serverUuid: map['server_uuid'] as String?,
       companyId: _toRequiredInt(map['company_id'], 'company_id'),
       bankAccountId: _toRequiredInt(map['bank_account_id'], 'bank_account_id'),
       chequeNumber: _toRequiredString(map['cheque_number'], 'cheque_number'),
@@ -22,6 +23,12 @@ class ChequeMapper {
       archivedAt: map['archived_at'] == null
           ? null
           : _toRequiredDateTime(map['archived_at'], 'archived_at'),
+      deleteRequestedAt: map['delete_requested_at'] == null
+          ? null
+          : _toRequiredDateTime(
+              map['delete_requested_at'],
+              'delete_requested_at',
+            ),
       imageData: _imageDataFromDb(map['image_data']),
       createdAt: _toRequiredDateTime(map['created_at'], 'created_at'),
       updatedAt: _toRequiredDateTime(map['updated_at'], 'updated_at'),
@@ -31,6 +38,7 @@ class ChequeMapper {
   static Map<String, Object?> toMap(Cheque cheque) {
     return {
       'id': cheque.id,
+      'server_uuid': cheque.serverUuid,
       'company_id': cheque.companyId,
       'bank_account_id': cheque.bankAccountId,
       'cheque_number': cheque.chequeNumber,
@@ -43,6 +51,7 @@ class ChequeMapper {
       'receiver_name': cheque.receiverName,
       'description': cheque.description,
       'archived_at': cheque.archivedAt?.millisecondsSinceEpoch,
+      'delete_requested_at': cheque.deleteRequestedAt?.millisecondsSinceEpoch,
       'image_data': cheque.imageData,
       'created_at': cheque.createdAt.millisecondsSinceEpoch,
       'updated_at': cheque.updatedAt.millisecondsSinceEpoch,

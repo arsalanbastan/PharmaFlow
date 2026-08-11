@@ -18,7 +18,6 @@ class UnregisteredChequesCard extends ConsumerStatefulWidget {
 class _UnregisteredChequesCardState
     extends ConsumerState<UnregisteredChequesCard> {
   final Set<int> _pendingChequeIds = <int>{};
-  final Set<int> _hiddenChequeIds = <int>{};
 
   @override
   Widget build(BuildContext context) {
@@ -42,11 +41,7 @@ class _UnregisteredChequesCardState
             children: [
               dataAsync.when(
                 data: (data) {
-                  final cheques = data.cheques
-                      .where((cheque) {
-                        return !_hiddenChequeIds.contains(cheque.id);
-                      })
-                      .toList(growable: false);
+                  final cheques = data.cheques;
 
                   final title = 'چک‌های ثبت نشده (${cheques.length})';
 
@@ -80,7 +75,7 @@ class _UnregisteredChequesCardState
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             itemCount: cheques.length,
-                            separatorBuilder: (_, __) =>
+                            separatorBuilder: (context, index) =>
                                 const SizedBox(width: 10),
                             itemBuilder: (context, index) {
                               final cheque = cheques[index];
@@ -100,7 +95,10 @@ class _UnregisteredChequesCardState
                                   companyName: companyName,
                                   bankName: bankName,
                                   isPending: isPending,
-                                  onChecked: () => _markAsRegistered(cheque),
+                                  onChecked: () => _confirmAndMarkAsRegistered(
+                                    cheque: cheque,
+                                    companyName: companyName,
+                                  ),
                                 ),
                               );
                             },
@@ -176,20 +174,15 @@ class _UnregisteredChequesCardState
 
     setState(() {
       _pendingChequeIds.add(cheque.id);
-      _hiddenChequeIds.add(cheque.id);
     });
 
     try {
       final markRegistered = ref.read(markChequeAsRegisteredProvider);
       await markRegistered(cheque);
-    } catch (_) {
+    } catch (error) {
       if (!mounted) {
-        return;
+        rethrow;
       }
-
-      setState(() {
-        _hiddenChequeIds.remove(cheque.id);
-      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -199,15 +192,49 @@ class _UnregisteredChequesCardState
           ),
         ),
       );
-    } finally {
-      if (!mounted) {
-        return;
-      }
 
-      setState(() {
-        _pendingChequeIds.remove(cheque.id);
-      });
+      rethrow;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pendingChequeIds.remove(cheque.id);
+        });
+      }
     }
+  }
+
+  Future<void> _confirmAndMarkAsRegistered({
+    required Cheque cheque,
+    required String companyName,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('ثبت در سامانه صیاد'),
+          content: Text(
+            'آیا چک شماره ${cheque.chequeNumber} مربوط به شرکت $companyName در سامانه صیاد ثبت شده است؟',
+            textAlign: TextAlign.right,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Yes, Registered'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    await _markAsRegistered(cheque);
   }
 }
 
@@ -291,9 +318,18 @@ class _UnregisteredChequeItem extends StatelessWidget {
                             ),
                             value: false,
                             onChanged: (value) {
+                              debugPrint(
+                                'ENTER unregistered_cheques_card.dart -> Checkbox.onChanged',
+                              );
+                              debugPrint(
+                                'cheque.id=${cheque.id} current.isRegisteredInSayad=${cheque.isRegisteredInSayad} new.requestedValue=$value',
+                              );
                               if (value == true) {
                                 onChecked();
                               }
+                              debugPrint(
+                                'EXIT unregistered_cheques_card.dart -> Checkbox.onChanged',
+                              );
                             },
                           ),
                   ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart' show NumberFormat;
 
+import '../../../settings/presentation/providers/app_preferences_provider.dart';
 import '../providers/dashboard_provider.dart';
 import 'dashboard_visuals.dart';
 
@@ -11,6 +12,15 @@ class TomorrowCommitmentCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final summaryAsync = ref.watch(dashboardSummaryProvider);
+    final settings = ref.watch(appPreferencesProvider).valueOrNull;
+    final thresholds = DashboardAmountThresholds(
+      green:
+          settings?.thresholds.green ?? defaultDashboardAmountThresholds.green,
+      orange:
+          settings?.thresholds.orange ??
+          defaultDashboardAmountThresholds.orange,
+      red: settings?.thresholds.red ?? defaultDashboardAmountThresholds.red,
+    );
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -70,6 +80,7 @@ class TomorrowCommitmentCard extends ConsumerWidget {
                             ).format(commitments[i].amount),
                             amountColor: dashboardAmountColor(
                               commitments[i].amount,
+                              thresholds: thresholds,
                             ),
                           ),
                         ),

@@ -6,6 +6,7 @@ class CompanyMapper {
   static Company fromMap(Map<String, Object?> map) {
     return Company(
       id: map['id'] as int?,
+      serverUuid: map['server_uuid'] as String?,
       name: map['name'] as String,
       nationalId: map['national_id'] as String?,
       economicCode: map['economic_code'] as String?,
@@ -16,21 +17,16 @@ class CompanyMapper {
       accountantPhone: map['accountant_phone'] as String?,
       archivedAt: map['archived_at'] == null
           ? null
-          : DateTime.fromMillisecondsSinceEpoch(
-              map['archived_at'] as int,
-            ),
-      createdAt: DateTime.fromMillisecondsSinceEpoch(
-        map['created_at'] as int,
-      ),
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(
-        map['updated_at'] as int,
-      ),
+          : DateTime.fromMillisecondsSinceEpoch(map['archived_at'] as int),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at'] as int),
     );
   }
 
   static Map<String, Object?> toMap(Company company) {
     return {
       'id': company.id,
+      'server_uuid': company.serverUuid,
       'name': company.name,
       'national_id': company.nationalId,
       'economic_code': company.economicCode,

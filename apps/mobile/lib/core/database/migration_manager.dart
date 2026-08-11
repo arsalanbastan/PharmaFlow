@@ -8,7 +8,7 @@ import 'queries/sync_queue_queries.dart';
 class MigrationManager {
   const MigrationManager._();
 
-  static const int currentVersion = 6;
+  static const int currentVersion = 8;
 
   static void migrate(Database db) {
     db.execute('PRAGMA foreign_keys = ON;');
@@ -42,6 +42,14 @@ class MigrationManager {
 
     if (version < 6) {
       _createSyncQueueTable(db);
+    }
+
+    if (version < 7) {
+      _addServerUuidColumns(db);
+    }
+
+    if (version < 8) {
+      _addChequeSyncColumns(db);
     }
 
     db.execute('PRAGMA user_version = $currentVersion');
@@ -117,5 +125,62 @@ class MigrationManager {
     db.execute(SyncQueueQueries.createTable);
 
     db.execute(SyncQueueQueries.createIndexes);
+  }
+
+  static void _addServerUuidColumns(Database db) {
+    final companyTableExists = db.select(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'companies'",
+    );
+
+    if (companyTableExists.isNotEmpty) {
+      final companyColumnsResult = db.select('PRAGMA table_info(companies)');
+      final companyColumns = companyColumnsResult
+          .map((row) => row['name'] as String)
+          .toSet();
+
+      if (!companyColumns.contains('server_uuid')) {
+        db.execute('ALTER TABLE companies ADD COLUMN server_uuid TEXT');
+      }
+    }
+
+    final bankAccountTableExists = db.select(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'bank_accounts'",
+    );
+
+    if (bankAccountTableExists.isNotEmpty) {
+      final bankAccountColumnsResult = db.select(
+        'PRAGMA table_info(bank_accounts)',
+      );
+      final bankAccountColumns = bankAccountColumnsResult
+          .map((row) => row['name'] as String)
+          .toSet();
+
+      if (!bankAccountColumns.contains('server_uuid')) {
+        db.execute('ALTER TABLE bank_accounts ADD COLUMN server_uuid TEXT');
+      }
+    }
+  }
+
+  static void _addChequeSyncColumns(Database db) {
+    final chequeTableExists = db.select(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cheques'",
+    );
+
+    if (chequeTableExists.isEmpty) {
+      return;
+    }
+
+    final chequeColumnsResult = db.select('PRAGMA table_info(cheques)');
+    final chequeColumns = chequeColumnsResult
+        .map((row) => row['name'] as String)
+        .toSet();
+
+    if (!chequeColumns.contains('server_uuid')) {
+      db.execute('ALTER TABLE cheques ADD COLUMN server_uuid TEXT');
+    }
+
+    if (!chequeColumns.contains('delete_requested_at')) {
+      db.execute('ALTER TABLE cheques ADD COLUMN delete_requested_at INTEGER');
+    }
   }
 }
