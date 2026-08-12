@@ -3,7 +3,7 @@
   "platform": "node",
   "port": 3000,
   "node": {
-    "version": "24"
+    "version": "22"
   },
   "healthCheck": {
     "command": "CMD curl --fail http://localhost:3000/api/v1/health || exit 1",
