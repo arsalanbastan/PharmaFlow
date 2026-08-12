@@ -1,0 +1,15 @@
+{
+  "app": "pharmaflow-api",
+  "platform": "node",
+  "port": 3000,
+  "node": {
+    "version": "24"
+  },
+  "healthCheck": {
+    "command": "CMD curl --fail http://localhost:3000/api/v1/health || exit 1",
+    "interval": 30,
+    "timeout": 15,
+    "retries": 3,
+    "startPeriod": 20
+  }
+}
