@@ -81,6 +81,16 @@ class RemoteCompanyRepository implements CompanyRepository {
     throw UnsupportedError('Remote update is not implemented yet.');
   }
 
+  Future<void> updateByServerUuid(
+    String serverUuid,
+    Map<String, dynamic> payload,
+  ) async {
+    await _apiClient.patch(
+      '${ApiConstants.companiesEndpoint}/$serverUuid',
+      body: payload,
+    );
+  }
+
   @override
   Future<void> archive(int id) {
     throw UnsupportedError('Remote archive is not implemented yet.');

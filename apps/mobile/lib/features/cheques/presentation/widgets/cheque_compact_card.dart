@@ -66,11 +66,7 @@ class ChequeCompactCard extends StatelessWidget {
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.edit,
-              color: Colors.white,
-              size: 18,
-            ),
+            Icon(Icons.edit, color: Colors.white, size: 18),
             SizedBox(width: 6),
             Text(
               'ویرایش',
@@ -89,11 +85,7 @@ class ChequeCompactCard extends StatelessWidget {
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.block,
-              color: Colors.white,
-              size: 18,
-            ),
+            Icon(Icons.block, color: Colors.white, size: 18),
             SizedBox(width: 6),
             Text(
               'لغو چک',
@@ -127,7 +119,10 @@ class ChequeCompactCard extends StatelessWidget {
                 ],
               ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -233,8 +228,9 @@ class ChequeCompactCard extends StatelessWidget {
                                       vertical: -4,
                                     ),
                                     value: isRegistered,
-                                    onChanged: (value) =>
-                                        onToggleRegistered(value ?? false),
+                                    onChanged: (value) {
+                                      onToggleRegistered(value ?? false);
+                                    },
                                   ),
                                 ),
                                 const SizedBox(width: 4),
@@ -265,10 +261,7 @@ class ChequeCompactCard extends StatelessWidget {
     );
   }
 
-  Widget _fieldBox({
-    required BuildContext context,
-    required Widget child,
-  }) {
+  Widget _fieldBox({required BuildContext context, required Widget child}) {
     return Container(
       height: 32,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),

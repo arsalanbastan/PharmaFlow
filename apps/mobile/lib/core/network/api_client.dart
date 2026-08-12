@@ -72,6 +72,132 @@ class ApiClient {
     }
   }
 
+  Future<dynamic> post(
+    String endpoint, {
+    Map<String, String>? headers,
+    Map<String, String>? queryParameters,
+    Object? body,
+  }) async {
+    final uri = _buildUri(endpoint, queryParameters: queryParameters);
+    final requestHeaders = await _buildHeaders(
+      headers: {HttpHeaders.contentTypeHeader: 'application/json', ...?headers},
+    );
+
+    try {
+      final response = await _httpClient
+          .post(
+            uri,
+            headers: requestHeaders,
+            body: body == null ? null : jsonEncode(body),
+          )
+          .timeout(_timeout);
+
+      return _handleResponse(response);
+    } on TimeoutException catch (error) {
+      throw ApiTimeoutException(
+        'Request timed out after ${_timeout.inSeconds} seconds.',
+        error,
+      );
+    } on SocketException catch (error) {
+      throw ApiNetworkException(
+        'No network connection or server is unreachable.',
+        error,
+      );
+    } on FormatException catch (error) {
+      throw ApiDecodingException('Response was not valid JSON.', error);
+    } on ApiException {
+      rethrow;
+    } catch (error) {
+      throw ApiUnknownException(
+        'Unexpected error while sending request.',
+        error,
+      );
+    }
+  }
+
+  Future<dynamic> patch(
+    String endpoint, {
+    Map<String, String>? headers,
+    Map<String, String>? queryParameters,
+    Object? body,
+  }) async {
+    final uri = _buildUri(endpoint, queryParameters: queryParameters);
+    final requestHeaders = await _buildHeaders(
+      headers: {HttpHeaders.contentTypeHeader: 'application/json', ...?headers},
+    );
+
+    try {
+      final response = await _httpClient
+          .patch(
+            uri,
+            headers: requestHeaders,
+            body: body == null ? null : jsonEncode(body),
+          )
+          .timeout(_timeout);
+
+      return _handleResponse(response);
+    } on TimeoutException catch (error) {
+      throw ApiTimeoutException(
+        'Request timed out after ${_timeout.inSeconds} seconds.',
+        error,
+      );
+    } on SocketException catch (error) {
+      throw ApiNetworkException(
+        'No network connection or server is unreachable.',
+        error,
+      );
+    } on FormatException catch (error) {
+      throw ApiDecodingException('Response was not valid JSON.', error);
+    } on ApiException {
+      rethrow;
+    } catch (error) {
+      throw ApiUnknownException(
+        'Unexpected error while sending request.',
+        error,
+      );
+    }
+  }
+
+  Future<dynamic> delete(
+    String endpoint, {
+    Map<String, String>? headers,
+    Map<String, String>? queryParameters,
+  }) async {
+    final uri = _buildUri(endpoint, queryParameters: queryParameters);
+    final requestHeaders = await _buildHeaders(headers: headers);
+
+    try {
+      final response = await _httpClient
+          .delete(uri, headers: requestHeaders)
+          .timeout(_timeout);
+
+      if (response.body.isEmpty) {
+        return null;
+      }
+
+      return _handleResponse(response);
+    } on TimeoutException catch (error) {
+      throw ApiTimeoutException(
+        'Request timed out after ${_timeout.inSeconds} seconds.',
+        error,
+      );
+    } on SocketException catch (error) {
+      throw ApiNetworkException(
+        'No network connection or server is unreachable.',
+        error,
+      );
+    } on FormatException catch (error) {
+      throw ApiDecodingException('Response was not valid JSON.', error);
+    } on ApiException {
+      rethrow;
+    } catch (error) {
+      throw ApiUnknownException(
+        'Unexpected error while sending request.',
+        error,
+      );
+    }
+  }
+
   Future<List<dynamic>> verifyCompaniesListEndpoint() async {
     final payload = await get(ApiConstants.companiesEndpoint);
 
@@ -110,6 +236,13 @@ class ApiClient {
     return baseUri
         .resolve(normalizedEndpoint)
         .replace(queryParameters: queryParameters);
+  }
+
+  Uri resolveUriForDebug(
+    String endpoint, {
+    Map<String, String>? queryParameters,
+  }) {
+    return _buildUri(endpoint, queryParameters: queryParameters);
   }
 
   Future<Map<String, String>> _buildHeaders({

@@ -5,6 +5,8 @@ class ChequeQueries {
 CREATE TABLE IF NOT EXISTS cheques (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
 
+  server_uuid TEXT,
+
   bank_account_id INTEGER NOT NULL,
 
   company_id INTEGER NOT NULL,
@@ -30,6 +32,8 @@ CREATE TABLE IF NOT EXISTS cheques (
   image_data BLOB,
 
   archived_at INTEGER,
+
+  delete_requested_at INTEGER,
 
   created_at INTEGER NOT NULL,
 
@@ -70,6 +74,7 @@ ON cheques(due_date);
 
   static const String insert = '''
 INSERT INTO cheques (
+  server_uuid,
   company_id,
   bank_account_id,
   cheque_number,
@@ -83,9 +88,11 @@ INSERT INTO cheques (
   description,
   image_data,
   archived_at,
+  delete_requested_at,
   created_at,
   updated_at
 ) VALUES (
+  :serverUuid,
   :companyId,
   :bankAccountId,
   :chequeNumber,
@@ -99,6 +106,7 @@ INSERT INTO cheques (
   :description,
   :imageData,
   :archivedAt,
+  :deleteRequestedAt,
   :createdAt,
   :updatedAt
 );
@@ -125,6 +133,7 @@ WHERE id = :id;
   static const String findById = '''
 SELECT
   c.id,
+  c.server_uuid,
   c.company_id,
   c.bank_account_id,
   c.receiver_name,
@@ -138,6 +147,7 @@ SELECT
   c.sayad_id,
   c.image_data,
   c.archived_at,
+  c.delete_requested_at,
   c.created_at,
   c.updated_at,
   co.name AS company_name,
@@ -151,9 +161,10 @@ WHERE c.id = :id
 LIMIT 1;
 ''';
 
-  static const String findList = '''
+  static const String findActive = '''
 SELECT
   c.id,
+  c.server_uuid,
   c.company_id,
   c.bank_account_id,
   c.receiver_name,
@@ -167,6 +178,40 @@ SELECT
   c.sayad_id,
   c.image_data,
   c.archived_at,
+  c.delete_requested_at,
+  c.created_at,
+  c.updated_at,
+  co.name AS company_name,
+  ba.account_title AS bank_account_title
+FROM cheques c
+INNER JOIN companies co
+  ON co.id = c.company_id
+INNER JOIN bank_accounts ba
+  ON ba.id = c.bank_account_id
+WHERE
+  c.archived_at IS NULL
+  AND c.delete_requested_at IS NULL
+ORDER BY c.due_date ASC, c.id ASC;
+''';
+
+  static const String findList = '''
+SELECT
+  c.id,
+  c.server_uuid,
+  c.company_id,
+  c.bank_account_id,
+  c.receiver_name,
+  c.cheque_number,
+  c.amount_rial,
+  c.issue_date,
+  c.due_date,
+  c.status,
+  c.description,
+  c.is_registered_in_sayad,
+  c.sayad_id,
+  c.image_data,
+  c.archived_at,
+  c.delete_requested_at,
   c.created_at,
   c.updated_at,
   co.name AS company_name,
@@ -179,6 +224,7 @@ INNER JOIN bank_accounts ba
 WHERE
   (:includeCancelled = 1 OR c.status != 'Cancelled')
   AND (:includeArchived = 1 OR (c.archived_at IS NULL OR c.archived_at = 0))
+  AND c.delete_requested_at IS NULL
   AND (:fromDate IS NULL OR c.issue_date >= :fromDate)
   AND (:toDate IS NULL OR c.issue_date <= :toDate)
   AND (
@@ -195,6 +241,7 @@ ORDER BY c.created_at DESC, c.id DESC;
   static const String findByCompanyId = '''
 SELECT
   c.id,
+  c.server_uuid,
   c.company_id,
   c.bank_account_id,
   c.receiver_name,
@@ -208,6 +255,7 @@ SELECT
   c.sayad_id,
   c.image_data,
   c.archived_at,
+  c.delete_requested_at,
   c.created_at,
   c.updated_at,
   co.name AS company_name,
@@ -221,6 +269,7 @@ WHERE
   c.company_id = :companyId
   AND (:includeCancelled = 1 OR c.status != 'Cancelled')
   AND (:includeArchived = 1 OR (c.archived_at IS NULL OR c.archived_at = 0))
+  AND c.delete_requested_at IS NULL
   AND (:fromDate IS NULL OR c.issue_date >= :fromDate)
   AND (:toDate IS NULL OR c.issue_date <= :toDate)
   AND (
@@ -235,6 +284,7 @@ ORDER BY c.created_at DESC, c.id DESC;
   static const String findByBankAccountId = '''
 SELECT
   c.id,
+  c.server_uuid,
   c.company_id,
   c.bank_account_id,
   c.receiver_name,
@@ -248,6 +298,7 @@ SELECT
   c.sayad_id,
   c.image_data,
   c.archived_at,
+  c.delete_requested_at,
   c.created_at,
   c.updated_at,
   co.name AS company_name,
@@ -261,6 +312,7 @@ WHERE
   c.bank_account_id = :bankAccountId
   AND (:includeCancelled = 1 OR c.status != 'Cancelled')
   AND (:includeArchived = 1 OR (c.archived_at IS NULL OR c.archived_at = 0))
+  AND c.delete_requested_at IS NULL
   AND (:fromDate IS NULL OR c.issue_date >= :fromDate)
   AND (:toDate IS NULL OR c.issue_date <= :toDate)
   AND (
@@ -275,6 +327,7 @@ ORDER BY c.created_at DESC, c.id DESC;
   static const String findDuplicatesByBankAccountAndChequeNumber = '''
 SELECT
   c.id,
+  c.server_uuid,
   c.company_id,
   c.bank_account_id,
   c.cheque_number,
@@ -285,6 +338,7 @@ SELECT
   c.is_registered_in_sayad,
   c.sayad_id,
   c.archived_at,
+  c.delete_requested_at,
   c.created_at,
   c.updated_at,
   co.name AS company_name,
@@ -296,6 +350,7 @@ INNER JOIN bank_accounts ba
   ON ba.id = c.bank_account_id
 WHERE c.bank_account_id = :bankAccountId
   AND c.cheque_number = :chequeNumber
+  AND c.delete_requested_at IS NULL
 ORDER BY c.issue_date DESC, c.cheque_number DESC;
 ''';
 
@@ -303,6 +358,7 @@ ORDER BY c.issue_date DESC, c.cheque_number DESC;
 SELECT c.cheque_number
 FROM cheques c
 WHERE c.bank_account_id = :bankAccountId
+  AND c.delete_requested_at IS NULL
 ORDER BY c.issue_date DESC, c.created_at DESC, c.id DESC
 LIMIT 1;
 ''';
@@ -315,6 +371,7 @@ INNER JOIN companies co
 WHERE
   (:includeCancelled = 1 OR c.status != 'Cancelled')
   AND (:includeArchived = 1 OR (c.archived_at IS NULL OR c.archived_at = 0))
+  AND c.delete_requested_at IS NULL
   AND (:fromDate IS NULL OR c.issue_date >= :fromDate)
   AND (:toDate IS NULL OR c.issue_date <= :toDate)
   AND (
@@ -336,6 +393,7 @@ WHERE
   c.company_id = :companyId
   AND (:includeCancelled = 1 OR c.status != 'Cancelled')
   AND (:includeArchived = 1 OR (c.archived_at IS NULL OR c.archived_at = 0))
+  AND c.delete_requested_at IS NULL
   AND (:fromDate IS NULL OR c.issue_date >= :fromDate)
   AND (:toDate IS NULL OR c.issue_date <= :toDate)
   AND (
@@ -355,6 +413,7 @@ WHERE
   c.bank_account_id = :bankAccountId
   AND (:includeCancelled = 1 OR c.status != 'Cancelled')
   AND (:includeArchived = 1 OR (c.archived_at IS NULL OR c.archived_at = 0))
+  AND c.delete_requested_at IS NULL
   AND (:fromDate IS NULL OR c.issue_date >= :fromDate)
   AND (:toDate IS NULL OR c.issue_date <= :toDate)
   AND (
@@ -363,5 +422,27 @@ WHERE
     OR co.name LIKE '%' || :search || '%'
     OR c.cheque_number LIKE '%' || :search || '%'
   );
+''';
+
+  static const String markDeleteRequestedById = '''
+UPDATE cheques
+SET
+  archived_at = COALESCE(archived_at, :archivedAt),
+  delete_requested_at = :deleteRequestedAt,
+  updated_at = :updatedAt
+WHERE id = :id;
+''';
+
+  static const String updateServerUuidById = '''
+UPDATE cheques
+SET
+  server_uuid = :serverUuid,
+  updated_at = :updatedAt
+WHERE id = :id;
+''';
+
+  static const String deleteById = '''
+DELETE FROM cheques
+WHERE id = :id;
 ''';
 }

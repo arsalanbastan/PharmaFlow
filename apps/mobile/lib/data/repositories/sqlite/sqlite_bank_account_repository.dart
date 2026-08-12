@@ -1,8 +1,12 @@
 import 'package:sqlite3/sqlite3.dart';
 
 import '../../../core/database/database_service.dart';
+import '../../../core/sync/sync_queue_item.dart';
+import '../../../core/sync/sync_trigger.dart';
+import '../../../core/sync/sync_trigger_dispatcher.dart';
 import '../../mappers/bank_account_mapper.dart';
 import '../../models/bank_account.dart';
+import '../local/sync_queue_repository.dart';
 import '../exceptions/repository_exceptions.dart';
 import '../interfaces/bank_account_repository.dart';
 
@@ -11,13 +15,13 @@ class SqliteBankAccountRepository implements BankAccountRepository {
 
   final DatabaseService _databaseService;
 
+  SyncQueueRepository get _syncQueueRepository =>
+      SyncQueueRepository(_databaseService);
+
   Database get _db => _databaseService.database;
 
   String _normalizeAccountTitle(String value) {
-    return value.trim().replaceAll(
-      RegExp(r'\s+'),
-      ' ',
-    );
+    return value.trim().replaceAll(RegExp(r'\s+'), ' ');
   }
 
   List<BankAccount> _mapAccounts(ResultSet result) {
@@ -26,9 +30,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
 
   @override
   Future<int> insert(BankAccount account) async {
-    final normalizedAccountTitle = _normalizeAccountTitle(
-      account.accountTitle,
-    );
+    final normalizedAccountTitle = _normalizeAccountTitle(account.accountTitle);
 
     if (normalizedAccountTitle.isEmpty) {
       throw ArgumentError('Bank account title cannot be empty.');
@@ -46,6 +48,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
     _databaseService.transaction((db) {
       final statement = db.prepare('''
         INSERT INTO bank_accounts (
+          server_uuid,
           bank_name,
           account_title,
           account_holder,
@@ -57,10 +60,11 @@ class SqliteBankAccountRepository implements BankAccountRepository {
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''');
 
       statement.execute([
+        values['server_uuid'],
         values['bank_name'],
         values['account_title'],
         values['account_holder'],
@@ -77,35 +81,27 @@ class SqliteBankAccountRepository implements BankAccountRepository {
     });
 
     final id =
-        _db.select(
-          'SELECT last_insert_rowid() AS id',
-        ).first['id'] as int;
+        _db.select('SELECT last_insert_rowid() AS id').first['id'] as int;
 
     return id;
   }
 
   @override
-  Future<List<BankAccount>> getAll({
-    bool includeArchived = false,
-  }) async {
+  Future<List<BankAccount>> getAll({bool includeArchived = false}) async {
     final result = includeArchived
-        ? _db.select(
-            '''
+        ? _db.select('''
             SELECT *
             FROM bank_accounts
             ORDER BY bank_name COLLATE NOCASE,
                      account_title COLLATE NOCASE
-            ''',
-          )
-        : _db.select(
-            '''
+            ''')
+        : _db.select('''
             SELECT *
             FROM bank_accounts
             WHERE (archived_at IS NULL OR archived_at = 0)
             ORDER BY bank_name COLLATE NOCASE,
                      account_title COLLATE NOCASE
-            ''',
-          );
+            ''');
 
     return _mapAccounts(result);
   }
@@ -199,9 +195,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
   }
 
   @override
-  Future<int> count({
-    bool includeArchived = false,
-  }) async {
+  Future<int> count({bool includeArchived = false}) async {
     final result = includeArchived
         ? _db.select('SELECT COUNT(*) AS count FROM bank_accounts')
         : _db.select(
@@ -217,9 +211,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
       throw ArgumentError('Bank account id cannot be null.');
     }
 
-    final normalizedAccountTitle = _normalizeAccountTitle(
-      account.accountTitle,
-    );
+    final normalizedAccountTitle = _normalizeAccountTitle(account.accountTitle);
 
     if (normalizedAccountTitle.isEmpty) {
       throw ArgumentError('Bank account title cannot be empty.');
@@ -248,6 +240,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
       '''
       UPDATE bank_accounts
       SET
+        server_uuid = ?,
         bank_name = ?,
         account_title = ?,
         account_holder = ?,
@@ -260,6 +253,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
       WHERE id = ?
       ''',
       [
+        values['server_uuid'],
         values['bank_name'],
         values['account_title'],
         values['account_holder'],
@@ -272,6 +266,12 @@ class SqliteBankAccountRepository implements BankAccountRepository {
         account.id,
       ],
     );
+
+    await _syncQueueRepository.enqueueUpdateWithMerge(
+      entityType: syncEntityTypeBankAccount,
+      entityId: account.id!,
+    );
+    SyncTriggerDispatcher.instance.request(SyncTrigger.entityChanged);
   }
 
   @override
@@ -286,11 +286,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
         updated_at = ?
       WHERE id = ?
       ''',
-      [
-        now,
-        now,
-        id,
-      ],
+      [now, now, id],
     );
   }
 
@@ -304,10 +300,7 @@ class SqliteBankAccountRepository implements BankAccountRepository {
         updated_at = ?
       WHERE id = ?
       ''',
-      [
-        DateTime.now().millisecondsSinceEpoch,
-        id,
-      ],
+      [DateTime.now().millisecondsSinceEpoch, id],
     );
   }
 
@@ -318,9 +311,29 @@ class SqliteBankAccountRepository implements BankAccountRepository {
       DELETE FROM bank_accounts
       WHERE id = ?
       ''',
-      [
-        id,
-      ],
+      [id],
+    );
+  }
+
+  Future<void> updateServerUuid({
+    required int localId,
+    required String serverUuid,
+  }) async {
+    final normalized = serverUuid.trim();
+
+    if (normalized.isEmpty) {
+      throw ArgumentError('serverUuid cannot be empty.');
+    }
+
+    _db.execute(
+      '''
+      UPDATE bank_accounts
+      SET
+        server_uuid = ?,
+        updated_at = ?
+      WHERE id = ?
+      ''',
+      [normalized, DateTime.now().millisecondsSinceEpoch, localId],
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart' show NumberFormat;
 import 'package:shamsi_date/shamsi_date.dart';
 
+import '../../../settings/presentation/providers/app_preferences_provider.dart';
 import '../../domain/models/commitment_company_summary.dart';
 import '../../domain/models/commitment_day_summary.dart';
 import '../../domain/models/commitment_period.dart';
@@ -23,6 +24,15 @@ class _CommitmentPeriodListState extends ConsumerState<CommitmentPeriodList> {
   @override
   Widget build(BuildContext context) {
     final summaryAsync = ref.watch(dashboardSummaryProvider);
+    final settings = ref.watch(appPreferencesProvider).valueOrNull;
+    final thresholds = DashboardAmountThresholds(
+      green:
+          settings?.thresholds.green ?? defaultDashboardAmountThresholds.green,
+      orange:
+          settings?.thresholds.orange ??
+          defaultDashboardAmountThresholds.orange,
+      red: settings?.thresholds.red ?? defaultDashboardAmountThresholds.red,
+    );
 
     return summaryAsync.when(
       data: (summary) {
@@ -67,6 +77,7 @@ class _CommitmentPeriodListState extends ConsumerState<CommitmentPeriodList> {
 
                           return _PeriodGroup(
                             period: period,
+                            thresholds: thresholds,
                             expanded: isExpanded,
                             onTap: () {
                               setState(() {
@@ -101,18 +112,23 @@ class _CommitmentPeriodListState extends ConsumerState<CommitmentPeriodList> {
 class _PeriodGroup extends StatelessWidget {
   const _PeriodGroup({
     required this.period,
+    required this.thresholds,
     required this.expanded,
     required this.onTap,
   });
 
   final CommitmentPeriod period;
+  final DashboardAmountThresholds thresholds;
   final bool expanded;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final amount = NumberFormat.decimalPattern('en').format(period.totalAmount);
-    final amountColor = dashboardAmountColor(period.totalAmount);
+    final amountColor = dashboardAmountColor(
+      period.totalAmount,
+      thresholds: thresholds,
+    );
     final range = _formatJalaliRange(period.startDate, period.endDate);
 
     return Column(
@@ -180,16 +196,21 @@ class _PeriodGroup extends StatelessWidget {
             ),
           ),
         ),
-        if (expanded) _CommitmentDaysSection(period: period),
+        if (expanded)
+          _CommitmentDaysSection(period: period, thresholds: thresholds),
       ],
     );
   }
 }
 
 class _CommitmentDaysSection extends ConsumerStatefulWidget {
-  const _CommitmentDaysSection({required this.period});
+  const _CommitmentDaysSection({
+    required this.period,
+    required this.thresholds,
+  });
 
   final CommitmentPeriod period;
+  final DashboardAmountThresholds thresholds;
 
   @override
   ConsumerState<_CommitmentDaysSection> createState() =>
@@ -228,6 +249,7 @@ class _CommitmentDaysSectionState
               for (var i = 0; i < days.length; i++) ...[
                 _CommitmentDayRow(
                   day: days[i],
+                  thresholds: widget.thresholds,
                   expanded: _expandedDays.contains(
                     days[i].date.millisecondsSinceEpoch,
                   ),
@@ -278,11 +300,13 @@ class _CommitmentDaysSectionState
 class _CommitmentDayRow extends StatelessWidget {
   const _CommitmentDayRow({
     required this.day,
+    required this.thresholds,
     required this.expanded,
     required this.onTap,
   });
 
   final CommitmentDaySummary day;
+  final DashboardAmountThresholds thresholds;
   final bool expanded;
   final VoidCallback onTap;
 
@@ -291,7 +315,10 @@ class _CommitmentDayRow extends StatelessWidget {
     final jDate = Jalali.fromDateTime(day.date);
     final dayLabel = '${jDate.day} ${_jalaliMonthNames[jDate.month - 1]}';
     final amount = NumberFormat.decimalPattern('en').format(day.totalAmount);
-    final amountColor = dashboardAmountColor(day.totalAmount);
+    final amountColor = dashboardAmountColor(
+      day.totalAmount,
+      thresholds: thresholds,
+    );
 
     return Column(
       children: [

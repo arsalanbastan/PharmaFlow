@@ -8,6 +8,7 @@ part of 'cheque.dart';
 
 _Cheque _$ChequeFromJson(Map<String, dynamic> json) => _Cheque(
   id: (json['id'] as num).toInt(),
+  serverUuid: json['serverUuid'] as String?,
   companyId: (json['companyId'] as num).toInt(),
   bankAccountId: (json['bankAccountId'] as num).toInt(),
   chequeNumber: json['chequeNumber'] as String,
@@ -22,6 +23,9 @@ _Cheque _$ChequeFromJson(Map<String, dynamic> json) => _Cheque(
   archivedAt: json['archivedAt'] == null
       ? null
       : DateTime.parse(json['archivedAt'] as String),
+  deleteRequestedAt: json['deleteRequestedAt'] == null
+      ? null
+      : DateTime.parse(json['deleteRequestedAt'] as String),
   imageData: _imageDataFromJson(json['imageData'] as String?),
   createdAt: DateTime.parse(json['createdAt'] as String),
   updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -29,6 +33,7 @@ _Cheque _$ChequeFromJson(Map<String, dynamic> json) => _Cheque(
 
 Map<String, dynamic> _$ChequeToJson(_Cheque instance) => <String, dynamic>{
   'id': instance.id,
+  'serverUuid': instance.serverUuid,
   'companyId': instance.companyId,
   'bankAccountId': instance.bankAccountId,
   'chequeNumber': instance.chequeNumber,
@@ -41,6 +46,7 @@ Map<String, dynamic> _$ChequeToJson(_Cheque instance) => <String, dynamic>{
   'receiverName': instance.receiverName,
   'description': instance.description,
   'archivedAt': instance.archivedAt?.toIso8601String(),
+  'deleteRequestedAt': instance.deleteRequestedAt?.toIso8601String(),
   'imageData': _imageDataToJson(instance.imageData),
   'createdAt': instance.createdAt.toIso8601String(),
   'updatedAt': instance.updatedAt.toIso8601String(),

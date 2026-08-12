@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../cheques/presentation/providers/active_cheques_provider.dart';
+import '../../../dashboard/presentation/providers/dashboard_provider.dart';
+import '../../../reports/presentation/providers/reports_providers.dart';
 import '../providers/communication_settings_provider.dart';
 import '../widgets/diagnostics_row.dart';
 import '../widgets/settings_section_card.dart';
@@ -12,6 +15,24 @@ class CommunicationSettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(communicationSettingsProvider);
     final notifier = ref.read(communicationSettingsProvider.notifier);
+    final syncState = ref.watch(syncStateProvider).valueOrNull;
+    final resolvedLastSuccessfulSync =
+        syncState?.lastSuccessfulSyncAt ?? state.lastSuccessfulSyncAt;
+    final resolvedLastAttempt =
+        syncState?.lastSyncAttemptAt ?? state.lastSyncAttemptAt;
+
+    ref.listen(syncStateProvider, (previous, next) {
+      final nextState = next.valueOrNull;
+      final lastSuccessfulSync = nextState?.lastSuccessfulSyncAt;
+      if (lastSuccessfulSync != null) {
+        notifier.updateLastSuccessfulSyncAt(lastSuccessfulSync);
+      }
+
+      final lastAttempt = nextState?.lastSyncAttemptAt;
+      if (lastAttempt != null) {
+        notifier.updateLastSyncAttemptAt(lastAttempt);
+      }
+    });
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -87,14 +108,55 @@ class CommunicationSettingsPage extends ConsumerWidget {
                         onChanged: notifier.setWifiOnly,
                       ),
                       DiagnosticsRow(
-                        label: 'Last Sync',
-                        value: _formatDateTime(state.lastSync),
+                        label: 'آخرین همگام سازی موفق',
+                        value: _formatDateTime(resolvedLastSuccessfulSync),
+                      ),
+                      DiagnosticsRow(
+                        label: 'آخرین تلاش',
+                        value: _formatDateTime(resolvedLastAttempt),
                       ),
                       const SizedBox(height: 8),
                       OutlinedButton.icon(
-                        onPressed: null,
+                        onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final syncService = ref.read(syncServiceProvider);
+
+                          try {
+                            final result = await syncService.retryManually();
+
+                            if (!context.mounted) {
+                              return;
+                            }
+
+                            final text = result.serverUnavailable
+                                ? 'عدم دسترسی به سرور'
+                                : result.hasFailures
+                                ? 'همگام سازی ناقص بود. موفق: ${result.succeeded}، ناموفق: ${result.failed}'
+                                : 'همگام سازی انجام شد. موارد موفق: ${result.succeeded}';
+
+                            messenger.showSnackBar(
+                              SnackBar(content: Text(text)),
+                            );
+                          } catch (_) {
+                            if (!context.mounted) {
+                              return;
+                            }
+
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('همگام سازی با خطا مواجه شد.'),
+                              ),
+                            );
+                          }
+                        },
                         icon: const Icon(Icons.sync),
-                        label: const Text('Manual Sync (Coming Soon)'),
+                        label: const Text('Sync Now'),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => _onBootstrapPressed(context, ref),
+                        icon: const Icon(Icons.storage_outlined),
+                        label: const Text('Bootstrap Local Database'),
                       ),
                     ],
                   ),
@@ -184,6 +246,152 @@ class CommunicationSettingsPage extends ConsumerWidget {
               ),
       ),
     );
+  }
+
+  Future<void> _onBootstrapPressed(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Initial Device Setup'),
+          content: const Text(
+            'This downloads all Companies, Bank Accounts and Cheques\n'
+            'from the server and rebuilds the local database.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Bootstrap'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    final progress = ValueNotifier<String>('Downloading Companies...');
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return PopScope(
+          canPop: false,
+          child: AlertDialog(
+            title: const Text('Initial Device Setup'),
+            content: ValueListenableBuilder<String>(
+              valueListenable: progress,
+              builder: (context, value, _) {
+                return Row(
+                  children: [
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(value)),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+
+    try {
+      progress.value = 'Downloading Companies...';
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      progress.value = 'Downloading Bank Accounts...';
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      progress.value = 'Downloading Cheques...';
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      progress.value = 'Building local database...';
+      await ref.read(identityBootstrapServiceProvider).bootstrap();
+
+      progress.value = 'Completed.';
+
+      await ref.read(syncServiceProvider).refreshState();
+      _refreshPostBootstrapData(ref);
+
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+
+      if (!context.mounted) {
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Initial Device Setup'),
+            content: const Text('Bootstrap completed successfully.'),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (error) {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+
+      if (!context.mounted) {
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Initial Device Setup'),
+            content: Text(error.toString()),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      progress.dispose();
+    }
+  }
+
+  void _refreshPostBootstrapData(WidgetRef ref) {
+    ref.invalidate(activeChequesProvider);
+    ref.invalidate(activeChequeLookupProvider);
+    ref.invalidate(dashboardSummaryProvider);
+    ref.invalidate(reportFilteredChequesProvider);
+    ref.invalidate(companyPerformanceReportProvider);
+    ref.invalidate(upcomingCommitmentsReportProvider);
+    ref.invalidate(bankAccountSummaryReportProvider);
+    ref.invalidate(sayadStatusReportProvider);
+    ref.invalidate(monthlyCommitmentReportProvider);
+    ref.invalidate(largeAmountThresholdProvider);
+    ref.invalidate(largeAmountChequesReportProvider);
+    ref.invalidate(activityReportProvider);
+    ref.invalidate(syncStateProvider);
+    ref.invalidate(communicationSettingsProvider);
   }
 
   Widget _inputField({

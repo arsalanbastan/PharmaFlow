@@ -28,6 +28,7 @@ model Company {
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  archivedAt    DateTime?
   deletedAt     DateTime?
 
   cheques       Cheque[]
@@ -49,6 +50,7 @@ model BankAccount {
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  archivedAt    DateTime?
   deletedAt     DateTime?
 
   cheques       Cheque[]
@@ -77,10 +79,11 @@ model Cheque {
 
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+  archivedAt    DateTime?
   deletedAt     DateTime?
 
-  company       Company     @relation(fields: [companyId], references: [id])
-  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
+  company       Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
 
   @@index([bankAccountId, chequeNumber, deletedAt], map: "cheques_bankAccountId_chequeNumber_deletedAt_idx")
   @@map("cheques")

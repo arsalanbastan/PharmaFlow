@@ -22,16 +22,13 @@ String? _imageDataToJson(Uint8List? value) {
   return base64Encode(value);
 }
 
-enum ChequeStatus {
-  issued,
-  registered,
-  cancelled,
-}
+enum ChequeStatus { issued, registered, cancelled }
 
 @freezed
 abstract class Cheque with _$Cheque {
   const factory Cheque({
     required int id,
+    String? serverUuid,
     required int companyId,
     required int bankAccountId,
     required String chequeNumber,
@@ -44,6 +41,7 @@ abstract class Cheque with _$Cheque {
     String? receiverName,
     String? description,
     DateTime? archivedAt,
+    DateTime? deleteRequestedAt,
     @JsonKey(fromJson: _imageDataFromJson, toJson: _imageDataToJson)
     Uint8List? imageData,
     required DateTime createdAt,

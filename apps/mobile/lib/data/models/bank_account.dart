@@ -1,6 +1,7 @@
 class BankAccount {
   const BankAccount({
     required this.id,
+    this.serverUuid,
     required this.bankName,
     required this.accountTitle,
     required this.accountHolder,
@@ -14,6 +15,8 @@ class BankAccount {
   });
 
   final int? id;
+
+  final String? serverUuid;
 
   final String bankName;
 

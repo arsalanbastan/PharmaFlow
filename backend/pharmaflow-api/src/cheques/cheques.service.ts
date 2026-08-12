@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma/prisma.service';
 import { CreateChequeDto } from './dto/create-cheque.dto';
 import { UpdateChequeDto } from './dto/update-cheque.dto';
@@ -8,6 +12,8 @@ export class ChequesService {
   constructor(
     private readonly prisma: PrismaService,
   ) {}
+
+  private readonly logger = new Logger(ChequesService.name);
 
   private async prepareDuplicateWarningContext(
     bankAccountId: string,
@@ -97,7 +103,7 @@ export class ChequesService {
       );
     }
 
-    return this.prisma.cheque.update({
+    const prismaUpdateInput = {
       where: {
         id,
       },
@@ -110,17 +116,65 @@ export class ChequesService {
           ? { dueDate: new Date(updateChequeDto.dueDate) }
           : {}),
       },
-    });
+    };
+
+    return this.prisma.cheque.update(prismaUpdateInput);
   }
 
-  async remove(id: string) {
-    return this.prisma.cheque.update({
+  async remove(uuid: string) {
+    const existingCheque = await this.prisma.cheque.findFirst({
       where: {
-        id,
-      },
-      data: {
-        deletedAt: new Date(),
+        id: uuid,
+        deletedAt: null,
       },
     });
+
+    if (!existingCheque) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'cheque.delete',
+          chequeUuid: uuid,
+          previousState: null,
+          newState: null,
+          timestamp: new Date().toISOString(),
+          outcome: 'not_found',
+        }),
+      );
+      throw new NotFoundException('Cheque not found');
+    }
+
+    const now = new Date();
+    const deletedCheque = await this.prisma.cheque.update({
+      where: {
+        id: uuid,
+      },
+      data: {
+        archivedAt: now,
+        deletedAt: now,
+      },
+    });
+
+    this.logger.log(
+      JSON.stringify({
+        event: 'cheque.delete',
+        chequeUuid: uuid,
+        previousState: {
+          id: existingCheque.id,
+          archivedAt: existingCheque.archivedAt,
+          deletedAt: existingCheque.deletedAt,
+          status: existingCheque.status,
+          updatedAt: existingCheque.updatedAt,
+        },
+        newState: {
+          id: deletedCheque.id,
+          archivedAt: deletedCheque.archivedAt,
+          deletedAt: deletedCheque.deletedAt,
+          status: deletedCheque.status,
+          updatedAt: deletedCheque.updatedAt,
+        },
+        timestamp: now.toISOString(),
+        outcome: 'soft_deleted',
+      }),
+    );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../bank_accounts/presentation/pages/bank_account_list_page.dart';
 import '../../../cheques/presentation/pages/cheque_list_page.dart';
@@ -12,38 +13,49 @@ class MenuPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppScaffold(
-      title: 'منو',
-      currentDestination: AppShellDestination.menu,
-      body: ListView(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.account_balance_outlined),
-            title: const Text('حساب های بانکی', textAlign: TextAlign.right),
-            onTap: () => _open(context, const BankAccountListPage()),
-          ),
-          ListTile(
-            leading: const Icon(Icons.apartment_outlined),
-            title: const Text('شرکت ها', textAlign: TextAlign.right),
-            onTap: () => _open(context, const CompanyListPage()),
-          ),
-          ListTile(
-            leading: const Icon(Icons.receipt_long_outlined),
-            title: const Text('چک ها', textAlign: TextAlign.right),
-            onTap: () => _open(context, const ChequeListPage()),
-          ),
-          ListTile(
-            leading: const Icon(Icons.person_outline),
-            title: const Text('کاربران', textAlign: TextAlign.right),
-            onTap: () =>
-                _open(context, const _ModulePlaceholderPage(title: 'کاربران')),
-          ),
-          ListTile(
-            leading: const Icon(Icons.settings_outlined),
-            title: const Text('تنظیمات', textAlign: TextAlign.right),
-            onTap: () => _open(context, const SettingsPage()),
-          ),
-        ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          return;
+        }
+        context.go('/');
+      },
+      child: AppScaffold(
+        title: 'منو',
+        currentDestination: AppShellDestination.menu,
+        body: ListView(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.account_balance_outlined),
+              title: const Text('حساب های بانکی', textAlign: TextAlign.right),
+              onTap: () => _open(context, const BankAccountListPage()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.apartment_outlined),
+              title: const Text('شرکت ها', textAlign: TextAlign.right),
+              onTap: () => _open(context, const CompanyListPage()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.receipt_long_outlined),
+              title: const Text('چک ها', textAlign: TextAlign.right),
+              onTap: () => _open(context, const ChequeListPage()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: const Text('کاربران', textAlign: TextAlign.right),
+              onTap: () => _open(
+                context,
+                const _ModulePlaceholderPage(title: 'کاربران'),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('تنظیمات', textAlign: TextAlign.right),
+              onTap: () => _open(context, const SettingsPage()),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -5,6 +5,8 @@ class BankAccountQueries {
   CREATE TABLE IF NOT EXISTS bank_accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 
+    server_uuid TEXT,
+
     bank_name TEXT NOT NULL,
 
     account_title TEXT NOT NULL,

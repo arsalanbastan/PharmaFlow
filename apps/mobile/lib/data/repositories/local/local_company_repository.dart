@@ -3,8 +3,12 @@
 import 'package:sqlite3/sqlite3.dart';
 
 import '../../../core/database/database_service.dart';
+import '../../../core/sync/sync_queue_item.dart';
+import '../../../core/sync/sync_trigger.dart';
+import '../../../core/sync/sync_trigger_dispatcher.dart';
 import '../../mappers/company_mapper.dart';
 import '../../models/company.dart';
+import 'sync_queue_repository.dart';
 import '../exceptions/repository_exceptions.dart';
 import '../interfaces/company_repository.dart';
 import '../../../core/utils/company_name_normalizer.dart';
@@ -13,6 +17,9 @@ class LocalCompanyRepository implements CompanyRepository {
   LocalCompanyRepository(this._databaseService);
 
   final DatabaseService _databaseService;
+
+  SyncQueueRepository get _syncQueueRepository =>
+      SyncQueueRepository(_databaseService);
 
   Database get _db => _databaseService.database;
 
@@ -35,11 +42,12 @@ class LocalCompanyRepository implements CompanyRepository {
     _databaseService.transaction((db) {
       final statement = db.prepare('''
         INSERT INTO companies (
-          name,national_id,economic_code,notes,visitor_name,visitor_phone,accountant_name,accountant_phone,archived_at,created_at,updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          server_uuid,name,national_id,economic_code,notes,visitor_name,visitor_phone,accountant_name,accountant_phone,archived_at,created_at,updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''');
 
       statement.execute([
+        values['server_uuid'],
         values['name'],
         values['national_id'],
         values['economic_code'],
@@ -56,51 +64,66 @@ class LocalCompanyRepository implements CompanyRepository {
       statement.dispose();
     });
 
-    final id = _db.select('SELECT last_insert_rowid() AS id').first['id'] as int;
+    final id =
+        _db.select('SELECT last_insert_rowid() AS id').first['id'] as int;
     return id;
   }
 
   Future<bool> existsByName(String name) async {
-    final result = _db.select('''
+    final result = _db.select(
+      '''
       SELECT COUNT(*) AS count
       FROM companies
       WHERE (archived_at IS NULL OR archived_at = 0)
         AND LOWER(name)=LOWER(?)
-    ''',[name.trim()]);
+    ''',
+      [name.trim()],
+    );
     return (result.first['count'] as int) > 0;
   }
 
   Future<Company?> findById(int id) async {
-    final result = _db.select('SELECT * FROM companies WHERE id=? LIMIT 1',[id]);
-    if(result.isEmpty) return null;
+    final result = _db.select('SELECT * FROM companies WHERE id=? LIMIT 1', [
+      id,
+    ]);
+    if (result.isEmpty) return null;
     return CompanyMapper.fromMap(result.first);
   }
 
   Future<Company?> findByName(String name) async {
-    final result = _db.select('''
+    final result = _db.select(
+      '''
       SELECT *
       FROM companies
       WHERE (archived_at IS NULL OR archived_at = 0)
         AND LOWER(name)=LOWER(?)
       LIMIT 1
-    ''',[name.trim()]);
-    if(result.isEmpty) return null;
+    ''',
+      [name.trim()],
+    );
+    if (result.isEmpty) return null;
     return CompanyMapper.fromMap(result.first);
   }
 
   @override
-  Future<List<Company>> getAll({bool includeArchived=false}) async {
-    final result = _db.select(includeArchived
-      ? 'SELECT * FROM companies ORDER BY name COLLATE NOCASE'
-      : 'SELECT * FROM companies WHERE (archived_at IS NULL OR archived_at = 0) ORDER BY name COLLATE NOCASE');
-    return result.map((e)=>CompanyMapper.fromMap(e)).toList();
+  Future<List<Company>> getAll({bool includeArchived = false}) async {
+    final result = _db.select(
+      includeArchived
+          ? 'SELECT * FROM companies ORDER BY name COLLATE NOCASE'
+          : 'SELECT * FROM companies WHERE (archived_at IS NULL OR archived_at = 0) ORDER BY name COLLATE NOCASE',
+    );
+    return result.map((e) => CompanyMapper.fromMap(e)).toList();
   }
 
   @override
-  Future<List<Company>> search(String query, {bool includeArchived = false}) async {
-    final keyword='%${query.trim()}%';
-    final result=_db.select(includeArchived
-      ? '''
+  Future<List<Company>> search(
+    String query, {
+    bool includeArchived = false,
+  }) async {
+    final keyword = '%${query.trim()}%';
+    final result = _db.select(
+      includeArchived
+          ? '''
       SELECT *
       FROM companies
       WHERE (
@@ -110,7 +133,7 @@ class LocalCompanyRepository implements CompanyRepository {
       )
       ORDER BY name COLLATE NOCASE
     '''
-      : '''
+          : '''
       SELECT *
       FROM companies
       WHERE (archived_at IS NULL OR archived_at = 0)
@@ -120,41 +143,48 @@ class LocalCompanyRepository implements CompanyRepository {
         OR economic_code LIKE ?
       )
       ORDER BY name COLLATE NOCASE
-    ''',[keyword,keyword,keyword]);
-    return result.map((e)=>CompanyMapper.fromMap(e)).toList();
+    ''',
+      [keyword, keyword, keyword],
+    );
+    return result.map((e) => CompanyMapper.fromMap(e)).toList();
   }
 
   @override
   Future<void> update(Company company) async {
-    if(company.id==null){
+    if (company.id == null) {
       throw const CompanyNotFoundException();
     }
 
-    final normalizedName=company.name.trim().replaceAll(RegExp(r'\s+'),' ');
+    final normalizedName = company.name.trim().replaceAll(RegExp(r'\s+'), ' ');
 
-    final duplicate=_db.select('''
+    final duplicate = _db.select(
+      '''
       SELECT id
       FROM companies
       WHERE (archived_at IS NULL OR archived_at = 0)
         AND LOWER(name)=LOWER(?)
         AND id<>?
       LIMIT 1
-    ''',[normalizedName,company.id]);
+    ''',
+      [normalizedName, company.id],
+    );
 
-    if(duplicate.isNotEmpty){
+    if (duplicate.isNotEmpty) {
       throw const DuplicateCompanyNameException();
     }
 
-    final entity=company.copyWith(
+    final entity = company.copyWith(
       name: normalizedName,
       updatedAt: DateTime.now(),
     );
 
-    final values=CompanyMapper.toMap(entity);
+    final values = CompanyMapper.toMap(entity);
 
-    _db.execute('''
+    _db.execute(
+      '''
       UPDATE companies
       SET
+        server_uuid=?,
         name=?,
         national_id=?,
         economic_code=?,
@@ -166,65 +196,94 @@ class LocalCompanyRepository implements CompanyRepository {
         archived_at=?,
         updated_at=?
       WHERE id=?
-    ''',[
-      values['name'],
-      values['national_id'],
-      values['economic_code'],
-      values['notes'],
-      values['visitor_name'],
-      values['visitor_phone'],
-      values['accountant_name'],
-      values['accountant_phone'],
-      values['archived_at'],
-      values['updated_at'],
-      company.id,
-    ]);
+    ''',
+      [
+        values['server_uuid'],
+        values['name'],
+        values['national_id'],
+        values['economic_code'],
+        values['notes'],
+        values['visitor_name'],
+        values['visitor_phone'],
+        values['accountant_name'],
+        values['accountant_phone'],
+        values['archived_at'],
+        values['updated_at'],
+        company.id,
+      ],
+    );
+
+    await _syncQueueRepository.enqueueUpdateWithMerge(
+      entityType: syncEntityTypeCompany,
+      entityId: company.id!,
+    );
+    SyncTriggerDispatcher.instance.request(SyncTrigger.entityChanged);
   }
 
   @override
   Future<void> archive(int id) async {
-    final now=DateTime.now().millisecondsSinceEpoch;
-    _db.execute(
-      'UPDATE companies SET archived_at=?, updated_at=? WHERE id=?',
-      [now,now,id],
-    );
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _db.execute('UPDATE companies SET archived_at=?, updated_at=? WHERE id=?', [
+      now,
+      now,
+      id,
+    ]);
   }
 
   @override
   Future<void> restore(int id) async {
     _db.execute(
       'UPDATE companies SET archived_at=NULL, updated_at=? WHERE id=?',
-      [DateTime.now().millisecondsSinceEpoch,id],
+      [DateTime.now().millisecondsSinceEpoch, id],
     );
   }
 
-  Future<int> count({bool includeArchived=false}) async {
-    final result=_db.select(includeArchived
-      ? 'SELECT COUNT(*) AS count FROM companies'
-      : 'SELECT COUNT(*) AS count FROM companies WHERE (archived_at IS NULL OR archived_at = 0)');
+  Future<int> count({bool includeArchived = false}) async {
+    final result = _db.select(
+      includeArchived
+          ? 'SELECT COUNT(*) AS count FROM companies'
+          : 'SELECT COUNT(*) AS count FROM companies WHERE (archived_at IS NULL OR archived_at = 0)',
+    );
     return result.first['count'] as int;
   }
 
-@override
-Future<List<Company>> findSimilar(String name) async {
-  final companies = await getAll();
+  @override
+  Future<List<Company>> findSimilar(String name) async {
+    final companies = await getAll();
 
-  final normalizedInput =
-      CompanyNameNormalizer.normalize(name);
+    final normalizedInput = CompanyNameNormalizer.normalize(name);
 
-  if (normalizedInput.isEmpty) {
-    return [];
+    if (normalizedInput.isEmpty) {
+      return [];
+    }
+
+    return companies.where((company) {
+      final normalizedCompany = CompanyNameNormalizer.normalize(company.name);
+
+      return normalizedCompany.contains(normalizedInput) ||
+          normalizedInput.contains(normalizedCompany);
+    }).toList();
   }
 
-  return companies.where((company) {
-    final normalizedCompany =
-        CompanyNameNormalizer.normalize(company.name);
+  Future<void> updateServerUuid({
+    required int localId,
+    required String serverUuid,
+  }) async {
+    final normalized = serverUuid.trim();
 
-    return normalizedCompany.contains(normalizedInput) ||
-        normalizedInput.contains(normalizedCompany);
-  }).toList();
-}
+    if (normalized.isEmpty) {
+      throw ArgumentError('serverUuid cannot be empty.');
+    }
 
-
-
+    _db.execute(
+      '''
+    UPDATE companies
+    SET
+      server_uuid = ?,
+      updated_at = ?
+    WHERE id = ?
+  ''',
+      [normalized, DateTime.now().millisecondsSinceEpoch, localId],
+    );
+  }
 }

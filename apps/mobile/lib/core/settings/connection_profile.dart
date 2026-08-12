@@ -65,14 +65,33 @@ class ConnectionProfile {
       host: (json['host'] as String?)?.trim().isNotEmpty == true
           ? (json['host'] as String).trim()
           : '192.168.1.215',
-      port: (json['port'] as num?)?.toInt() ?? 3000,
+      port: _readInt(json['port'], fallback: 3000),
       useHttps: json['useHttps'] as bool? ?? false,
       apiVersion: (json['apiVersion'] as String?)?.trim().isNotEmpty == true
           ? (json['apiVersion'] as String).trim()
           : 'v1',
-      connectTimeout: (json['connectTimeout'] as num?)?.toInt() ?? 15000,
-      receiveTimeout: (json['receiveTimeout'] as num?)?.toInt() ?? 15000,
+      connectTimeout: _readInt(json['connectTimeout'], fallback: 15000),
+      receiveTimeout: _readInt(json['receiveTimeout'], fallback: 15000),
     );
+  }
+
+  static int _readInt(Object? value, {required int fallback}) {
+    if (value is int) {
+      return value;
+    }
+
+    if (value is num) {
+      return value.toInt();
+    }
+
+    if (value is String) {
+      final parsed = int.tryParse(value.trim());
+      if (parsed != null) {
+        return parsed;
+      }
+    }
+
+    return fallback;
   }
 }
 
@@ -82,7 +101,16 @@ class ConnectionSettings {
     required this.profiles,
     required this.autoSync,
     required this.wifiOnly,
-    this.lastSync,
+    this.displayName = 'ارسلان',
+    this.greenThreshold = 600000000,
+    this.orangeThreshold = 700000000,
+    this.redThreshold = 800000000,
+    this.largeAmountThreshold = 500000000,
+    this.lastSuccessfulSyncAt,
+    this.lastSyncAttemptAt,
+    this.consecutiveConnectionFailures = 0,
+    this.autoRetrySuspended = false,
+    this.lastSyncUserSafeErrorMessage,
     this.lastSuccessfulCheck,
   });
 
@@ -90,7 +118,16 @@ class ConnectionSettings {
   final List<ConnectionProfile> profiles;
   final bool autoSync;
   final bool wifiOnly;
-  final DateTime? lastSync;
+  final String displayName;
+  final int greenThreshold;
+  final int orangeThreshold;
+  final int redThreshold;
+  final int largeAmountThreshold;
+  final DateTime? lastSuccessfulSyncAt;
+  final DateTime? lastSyncAttemptAt;
+  final int consecutiveConnectionFailures;
+  final bool autoRetrySuspended;
+  final String? lastSyncUserSafeErrorMessage;
   final DateTime? lastSuccessfulCheck;
 
   ConnectionProfile get activeProfile {
@@ -108,8 +145,19 @@ class ConnectionSettings {
     List<ConnectionProfile>? profiles,
     bool? autoSync,
     bool? wifiOnly,
-    DateTime? lastSync,
-    bool clearLastSync = false,
+    String? displayName,
+    int? greenThreshold,
+    int? orangeThreshold,
+    int? redThreshold,
+    int? largeAmountThreshold,
+    DateTime? lastSuccessfulSyncAt,
+    bool clearLastSuccessfulSyncAt = false,
+    DateTime? lastSyncAttemptAt,
+    bool clearLastSyncAttemptAt = false,
+    int? consecutiveConnectionFailures,
+    bool? autoRetrySuspended,
+    String? lastSyncUserSafeErrorMessage,
+    bool clearLastSyncUserSafeErrorMessage = false,
     DateTime? lastSuccessfulCheck,
     bool clearLastSuccessfulCheck = false,
   }) {
@@ -118,7 +166,23 @@ class ConnectionSettings {
       profiles: profiles ?? this.profiles,
       autoSync: autoSync ?? this.autoSync,
       wifiOnly: wifiOnly ?? this.wifiOnly,
-      lastSync: clearLastSync ? null : (lastSync ?? this.lastSync),
+      displayName: displayName ?? this.displayName,
+      greenThreshold: greenThreshold ?? this.greenThreshold,
+      orangeThreshold: orangeThreshold ?? this.orangeThreshold,
+      redThreshold: redThreshold ?? this.redThreshold,
+      largeAmountThreshold: largeAmountThreshold ?? this.largeAmountThreshold,
+      lastSuccessfulSyncAt: clearLastSuccessfulSyncAt
+          ? null
+          : (lastSuccessfulSyncAt ?? this.lastSuccessfulSyncAt),
+      lastSyncAttemptAt: clearLastSyncAttemptAt
+          ? null
+          : (lastSyncAttemptAt ?? this.lastSyncAttemptAt),
+      consecutiveConnectionFailures:
+          consecutiveConnectionFailures ?? this.consecutiveConnectionFailures,
+      autoRetrySuspended: autoRetrySuspended ?? this.autoRetrySuspended,
+      lastSyncUserSafeErrorMessage: clearLastSyncUserSafeErrorMessage
+          ? null
+          : (lastSyncUserSafeErrorMessage ?? this.lastSyncUserSafeErrorMessage),
       lastSuccessfulCheck: clearLastSuccessfulCheck
           ? null
           : (lastSuccessfulCheck ?? this.lastSuccessfulCheck),
@@ -131,7 +195,16 @@ class ConnectionSettings {
       'profiles': profiles.map((profile) => profile.toJson()).toList(),
       'autoSync': autoSync,
       'wifiOnly': wifiOnly,
-      'lastSync': lastSync?.toIso8601String(),
+      'displayName': displayName,
+      'greenThreshold': greenThreshold,
+      'orangeThreshold': orangeThreshold,
+      'redThreshold': redThreshold,
+      'largeAmountThreshold': largeAmountThreshold,
+      'lastSuccessfulSyncAt': lastSuccessfulSyncAt?.toIso8601String(),
+      'lastSyncAttemptAt': lastSyncAttemptAt?.toIso8601String(),
+      'consecutiveConnectionFailures': consecutiveConnectionFailures,
+      'autoRetrySuspended': autoRetrySuspended,
+      'lastSyncUserSafeErrorMessage': lastSyncUserSafeErrorMessage,
       'lastSuccessfulCheck': lastSuccessfulCheck?.toIso8601String(),
     };
   }
@@ -157,7 +230,32 @@ class ConnectionSettings {
       profiles: profiles,
       autoSync: json['autoSync'] as bool? ?? false,
       wifiOnly: json['wifiOnly'] as bool? ?? false,
-      lastSync: _tryParseDate(json['lastSync'] as String?),
+      displayName: (json['displayName'] as String?)?.trim().isNotEmpty == true
+          ? (json['displayName'] as String).trim()
+          : 'ارسلان',
+      greenThreshold: _toPositiveInt(
+        json['greenThreshold'],
+        fallback: 600000000,
+      ),
+      orangeThreshold: _toPositiveInt(
+        json['orangeThreshold'],
+        fallback: 700000000,
+      ),
+      redThreshold: _toPositiveInt(json['redThreshold'], fallback: 800000000),
+      largeAmountThreshold: _toPositiveInt(
+        json['largeAmountThreshold'],
+        fallback: 500000000,
+      ),
+      lastSuccessfulSyncAt: _tryParseDate(
+        (json['lastSuccessfulSyncAt'] ?? json['lastSync']) as String?,
+      ),
+      lastSyncAttemptAt: _tryParseDate(json['lastSyncAttemptAt'] as String?),
+      consecutiveConnectionFailures: _toPositiveOrZeroInt(
+        json['consecutiveConnectionFailures'],
+      ),
+      autoRetrySuspended: json['autoRetrySuspended'] as bool? ?? false,
+      lastSyncUserSafeErrorMessage:
+          (json['lastSyncUserSafeErrorMessage'] as String?)?.trim(),
       lastSuccessfulCheck: _tryParseDate(
         json['lastSuccessfulCheck'] as String?,
       ),
@@ -170,6 +268,44 @@ class ConnectionSettings {
     }
 
     return DateTime.tryParse(value);
+  }
+
+  static int _toPositiveInt(Object? value, {required int fallback}) {
+    if (value is int && value > 0) {
+      return value;
+    }
+
+    if (value is num && value > 0) {
+      return value.toInt();
+    }
+
+    if (value is String) {
+      final parsed = int.tryParse(value.trim());
+      if (parsed != null && parsed > 0) {
+        return parsed;
+      }
+    }
+
+    return fallback;
+  }
+
+  static int _toPositiveOrZeroInt(Object? value) {
+    if (value is int && value >= 0) {
+      return value;
+    }
+
+    if (value is num && value >= 0) {
+      return value.toInt();
+    }
+
+    if (value is String) {
+      final parsed = int.tryParse(value.trim());
+      if (parsed != null && parsed >= 0) {
+        return parsed;
+      }
+    }
+
+    return 0;
   }
 }
 

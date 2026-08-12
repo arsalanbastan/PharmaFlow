@@ -56,6 +56,8 @@ class SyncQueueItem {
 }
 
 const String syncEntityTypeCheque = 'CHEQUE';
+const String syncEntityTypeCompany = 'COMPANY';
+const String syncEntityTypeBankAccount = 'BANK_ACCOUNT';
 
 int? _toInt(Object? value) {
   if (value is int) {

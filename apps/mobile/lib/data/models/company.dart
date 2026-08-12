@@ -7,6 +7,7 @@ part 'company.g.dart';
 abstract class Company with _$Company {
   const factory Company({
     int? id,
+    String? serverUuid,
     required String name,
     String? nationalId,
     String? economicCode,

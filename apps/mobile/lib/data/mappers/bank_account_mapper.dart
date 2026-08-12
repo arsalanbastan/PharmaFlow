@@ -6,6 +6,7 @@ class BankAccountMapper {
   static Map<String, Object?> toMap(BankAccount account) {
     return {
       'id': account.id,
+      'server_uuid': account.serverUuid,
       'bank_name': account.bankName,
       'account_title': account.accountTitle,
       'account_holder': account.accountHolder,
@@ -22,6 +23,7 @@ class BankAccountMapper {
   static BankAccount fromMap(Map<String, Object?> map) {
     return BankAccount(
       id: map['id'] as int?,
+      serverUuid: map['server_uuid'] as String?,
       bankName: map['bank_name'] as String,
       accountTitle: map['account_title'] as String,
       accountHolder: map['account_holder'] as String,
@@ -31,15 +33,9 @@ class BankAccountMapper {
       note: map['note'] as String?,
       archivedAt: map['archived_at'] == null
           ? null
-          : DateTime.fromMillisecondsSinceEpoch(
-              map['archived_at'] as int,
-            ),
-      createdAt: DateTime.fromMillisecondsSinceEpoch(
-        map['created_at'] as int,
-      ),
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(
-        map['updated_at'] as int,
-      ),
+          : DateTime.fromMillisecondsSinceEpoch(map['archived_at'] as int),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at'] as int),
     );
   }
 }

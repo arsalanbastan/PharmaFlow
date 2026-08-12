@@ -1,35 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 
 import '../../../../core/database/database_service.dart';
-import '../../../../data/models/bank_account.dart';
-import '../../../../data/models/cheque.dart';
-import '../../../../data/models/company.dart';
-import '../../../../data/repositories/local/local_bank_account_repository.dart';
 import '../../../../data/repositories/local/local_cheque_repository.dart';
-import '../../../../data/repositories/local/local_company_repository.dart';
+import '../../../dashboard/presentation/providers/dashboard_provider.dart';
+import '../providers/active_cheques_provider.dart';
 import '../../../../shared/widgets/date_picker/pharmaflow_date_picker.dart';
+import 'cheque_details_page.dart';
 import 'cheque_form_page.dart';
 import '../widgets/cheque_compact_card.dart';
 
 enum ChequeSortType { issueDate, chequeNumber, dueDate, sayadStatus }
 
-class ChequeListPage extends StatefulWidget {
+class ChequeListPage extends ConsumerStatefulWidget {
   const ChequeListPage({super.key});
 
   @override
-  State<ChequeListPage> createState() => _ChequeListPageState();
+  ConsumerState<ChequeListPage> createState() => _ChequeListPageState();
 }
 
-class _ChequeListPageState extends State<ChequeListPage> {
+class _ChequeListPageState extends ConsumerState<ChequeListPage> {
   final TextEditingController _searchController = TextEditingController();
   late final LocalChequeRepository _chequeRepository;
-  late final LocalCompanyRepository _companyRepository;
-  late final LocalBankAccountRepository _bankAccountRepository;
-
-  List<_ChequeListItem> _items = const [];
-  bool _isLoading = true;
   Jalali? _fromDate;
   Jalali? _toDate;
   ChequeSortType _sortType = ChequeSortType.issueDate;
@@ -38,11 +32,6 @@ class _ChequeListPageState extends State<ChequeListPage> {
   void initState() {
     super.initState();
     _chequeRepository = LocalChequeRepository(DatabaseService.instance);
-    _companyRepository = LocalCompanyRepository(DatabaseService.instance);
-    _bankAccountRepository = LocalBankAccountRepository(
-      DatabaseService.instance,
-    );
-    _loadCheques();
   }
 
   @override
@@ -94,13 +83,13 @@ class _ChequeListPageState extends State<ChequeListPage> {
     });
   }
 
-  List<_ChequeListItem> _filteredItems() {
+  List<_ChequeListItem> _filteredItems(List<_ChequeListItem> items) {
     final search = _searchController.text.trim().toLowerCase();
 
     final fromDate = _fromDate?.toDateTime();
     final toDate = _toDate?.toDateTime();
 
-    final filtered = _items
+    final filtered = items
         .where((item) {
           if (search.isNotEmpty) {
             final searchable = '${item.companyName} ${item.chequeNumber}'
@@ -298,100 +287,150 @@ class _ChequeListPageState extends State<ChequeListPage> {
     return result;
   }
 
-  void _showPlaceholder(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message, textAlign: TextAlign.right)),
+  Future<void> _openChequeDetails(int chequeId) async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => ChequeDetailsPage(chequeId: chequeId)),
     );
   }
 
-  Future<void> _loadCheques() async {
-    setState(() {
-      _isLoading = true;
-    });
+  Future<void> _toggleRegistered(_ChequeListItem item, bool value) async {
+    final providerContainer = ProviderScope.containerOf(context, listen: false);
 
-    try {
-      final results = await Future.wait([
-        _chequeRepository.getAll(),
-        _companyRepository.getAll(),
-        _bankAccountRepository.getAll(),
-      ]);
+    if (value && !item.isRegistered) {
+      final confirmed = await _confirmSayadRegistration(item);
+      if (confirmed != true) {
+        return;
+      }
+    }
 
-      final cheques = results[0] as List<Cheque>;
-      final companies = results[1] as List<Company>;
-      final bankAccounts = results[2] as List<BankAccount>;
-
-      final companyNameById = <int, String>{
-        for (final company in companies)
-          if (company.id != null) company.id!: company.name,
-      };
-
-      final bankNameById = <int, String>{
-        for (final account in bankAccounts)
-          if (account.id != null) account.id!: account.accountTitle,
-      };
-
-      final items =
-          cheques
-              .map(
-                (cheque) => _ChequeListItem(
-                  id: cheque.id,
-                  bankName: bankNameById[cheque.bankAccountId] ?? '—',
-                  chequeNumber: cheque.chequeNumber,
-                  issueDate: cheque.issueDate,
-                  dueDate: cheque.dueDate,
-                  companyName: companyNameById[cheque.companyId] ?? '—',
-                  amountRial: cheque.amountRial,
-                  isRegistered: cheque.isRegisteredInSayad,
-                  createdAt: cheque.createdAt,
-                ),
-              )
-              .toList(growable: false)
-            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
+    final cheque = await _chequeRepository.findById(item.id);
+    if (cheque == null) {
       if (!mounted) {
         return;
       }
-
-      setState(() {
-        _items = items;
-        _isLoading = false;
-      });
-    } catch (e, stackTrace) {
-      debugPrint('ChequeListPage._loadCheques failed: $e');
-      debugPrintStack(stackTrace: stackTrace);
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _isLoading = false;
-      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'بارگذاری چک‌ها با خطا مواجه شد.',
-            textAlign: TextAlign.right,
-          ),
+          content: Text('چک انتخاب شده پیدا نشد.', textAlign: TextAlign.right),
         ),
       );
+      return;
+    }
+
+    await _chequeRepository.update(
+      cheque.copyWith(isRegisteredInSayad: value, updatedAt: DateTime.now()),
+    );
+
+    invalidateChequeDependentProviders(providerContainer);
+
+    if (!mounted) {
+      return;
     }
   }
 
+  Future<bool?> _confirmSayadRegistration(_ChequeListItem item) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('ثبت در سامانه صیاد'),
+          content: Text(
+            'آیا چک شماره ${item.chequeNumber} مربوط به شرکت ${item.companyName} در سامانه صیاد ثبت شده است؟',
+            textAlign: TextAlign.right,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Yes, Registered'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _requestDelete(_ChequeListItem item) async {
+    final providerContainer = ProviderScope.containerOf(context, listen: false);
+
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Delete Cheque'),
+          content: Text(
+            'Are you sure you want to delete cheque\n'
+            '${item.chequeNumber}\n'
+            'for company\n'
+            '${item.companyName} ?\n\n'
+            'This action cannot be undone after synchronization.',
+            textAlign: TextAlign.left,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(dialogContext).colorScheme.error,
+                foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete != true) {
+      return;
+    }
+
+    try {
+      await _chequeRepository.requestDelete(item.id);
+
+      invalidateChequeDependentProviders(providerContainer);
+      providerContainer.invalidate(dashboardSummaryProvider);
+      providerContainer.invalidate(unregisteredChequesCardProvider);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Unable to delete cheque.')));
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'چک ${item.chequeNumber} در صف حذف قرار گرفت.',
+          textAlign: TextAlign.right,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openCreateCheque() async {
-    final created = await Navigator.of(
+    await Navigator.of(
       context,
     ).push<bool>(MaterialPageRoute(builder: (_) => const ChequeFormPage()));
-
-    if (created == true) {
-      await _loadCheques();
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _filteredItems();
+    final lookupAsync = ref.watch(activeChequeLookupProvider);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -463,56 +502,92 @@ class _ChequeListPageState extends State<ChequeListPage> {
               ),
             ),
             Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : filtered.isEmpty
-                  ? const Center(
+              child: lookupAsync.when(
+                data: (lookup) {
+                  final items = lookup.cheques
+                      .map(
+                        (cheque) => _ChequeListItem(
+                          id: cheque.id,
+                          bankName:
+                              lookup.bankAccountNames[cheque.bankAccountId] ??
+                              '—',
+                          chequeNumber: cheque.chequeNumber,
+                          issueDate: cheque.issueDate,
+                          dueDate: cheque.dueDate,
+                          companyName:
+                              lookup.companyNames[cheque.companyId] ?? '—',
+                          amountRial: cheque.amountRial,
+                          isRegistered: cheque.isRegisteredInSayad,
+                          createdAt: cheque.createdAt,
+                        ),
+                      )
+                      .toList(growable: false);
+
+                  final filtered = _filteredItems(items);
+                  if (filtered.isEmpty) {
+                    return const Center(
                       child: Text(
                         'چکی برای نمایش وجود ندارد.',
                         textAlign: TextAlign.right,
                       ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) {
-                        final item = filtered[index];
+                    );
+                  }
 
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: ChequeCompactCard(
-                            id: item.id,
-                            bankName: item.bankName,
-                            chequeNumber: item.chequeNumber,
-                            dueDate: item.dueDate,
-                            companyName: item.companyName,
-                            amountRial: item.amountRial,
-                            isRegistered: item.isRegistered,
-                            onToggleRegistered: (value) {
-                              setState(() {
-                                final sourceIndex = _items.indexWhere(
-                                  (source) => source.id == item.id,
-                                );
+                  return ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      final item = filtered[index];
 
-                                if (sourceIndex >= 0) {
-                                  _items[sourceIndex] = _items[sourceIndex]
-                                      .copyWith(isRegistered: value);
-                                }
-                              });
-                            },
-                            onTap: () => _showPlaceholder(
-                              'باز کردن جزئیات چک ${item.chequeNumber} (نمونه)',
-                            ),
-                            onEdit: () => _showPlaceholder(
-                              'ویرایش چک ${item.chequeNumber} (نمونه)',
-                            ),
-                            onCancel: () => _showPlaceholder(
-                              'لغو چک ${item.chequeNumber} (نمونه)',
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: ChequeCompactCard(
+                          id: item.id,
+                          bankName: item.bankName,
+                          chequeNumber: item.chequeNumber,
+                          dueDate: item.dueDate,
+                          companyName: item.companyName,
+                          amountRial: item.amountRial,
+                          isRegistered: item.isRegistered,
+                          onToggleRegistered: (value) async {
+                            final messenger = ScaffoldMessenger.of(
+                              this.context,
+                            );
+                            try {
+                              await _toggleRegistered(item, value);
+                            } catch (_) {
+                              if (!mounted) {
+                                rethrow;
+                              }
+
+                              messenger.showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'به‌روزرسانی وضعیت ثبت در صیاد با خطا مواجه شد.',
+                                    textAlign: TextAlign.right,
+                                  ),
+                                ),
+                              );
+
+                              rethrow;
+                            }
+                          },
+                          onTap: () => _openChequeDetails(item.id),
+                          onEdit: () => _openChequeDetails(item.id),
+                          onCancel: () => _requestDelete(item),
+                        ),
+                      );
+                    },
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (_, _) => const Center(
+                  child: Text(
+                    'بارگذاری چک‌ها با خطا مواجه شد.',
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+              ),
             ),
           ],
         ),

@@ -6,6 +6,7 @@ import { HealthModule } from './health/health.module';
 import { CompaniesModule } from './companies/companies.module';
 import { BankAccountsModule } from './bank-accounts/bank-accounts.module';
 import { ChequesModule } from './cheques/cheques.module';
+import { SyncModule } from './sync/sync.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ChequesModule } from './cheques/cheques.module';
     CompaniesModule,
     BankAccountsModule,
     ChequesModule,
+    SyncModule,
   ],
   controllers: [AppController],
   providers: [AppService],

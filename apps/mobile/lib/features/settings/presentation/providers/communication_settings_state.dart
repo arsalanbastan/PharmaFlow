@@ -15,7 +15,11 @@ class CommunicationSettingsState {
     required this.useHttps,
     required this.autoSync,
     required this.wifiOnly,
-    required this.lastSync,
+    required this.lastSuccessfulSyncAt,
+    required this.lastSyncAttemptAt,
+    required this.consecutiveConnectionFailures,
+    required this.autoRetrySuspended,
+    required this.lastSyncUserSafeErrorMessage,
     required this.lastSuccessfulCheck,
     required this.connectionStatus,
     required this.databaseStatus,
@@ -38,7 +42,11 @@ class CommunicationSettingsState {
       useHttps: false,
       autoSync: false,
       wifiOnly: false,
-      lastSync: null,
+      lastSuccessfulSyncAt: null,
+      lastSyncAttemptAt: null,
+      consecutiveConnectionFailures: 0,
+      autoRetrySuspended: false,
+      lastSyncUserSafeErrorMessage: null,
       lastSuccessfulCheck: null,
       connectionStatus: 'Not tested',
       databaseStatus: 'Unknown',
@@ -58,7 +66,11 @@ class CommunicationSettingsState {
   final bool useHttps;
   final bool autoSync;
   final bool wifiOnly;
-  final DateTime? lastSync;
+  final DateTime? lastSuccessfulSyncAt;
+  final DateTime? lastSyncAttemptAt;
+  final int consecutiveConnectionFailures;
+  final bool autoRetrySuspended;
+  final String? lastSyncUserSafeErrorMessage;
   final DateTime? lastSuccessfulCheck;
   final String connectionStatus;
   final String databaseStatus;
@@ -79,8 +91,14 @@ class CommunicationSettingsState {
     bool? useHttps,
     bool? autoSync,
     bool? wifiOnly,
-    DateTime? lastSync,
-    bool clearLastSync = false,
+    DateTime? lastSuccessfulSyncAt,
+    bool clearLastSuccessfulSyncAt = false,
+    DateTime? lastSyncAttemptAt,
+    bool clearLastSyncAttemptAt = false,
+    int? consecutiveConnectionFailures,
+    bool? autoRetrySuspended,
+    String? lastSyncUserSafeErrorMessage,
+    bool clearLastSyncUserSafeErrorMessage = false,
     DateTime? lastSuccessfulCheck,
     bool clearLastSuccessfulCheck = false,
     String? connectionStatus,
@@ -105,7 +123,18 @@ class CommunicationSettingsState {
       useHttps: useHttps ?? this.useHttps,
       autoSync: autoSync ?? this.autoSync,
       wifiOnly: wifiOnly ?? this.wifiOnly,
-      lastSync: clearLastSync ? null : (lastSync ?? this.lastSync),
+      lastSuccessfulSyncAt: clearLastSuccessfulSyncAt
+          ? null
+          : (lastSuccessfulSyncAt ?? this.lastSuccessfulSyncAt),
+      lastSyncAttemptAt: clearLastSyncAttemptAt
+          ? null
+          : (lastSyncAttemptAt ?? this.lastSyncAttemptAt),
+      consecutiveConnectionFailures:
+          consecutiveConnectionFailures ?? this.consecutiveConnectionFailures,
+      autoRetrySuspended: autoRetrySuspended ?? this.autoRetrySuspended,
+      lastSyncUserSafeErrorMessage: clearLastSyncUserSafeErrorMessage
+          ? null
+          : (lastSyncUserSafeErrorMessage ?? this.lastSyncUserSafeErrorMessage),
       lastSuccessfulCheck: clearLastSuccessfulCheck
           ? null
           : (lastSuccessfulCheck ?? this.lastSuccessfulCheck),

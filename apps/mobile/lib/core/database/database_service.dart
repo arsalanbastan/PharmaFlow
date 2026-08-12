@@ -34,10 +34,7 @@ class DatabaseService {
 
     final documents = await getApplicationDocumentsDirectory();
 
-    final dbPath = p.join(
-      documents.path,
-      _databaseName,
-    );
+    final dbPath = p.join(documents.path, _databaseName);
 
     final file = File(dbPath);
 
@@ -57,6 +54,11 @@ class DatabaseService {
   void close() {
     _database?.dispose();
     _database = null;
+  }
+
+  /// Injects an already-opened [db] without path_provider. For unit tests only.
+  void injectDatabaseForTesting(Database db) {
+    _database = db;
   }
 
   void transaction(void Function(Database db) action) {

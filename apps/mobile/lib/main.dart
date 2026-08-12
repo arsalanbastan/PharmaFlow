@@ -6,17 +6,34 @@ import 'core/database/database_service.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_text_styles.dart';
+import 'features/settings/presentation/providers/communication_settings_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  debugPrint('1. Flutter initialized');
-
   await DatabaseService.instance.initialize();
 
-  debugPrint('2. Database initialized');
+  runApp(const ProviderScope(child: _AppBootstrap()));
+}
 
-  runApp(const ProviderScope(child: PharmaFlowApp()));
+class _AppBootstrap extends ConsumerStatefulWidget {
+  const _AppBootstrap();
+
+  @override
+  ConsumerState<_AppBootstrap> createState() => _AppBootstrapState();
+}
+
+class _AppBootstrapState extends ConsumerState<_AppBootstrap> {
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() => ref.read(syncServiceProvider).start());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const PharmaFlowApp();
+  }
 }
 
 class PharmaFlowApp extends StatelessWidget {

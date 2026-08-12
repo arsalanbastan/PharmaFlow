@@ -1,10 +1,26 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/database/database_service.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/config/app_environment.dart';
+import '../../../../core/identity/identity_bootstrap_service.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/sync/cheque_sync_identity_resolver.dart';
+import '../../../../core/sync/sync_engine.dart';
+import '../../../../core/sync/sync_identity_resolver.dart';
+import '../../../../core/sync/sync_state.dart';
+import '../../../../core/sync/sync_service.dart';
+import '../../../../data/repositories/local/local_bank_account_repository.dart';
 import '../../../../core/settings/connection_profile.dart';
 import '../../../../core/settings/connection_settings_repository.dart';
+import '../../../../data/repositories/local/local_cheque_repository.dart';
+import '../../../../data/repositories/local/local_company_repository.dart';
+import '../../../../data/repositories/local/sync_queue_repository.dart';
+import '../../../../data/repositories/remote/remote_bank_accounts_repository.dart';
+import '../../../../data/repositories/remote/remote_cheque_repository.dart';
+import '../../../../data/repositories/remote/remote_company_repository.dart';
 import 'communication_settings_state.dart';
 
 final connectionSettingsRepositoryProvider =
@@ -37,7 +53,11 @@ final appConfigProvider = Provider<AppConfig>((ref) {
     profiles: [profile],
     autoSync: state.autoSync,
     wifiOnly: state.wifiOnly,
-    lastSync: state.lastSync,
+    lastSuccessfulSyncAt: state.lastSuccessfulSyncAt,
+    lastSyncAttemptAt: state.lastSyncAttemptAt,
+    consecutiveConnectionFailures: state.consecutiveConnectionFailures,
+    autoRetrySuspended: state.autoRetrySuspended,
+    lastSyncUserSafeErrorMessage: state.lastSyncUserSafeErrorMessage,
     lastSuccessfulCheck: state.lastSuccessfulCheck,
   );
 
@@ -47,6 +67,92 @@ final appConfigProvider = Provider<AppConfig>((ref) {
 final apiClientProvider = Provider<ApiClient>((ref) {
   final config = ref.watch(appConfigProvider);
   return ApiClient(appConfig: config);
+});
+
+final identityBootstrapServiceProvider = Provider<IdentityBootstrapService>((
+  ref,
+) {
+  return IdentityBootstrapService(
+    apiClient: ref.watch(apiClientProvider),
+    localCompanyRepository: LocalCompanyRepository(DatabaseService.instance),
+    localBankAccountRepository: LocalBankAccountRepository(
+      DatabaseService.instance,
+    ),
+  );
+});
+
+final syncQueueRepositoryProvider = Provider<SyncQueueRepository>((ref) {
+  return SyncQueueRepository(DatabaseService.instance);
+});
+
+final syncWorkerServiceProvider = Provider<SyncService>((ref) {
+  final localCompanyRepository = LocalCompanyRepository(
+    DatabaseService.instance,
+  );
+  final localBankAccountRepository = LocalBankAccountRepository(
+    DatabaseService.instance,
+  );
+  final localChequeRepository = LocalChequeRepository(DatabaseService.instance);
+  final syncIdentityResolver = SyncIdentityResolver(DatabaseService.instance);
+  final remoteCompanyRepository = RemoteCompanyRepository(
+    ref.watch(apiClientProvider),
+  );
+  final remoteBankAccountsRepository = RemoteBankAccountsRepository(
+    ref.watch(apiClientProvider),
+  );
+  final remoteChequeRepository = RemoteChequeRepository(
+    ref.watch(apiClientProvider),
+  );
+
+  return SyncService(
+    syncQueueRepository: ref.watch(syncQueueRepositoryProvider),
+    localCompanyRepository: localCompanyRepository,
+    localBankAccountRepository: localBankAccountRepository,
+    localChequeRepository: localChequeRepository,
+    identityResolver: syncIdentityResolver,
+    remoteCompanyRepository: remoteCompanyRepository,
+    remoteBankAccountsRepository: remoteBankAccountsRepository,
+    remoteChequeRepository: remoteChequeRepository,
+    chequeSyncIdentityResolver: ChequeSyncIdentityResolver(
+      localChequeRepository: localChequeRepository,
+      remoteChequeRepository: remoteChequeRepository,
+      identityResolver: syncIdentityResolver,
+    ),
+  );
+});
+
+final syncServiceProvider = Provider<SyncEngine>((ref) {
+  final localCompanyRepository = LocalCompanyRepository(
+    DatabaseService.instance,
+  );
+  final localBankAccountRepository = LocalBankAccountRepository(
+    DatabaseService.instance,
+  );
+  final engine = SyncEngine(
+    syncService: ref.watch(syncWorkerServiceProvider),
+    apiClient: ref.watch(apiClientProvider),
+    identityBootstrapService: ref.watch(identityBootstrapServiceProvider),
+    syncQueueRepository: ref.watch(syncQueueRepositoryProvider),
+    localCompanyRepository: localCompanyRepository,
+    localBankAccountRepository: localBankAccountRepository,
+    connectionSettingsRepository: ref.watch(
+      connectionSettingsRepositoryProvider,
+    ),
+  );
+
+  ref.onDispose(() {
+    unawaited(engine.dispose());
+  });
+
+  return engine;
+});
+
+final syncStateProvider = StreamProvider<SyncState>((ref) {
+  final engine = ref.watch(syncServiceProvider);
+  return () async* {
+    yield engine.state;
+    yield* engine.states;
+  }();
 });
 
 class CommunicationSettingsNotifier
@@ -78,7 +184,11 @@ class CommunicationSettingsNotifier
       receiveTimeout: profile.receiveTimeout.toString(),
       autoSync: settings.autoSync,
       wifiOnly: settings.wifiOnly,
-      lastSync: settings.lastSync,
+      lastSuccessfulSyncAt: settings.lastSuccessfulSyncAt,
+      lastSyncAttemptAt: settings.lastSyncAttemptAt,
+      consecutiveConnectionFailures: settings.consecutiveConnectionFailures,
+      autoRetrySuspended: settings.autoRetrySuspended,
+      lastSyncUserSafeErrorMessage: settings.lastSyncUserSafeErrorMessage,
       lastSuccessfulCheck: settings.lastSuccessfulCheck,
       connectionStatus: 'Not tested',
       databaseStatus: 'Unknown',
@@ -123,6 +233,34 @@ class CommunicationSettingsNotifier
     state = state.copyWith(wifiOnly: value);
   }
 
+  Future<void> onSyncCompletedSuccessfully() async {
+    final now = DateTime.now();
+
+    await _settingsRepository.save(_buildSettings(lastSuccessfulSyncAt: now));
+
+    state = state.copyWith(lastSuccessfulSyncAt: now, clearError: true);
+  }
+
+  void updateLastSuccessfulSyncAt(DateTime value) {
+    final current = state.lastSuccessfulSyncAt;
+
+    if (current != null && current == value) {
+      return;
+    }
+
+    state = state.copyWith(lastSuccessfulSyncAt: value, clearError: true);
+  }
+
+  void updateLastSyncAttemptAt(DateTime value) {
+    final current = state.lastSyncAttemptAt;
+
+    if (current != null && current == value) {
+      return;
+    }
+
+    state = state.copyWith(lastSyncAttemptAt: value, clearError: true);
+  }
+
   Future<void> save() async {
     final validatedError = _validateInputs();
 
@@ -165,7 +303,7 @@ class CommunicationSettingsNotifier
       clearResponseTime: true,
     );
 
-    final apiClient = _ref.read(apiClientProvider);
+    final apiClient = _buildApiClientForCurrentState();
 
     try {
       final health = await apiClient.checkHealth();
@@ -255,7 +393,20 @@ class CommunicationSettingsNotifier
     return 'Connection test failed. Please review communication settings.';
   }
 
-  ConnectionSettings _buildSettings({DateTime? lastSuccessfulCheck}) {
+  ApiClient _buildApiClientForCurrentState() {
+    final environment = _ref.read(appEnvironmentProvider);
+    final settings = _buildSettings();
+
+    return ApiClient(
+      appConfig: AppConfig(currentEnvironment: environment, settings: settings),
+    );
+  }
+
+  ConnectionSettings _buildSettings({
+    DateTime? lastSuccessfulSyncAt,
+    DateTime? lastSyncAttemptAt,
+    DateTime? lastSuccessfulCheck,
+  }) {
     final profile = _profileFromState(state).copyWith(id: _activeProfileId);
 
     return ConnectionSettings(
@@ -263,7 +414,11 @@ class CommunicationSettingsNotifier
       profiles: [profile],
       autoSync: state.autoSync,
       wifiOnly: state.wifiOnly,
-      lastSync: state.lastSync,
+      lastSuccessfulSyncAt: lastSuccessfulSyncAt ?? state.lastSuccessfulSyncAt,
+      lastSyncAttemptAt: lastSyncAttemptAt ?? state.lastSyncAttemptAt,
+      consecutiveConnectionFailures: state.consecutiveConnectionFailures,
+      autoRetrySuspended: state.autoRetrySuspended,
+      lastSyncUserSafeErrorMessage: state.lastSyncUserSafeErrorMessage,
       lastSuccessfulCheck: lastSuccessfulCheck ?? state.lastSuccessfulCheck,
     );
   }
