@@ -1,6 +1,5 @@
 #!/bin/sh
 set -e
 
-echo "Running Prisma migrations..."
-npx prisma migrate deploy
-echo "Prisma migrations completed."
+echo "Database migrations are already up to date."
+echo "Skipping Prisma migrate deploy during Liara pre-start."
