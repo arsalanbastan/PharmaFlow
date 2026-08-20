@@ -1,12 +1,15 @@
-import 'dart:typed_data';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 
 import '../../../../features/dashboard/presentation/widgets/jalali_commitment_calendar_view.dart';
-import '../../../../shared/widgets/date_picker/pharmaflow_date_picker.dart';
 import '../../../../data/models/bank_account.dart';
 import '../../../../data/models/cheque.dart';
 import '../../../../data/models/company.dart';
@@ -20,6 +23,7 @@ import '../utils/cheque_image_debug_logger.dart';
 import '../utils/cheque_image_optimizer.dart';
 import '../utils/cheque_input_formatters.dart';
 import '../utils/cheque_text_utils.dart';
+import '../widgets/cheque_attachment_section.dart';
 import '../widgets/cheque_compact_card.dart';
 import '../widgets/searchable_selector_field.dart';
 
@@ -50,6 +54,8 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
   bool _isSaving = false;
   bool _isRegisteredInSayad = false;
   bool _showValidationErrors = false;
+
+  List<ChequeAttachmentDraft> _pendingAttachmentDrafts = const [];
 
   String? _loadError;
   Uint8List? _imageData;
@@ -110,7 +116,15 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
         if (existing != null) {
           _editingCheque = existing;
           _chequeNumberController.text = existing.chequeNumber;
-          _amountController.text = existing.amountRial.toString();
+          final amountText = existing.amountRial.toString();
+          _amountController.value = const ChequeAmountFormatter()
+              .formatEditUpdate(
+                const TextEditingValue(),
+                TextEditingValue(
+                  text: amountText,
+                  selection: TextSelection.collapsed(offset: amountText.length),
+                ),
+              );
           _sayadIdController.text = existing.sayadId ?? '';
           _descriptionController.text = existing.description ?? '';
           _imageData = existing.imageData;
@@ -186,13 +200,6 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     return 'تاریخ سررسید الزامی است.';
   }
 
-  String? get _issueDateError {
-    if (!_showValidationErrors || _issueDate != null) {
-      return null;
-    }
-    return 'تاریخ صدور الزامی است.';
-  }
-
   Future<void> _pickDueDate() async {
     final initialDate = _dueDate?.toDateTime();
 
@@ -227,24 +234,6 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
 
     setState(() {
       _dueDate = Jalali.fromDateTime(picked);
-    });
-  }
-
-  Future<void> _pickIssueDate() async {
-    final picked = await PharmaFlowDatePicker.show(
-      context: context,
-      initialDate: _issueDate ?? Jalali.now(),
-      firstDate: Jalali(1390, 1, 1),
-      lastDate: Jalali(1450, 12, 29),
-      autoConfirm: false,
-    );
-
-    if (picked == null) {
-      return;
-    }
-
-    setState(() {
-      _issueDate = picked;
     });
   }
 
@@ -319,6 +308,90 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     }
   }
 
+  Future<void> _copyDigits(String rawValue, {required String label}) async {
+    final digits = extractEnglishDigits(rawValue);
+
+    if (digits.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$label برای کپی وجود ندارد.',
+            textAlign: TextAlign.right,
+          ),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: digits));
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label کپی شد.', textAlign: TextAlign.right),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  Future<void> _shareChequeImage() async {
+    final bytes = _imageData;
+
+    if (bytes == null || bytes.isEmpty) {
+      return;
+    }
+
+    try {
+      final directory = await getTemporaryDirectory();
+
+      final chequeNumber = extractEnglishDigits(
+        _chequeNumberController.text,
+      ).trim();
+
+      final safeChequeNumber = chequeNumber.isEmpty ? 'cheque' : chequeNumber;
+
+      final fileName =
+          'pharmaflow_cheque_${safeChequeNumber}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      final file = File(p.join(directory.path, fileName));
+
+      await file.writeAsBytes(bytes, flush: true);
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'image/jpeg')],
+          fileNameOverrides: [fileName],
+          text: 'تصویر چک $safeChequeNumber',
+        ),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('ChequeFormPage._shareChequeImage failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'اشتراک‌گذاری تصویر چک با خطا مواجه شد.',
+            textAlign: TextAlign.right,
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _pickImage(ImageSource source) async {
     final picked = await _imagePicker.pickImage(
       source: source,
@@ -364,7 +437,16 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
       builder: (_) {
         return Dialog.fullscreen(
           child: Scaffold(
-            appBar: AppBar(title: const Text('پیش‌نمایش تصویر چک')),
+            appBar: AppBar(
+              title: const Text('پیش‌نمایش تصویر چک'),
+              actions: [
+                IconButton(
+                  tooltip: 'اشتراک‌گذاری تصویر چک',
+                  onPressed: _shareChequeImage,
+                  icon: const Icon(Icons.share_outlined),
+                ),
+              ],
+            ),
             body: Center(
               child: InteractiveViewer(child: Image.memory(_imageData!)),
             ),
@@ -380,7 +462,6 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     final customValid =
         _selectedBankAccount != null &&
         _selectedCompany != null &&
-        _issueDate != null &&
         _dueDate != null;
 
     return formValid && customValid;
@@ -484,6 +565,8 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
   }
 
   Future<void> _save() async {
+    final isCreating = _editingCheque == null;
+
     setState(() {
       _showValidationErrors = true;
     });
@@ -495,13 +578,14 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
     final bankId = _selectedBankAccount!.id;
     final companyId = _selectedCompany!.id;
     final amount = _amountValue;
-    final issueDate = _issueDate;
+    final issueDate = _editingCheque == null
+        ? Jalali.now()
+        : _issueDate ?? Jalali.fromDateTime(_editingCheque!.issueDate);
     final dueDate = _dueDate;
 
     if (bankId == null ||
         companyId == null ||
         amount == null ||
-        issueDate == null ||
         dueDate == null) {
       return;
     }
@@ -552,10 +636,41 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
         updatedAt: now,
       );
 
-      if (_editingCheque == null) {
-        await _chequeRepository.insert(cheque);
+      int? attachmentChequeId;
+
+      if (isCreating) {
+        final insertedChequeId = await _chequeRepository.insert(cheque);
+        final insertedCheque = await _chequeRepository.findById(
+          insertedChequeId,
+        );
+
+        if (insertedCheque == null) {
+          throw StateError('New cheque could not be reloaded after insert.');
+        }
+
+        // Keep retries idempotent if persisting a selected statement fails
+        // after the parent cheque has already been inserted.
+        _editingCheque = insertedCheque;
+        attachmentChequeId = insertedChequeId;
       } else {
         await _chequeRepository.update(cheque);
+        attachmentChequeId = _editingCheque!.id;
+      }
+
+      if (_pendingAttachmentDrafts.isNotEmpty) {
+        final chequeId = attachmentChequeId;
+
+        if (chequeId == null) {
+          throw StateError(
+            'Cheque local id is missing before attachment persist.',
+          );
+        }
+
+        for (final draft in _pendingAttachmentDrafts) {
+          await draft.persist(chequeId);
+        }
+
+        _pendingAttachmentDrafts = const [];
       }
 
       if (mounted) {
@@ -575,7 +690,7 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _editingCheque == null
+            isCreating
                 ? 'چک با موفقیت ثبت شد.'
                 : 'چک با موفقیت به‌روزرسانی شد.',
           ),
@@ -774,6 +889,30 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
                     errorText: _companyError,
                     onTap: _selectCompany,
                   ),
+                  if (_editingCheque != null &&
+                      (_selectedCompany?.nationalId?.trim().isNotEmpty ??
+                          false)) ...[
+                    const SizedBox(height: 8),
+                    InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'شناسه ملی شرکت',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          tooltip: 'کپی شناسه ملی شرکت',
+                          onPressed: () => _copyDigits(
+                            _selectedCompany!.nationalId!,
+                            label: 'شناسه ملی شرکت',
+                          ),
+                          icon: const Icon(Icons.copy_outlined),
+                        ),
+                      ),
+                      child: Text(
+                        _selectedCompany!.nationalId!,
+                        textDirection: TextDirection.ltr,
+                        textAlign: TextAlign.left,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _chequeNumberController,
@@ -794,9 +933,19 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _amountController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'مبلغ *',
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: _editingCheque == null
+                          ? null
+                          : IconButton(
+                              tooltip: 'کپی مبلغ',
+                              onPressed: () => _copyDigits(
+                                _amountController.text,
+                                label: 'مبلغ',
+                              ),
+                              icon: const Icon(Icons.copy_outlined),
+                            ),
                     ),
                     keyboardType: TextInputType.number,
                     inputFormatters: const [ChequeAmountFormatter()],
@@ -832,29 +981,7 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
                     ),
                   ],
                   const SizedBox(height: 12),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: _pickIssueDate,
-                    child: InputDecorator(
-                      decoration: InputDecoration(
-                        labelText: 'تاریخ صدور *',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: const Icon(Icons.calendar_today_outlined),
-                        errorText: _issueDateError,
-                      ),
-                      child: Text(
-                        _issueDate == null
-                            ? 'انتخاب کنید'
-                            : _formatJalali(_issueDate!),
-                        style: _issueDate == null
-                            ? Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Theme.of(context).hintColor,
-                              )
-                            : null,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+
                   InkWell(
                     borderRadius: BorderRadius.circular(12),
                     onTap: _pickDueDate,
@@ -921,9 +1048,19 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _sayadIdController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'شناسه ۱۶ رقمی صیاد',
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: _editingCheque == null
+                          ? null
+                          : IconButton(
+                              tooltip: 'کپی شناسه صیاد',
+                              onPressed: () => _copyDigits(
+                                _sayadIdController.text,
+                                label: 'شناسه صیاد',
+                              ),
+                              icon: const Icon(Icons.copy_outlined),
+                            ),
                     ),
                     textDirection: TextDirection.ltr,
                     textAlign: TextAlign.left,
@@ -1005,6 +1142,13 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
                       ),
                     ),
                   ],
+                  const SizedBox(height: 12),
+                  ChequeAttachmentSection(
+                    chequeId: _editingCheque?.id,
+                    onDraftsChanged: (drafts) {
+                      _pendingAttachmentDrafts = drafts;
+                    },
+                  ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _descriptionController,

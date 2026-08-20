@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../bank_accounts/presentation/pages/bank_account_list_page.dart';
 import '../../../cheques/presentation/pages/cheque_list_page.dart';
+import '../../../cash_payments/presentation/pages/cash_payment_list_page.dart';
 import '../../../company/presentation/pages/company_list_page.dart';
 import '../../../settings/presentation/pages/settings_page.dart';
 import '../../../../shared/app_shell/app_bottom_navigation.dart';
@@ -42,12 +43,9 @@ class MenuPage extends StatelessWidget {
               onTap: () => _open(context, const ChequeListPage()),
             ),
             ListTile(
-              leading: const Icon(Icons.person_outline),
-              title: const Text('کاربران', textAlign: TextAlign.right),
-              onTap: () => _open(
-                context,
-                const _ModulePlaceholderPage(title: 'کاربران'),
-              ),
+              leading: const Icon(Icons.payments_outlined),
+              title: const Text('واریزی‌ها', textAlign: TextAlign.right),
+              onTap: () => _open(context, const CashPaymentListPage()),
             ),
             ListTile(
               leading: const Icon(Icons.settings_outlined),
@@ -62,27 +60,5 @@ class MenuPage extends StatelessWidget {
 
   static Future<void> _open(BuildContext context, Widget page) {
     return Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
-  }
-}
-
-class _ModulePlaceholderPage extends StatelessWidget {
-  const _ModulePlaceholderPage({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(title: Text(title)),
-        body: Center(
-          child: Text(
-            '$title (به زودی)',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ),
-      ),
-    );
   }
 }

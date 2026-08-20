@@ -381,7 +381,7 @@ void main() {
       );
     }
 
-    Future<SyncService> buildStubService({
+    Future<_StubSyncService> buildStubService({
       required Future<SyncServiceResult> Function() onSync,
     }) async {
       final stub = _StubSyncService(
@@ -402,6 +402,157 @@ void main() {
       stub.onSync = onSync;
       return stub;
     }
+
+    test(
+      'autoSync=false blocks non-manual triggers and preserves queued work',
+      () async {
+        await settingsRepo.save(
+          ConnectionSettingsDefaults.defaultSettings.copyWith(autoSync: false),
+        );
+
+        final apiClient = _FakeApiClient(
+          onCheckHealth: () async => const HealthResponse(status: 'ok'),
+        );
+
+        final stubService = await buildStubService(
+          onSync: () async {
+            return const SyncServiceResult(
+              totalPending: 1,
+              processed: 1,
+              succeeded: 1,
+              failed: 0,
+              performedServerCheck: true,
+            );
+          },
+        );
+
+        final now = DateTime.now().millisecondsSinceEpoch;
+        db.execute(
+          '''
+        INSERT INTO sync_queue (entityType, entityId, operation, status, retryCount, createdAt)
+        VALUES ('COMPANY', 1, 'UPDATE', 'PENDING', 0, ?)
+        ''',
+          [now],
+        );
+
+        final queueId =
+            db.select('SELECT last_insert_rowid() AS id').first['id'] as int;
+
+        final engine = await buildEngine(
+          syncService: stubService,
+          apiClient: apiClient,
+        );
+
+        const automaticTriggers = <SyncTrigger>[
+          SyncTrigger.entityChanged,
+          SyncTrigger.periodic,
+          SyncTrigger.connectivityRestored,
+          SyncTrigger.appStart,
+        ];
+
+        for (final trigger in automaticTriggers) {
+          final result = await engine.requestSync(trigger: trigger);
+
+          expect(
+            result.performedServerCheck,
+            isFalse,
+            reason:
+                'Auto Sync OFF must not perform a server check for ${trigger.name}.',
+          );
+        }
+
+        final queueRow = db.select(
+          'SELECT status FROM sync_queue WHERE id = ?',
+          [queueId],
+        );
+
+        expect(apiClient.healthCheckCalls, equals(0));
+        expect(stubService.syncCalls, equals(0));
+        expect(queueRow.single['status'], equals(SyncStatus.pending.dbValue));
+        expect(engine.state.pendingCount, equals(1));
+      },
+    );
+
+    test('manual sync still runs when autoSync=false', () async {
+      await settingsRepo.save(
+        ConnectionSettingsDefaults.defaultSettings.copyWith(autoSync: false),
+      );
+
+      final apiClient = _FakeApiClient(
+        onCheckHealth: () async => const HealthResponse(status: 'ok'),
+      );
+
+      final stubService = await buildStubService(
+        onSync: () async {
+          return const SyncServiceResult(
+            totalPending: 0,
+            processed: 0,
+            succeeded: 0,
+            failed: 0,
+            performedServerCheck: true,
+          );
+        },
+      );
+
+      final engine = await buildEngine(
+        syncService: stubService,
+        apiClient: apiClient,
+      );
+
+      final result = await engine.syncNow();
+
+      expect(result.hasFailures, isFalse);
+      expect(result.performedServerCheck, isTrue);
+      expect(apiClient.healthCheckCalls, equals(1));
+      expect(stubService.syncCalls, equals(1));
+    });
+
+    test(
+      'manual sync clears stale persisted connectivity warning before a successful run',
+      () async {
+        const staleMessage =
+            'عدم دسترسی به سرور؛ تلاش خودکار پس از ۳ بار ناموفق متوقف شد.';
+        await settingsRepo.save(
+          ConnectionSettingsDefaults.defaultSettings.copyWith(
+            autoSync: false,
+            consecutiveConnectionFailures: 3,
+            autoRetrySuspended: true,
+            lastSyncUserSafeErrorMessage: staleMessage,
+          ),
+        );
+
+        final apiClient = _FakeApiClient(
+          onCheckHealth: () async => const HealthResponse(status: 'ok'),
+        );
+
+        final stubService = await buildStubService(
+          onSync: () async {
+            return const SyncServiceResult(
+              totalPending: 0,
+              processed: 0,
+              succeeded: 0,
+              failed: 0,
+              performedServerCheck: true,
+            );
+          },
+        );
+
+        final engine = await buildEngine(
+          syncService: stubService,
+          apiClient: apiClient,
+        );
+
+        final result = await engine.syncNow();
+        final saved = await settingsRepo.load();
+
+        expect(result.hasFailures, isFalse);
+        expect(saved.consecutiveConnectionFailures, equals(0));
+        expect(saved.autoRetrySuspended, isFalse);
+        expect(saved.lastSyncUserSafeErrorMessage, isNull);
+        expect(engine.state.lastUserSafeErrorMessage, isNull);
+        expect(engine.state.syncStatus, equals(SyncUiStatus.success));
+      },
+    );
 
     test(
       'failed attempt updates lastSyncAttemptAt but preserves lastSuccessfulSyncAt and suspends after three connectivity failures',
@@ -444,6 +595,12 @@ void main() {
         expect(saved.consecutiveConnectionFailures, equals(3));
         expect(saved.autoRetrySuspended, isTrue);
         expect(
+          saved.lastSyncUserSafeErrorMessage,
+          equals(
+            'عدم دسترسی به سرور؛ تلاش خودکار پس از ۳ بار ناموفق متوقف شد.',
+          ),
+        );
+        expect(
           engine.state.syncStatus,
           equals(SyncUiStatus.autoRetrySuspended),
         );
@@ -454,6 +611,7 @@ void main() {
       'suspended automatic retry does not restart on non-manual triggers',
       () async {
         final suspended = ConnectionSettingsDefaults.defaultSettings.copyWith(
+          autoSync: true,
           consecutiveConnectionFailures: 3,
           autoRetrySuspended: true,
         );
@@ -484,6 +642,7 @@ void main() {
         await engine.requestSync(trigger: SyncTrigger.connectivityRestored);
 
         expect(apiClient.healthCheckCalls, equals(0));
+        expect(stubService.syncCalls, equals(0));
         expect(engine.state.autoRetrySuspended, isTrue);
       },
     );
@@ -494,6 +653,8 @@ void main() {
         final suspended = ConnectionSettingsDefaults.defaultSettings.copyWith(
           consecutiveConnectionFailures: 3,
           autoRetrySuspended: true,
+          lastSyncUserSafeErrorMessage:
+              'عدم دسترسی به سرور؛ تلاش خودکار پس از ۳ بار ناموفق متوقف شد.',
         );
         await settingsRepo.save(suspended);
 
@@ -501,19 +662,17 @@ void main() {
           onCheckHealth: () async => const HealthResponse(status: 'ok'),
         );
 
-        final stubService =
-            await buildStubService(
-                  onSync: () async {
-                    return const SyncServiceResult(
-                      totalPending: 1,
-                      processed: 1,
-                      succeeded: 1,
-                      failed: 0,
-                      performedServerCheck: true,
-                    );
-                  },
-                )
-                as _StubSyncService;
+        final stubService = await buildStubService(
+          onSync: () async {
+            return const SyncServiceResult(
+              totalPending: 1,
+              processed: 1,
+              succeeded: 1,
+              failed: 0,
+              performedServerCheck: true,
+            );
+          },
+        );
 
         final now = DateTime.now().millisecondsSinceEpoch;
         db.execute(
@@ -536,6 +695,7 @@ void main() {
         expect(stubService.syncCalls, equals(1));
         expect(saved.autoRetrySuspended, isFalse);
         expect(saved.consecutiveConnectionFailures, equals(0));
+        expect(saved.lastSyncUserSafeErrorMessage, isNull);
       },
     );
 
@@ -629,6 +789,8 @@ void main() {
           ConnectionSettingsDefaults.defaultSettings.copyWith(
             consecutiveConnectionFailures: 3,
             autoRetrySuspended: true,
+            lastSyncUserSafeErrorMessage:
+                'عدم دسترسی به سرور؛ تلاش خودکار پس از ۳ بار ناموفق متوقف شد.',
             lastSuccessfulSyncAt: DateTime(2026, 1, 1, 0, 0, 0),
           ),
         );
@@ -661,6 +823,8 @@ void main() {
         expect(saved.lastSuccessfulSyncAt, isNotNull);
         expect(saved.consecutiveConnectionFailures, equals(0));
         expect(saved.autoRetrySuspended, isFalse);
+        expect(saved.lastSyncUserSafeErrorMessage, isNull);
+        expect(engine.state.lastUserSafeErrorMessage, isNull);
         expect(engine.state.syncStatus, equals(SyncUiStatus.success));
       },
     );

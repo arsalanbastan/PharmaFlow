@@ -6,6 +6,15 @@ import { HealthModule } from './health/health.module';
 import { CompaniesModule } from './companies/companies.module';
 import { BankAccountsModule } from './bank-accounts/bank-accounts.module';
 import { ChequesModule } from './cheques/cheques.module';
+import { CashPaymentsModule } from './cash-payments/cash-payments.module';
+import { AdminModule } from './admin/admin.module';
+import { AuditModule } from './audit/audit.module';
+import { AppUpdateModule } from './app-update/app-update.module';
+
+import { OrdersModule } from './orders/orders.module';
+
+import { StaffAppUpdateModule } from './staff-app-update/staff-app-update.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -14,6 +23,13 @@ import { ChequesModule } from './cheques/cheques.module';
     CompaniesModule,
     BankAccountsModule,
     ChequesModule,
+    CashPaymentsModule,
+    AdminModule,
+    AuditModule,
+    AppUpdateModule,
+    OrdersModule,
+    StaffAppUpdateModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

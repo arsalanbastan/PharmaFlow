@@ -6,10 +6,10 @@
     "version": "22"
   },
   "healthCheck": {
-    "command": "CMD curl --fail http://localhost:3000/api/v1/health || exit 1",
+    "command": "curl -f http://127.0.0.1:3000/api/v1/health",
     "interval": 30,
-    "timeout": 15,
+    "timeout": 5,
     "retries": 3,
-    "startPeriod": 20
+    "startPeriod": 60
   }
 }

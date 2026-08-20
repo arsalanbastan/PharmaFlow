@@ -55,23 +55,31 @@ class ConnectionProfile {
   }
 
   factory ConnectionProfile.fromJson(Map<String, dynamic> json) {
+    final defaults = ConnectionSettingsDefaults.defaultProfile;
+
     return ConnectionProfile(
       id: (json['id'] as String?)?.trim().isNotEmpty == true
           ? json['id'] as String
-          : 'default',
+          : defaults.id,
       name: (json['name'] as String?)?.trim().isNotEmpty == true
           ? json['name'] as String
-          : 'Default',
+          : defaults.name,
       host: (json['host'] as String?)?.trim().isNotEmpty == true
           ? (json['host'] as String).trim()
-          : '192.168.1.215',
-      port: _readInt(json['port'], fallback: 3000),
-      useHttps: json['useHttps'] as bool? ?? false,
+          : defaults.host,
+      port: _readInt(json['port'], fallback: defaults.port),
+      useHttps: json['useHttps'] as bool? ?? defaults.useHttps,
       apiVersion: (json['apiVersion'] as String?)?.trim().isNotEmpty == true
           ? (json['apiVersion'] as String).trim()
-          : 'v1',
-      connectTimeout: _readInt(json['connectTimeout'], fallback: 15000),
-      receiveTimeout: _readInt(json['receiveTimeout'], fallback: 15000),
+          : defaults.apiVersion,
+      connectTimeout: _readInt(
+        json['connectTimeout'],
+        fallback: defaults.connectTimeout,
+      ),
+      receiveTimeout: _readInt(
+        json['receiveTimeout'],
+        fallback: defaults.receiveTimeout,
+      ),
     );
   }
 
@@ -86,6 +94,7 @@ class ConnectionProfile {
 
     if (value is String) {
       final parsed = int.tryParse(value.trim());
+
       if (parsed != null) {
         return parsed;
       }
@@ -102,9 +111,9 @@ class ConnectionSettings {
     required this.autoSync,
     required this.wifiOnly,
     this.displayName = 'ارسلان',
-    this.greenThreshold = 600000000,
-    this.orangeThreshold = 700000000,
-    this.redThreshold = 800000000,
+    this.greenThreshold = 6000000000,
+    this.orangeThreshold = 7000000000,
+    this.redThreshold = 8000000000,
     this.largeAmountThreshold = 500000000,
     this.lastSuccessfulSyncAt,
     this.lastSyncAttemptAt,
@@ -211,6 +220,7 @@ class ConnectionSettings {
 
   factory ConnectionSettings.fromJson(Map<String, dynamic> json) {
     final profilesJson = json['profiles'] as List<dynamic>?;
+
     final profiles = profilesJson == null || profilesJson.isEmpty
         ? [ConnectionSettingsDefaults.defaultProfile]
         : profilesJson
@@ -228,20 +238,20 @@ class ConnectionSettings {
     return ConnectionSettings(
       activeProfileId: resolvedActiveId,
       profiles: profiles,
-      autoSync: json['autoSync'] as bool? ?? false,
+      autoSync: json['autoSync'] as bool? ?? true,
       wifiOnly: json['wifiOnly'] as bool? ?? false,
       displayName: (json['displayName'] as String?)?.trim().isNotEmpty == true
           ? (json['displayName'] as String).trim()
           : 'ارسلان',
       greenThreshold: _toPositiveInt(
         json['greenThreshold'],
-        fallback: 600000000,
+        fallback: 6000000000,
       ),
       orangeThreshold: _toPositiveInt(
         json['orangeThreshold'],
-        fallback: 700000000,
+        fallback: 7000000000,
       ),
-      redThreshold: _toPositiveInt(json['redThreshold'], fallback: 800000000),
+      redThreshold: _toPositiveInt(json['redThreshold'], fallback: 8000000000),
       largeAmountThreshold: _toPositiveInt(
         json['largeAmountThreshold'],
         fallback: 500000000,
@@ -281,6 +291,7 @@ class ConnectionSettings {
 
     if (value is String) {
       final parsed = int.tryParse(value.trim());
+
       if (parsed != null && parsed > 0) {
         return parsed;
       }
@@ -300,6 +311,7 @@ class ConnectionSettings {
 
     if (value is String) {
       final parsed = int.tryParse(value.trim());
+
       if (parsed != null && parsed >= 0) {
         return parsed;
       }
@@ -312,12 +324,32 @@ class ConnectionSettings {
 abstract final class ConnectionSettingsDefaults {
   ConnectionSettingsDefaults._();
 
+  static const String _defaultProfileName = String.fromEnvironment(
+    'PHARMAFLOW_DEFAULT_PROFILE_NAME',
+    defaultValue: 'Liara Production',
+  );
+
+  static const String _defaultHost = String.fromEnvironment(
+    'PHARMAFLOW_DEFAULT_HOST',
+    defaultValue: 'naughty-haslett-zvtszb2yr.liara.run',
+  );
+
+  static const int _defaultPort = int.fromEnvironment(
+    'PHARMAFLOW_DEFAULT_PORT',
+    defaultValue: 443,
+  );
+
+  static const bool _defaultUseHttps = bool.fromEnvironment(
+    'PHARMAFLOW_DEFAULT_USE_HTTPS',
+    defaultValue: true,
+  );
+
   static const ConnectionProfile defaultProfile = ConnectionProfile(
     id: 'default',
-    name: 'Default',
-    host: '192.168.1.215',
-    port: 3000,
-    useHttps: false,
+    name: _defaultProfileName,
+    host: _defaultHost,
+    port: _defaultPort,
+    useHttps: _defaultUseHttps,
     apiVersion: 'v1',
     connectTimeout: 15000,
     receiveTimeout: 15000,
@@ -326,7 +358,7 @@ abstract final class ConnectionSettingsDefaults {
   static const ConnectionSettings defaultSettings = ConnectionSettings(
     activeProfileId: 'default',
     profiles: [defaultProfile],
-    autoSync: false,
+    autoSync: true,
     wifiOnly: false,
   );
 }

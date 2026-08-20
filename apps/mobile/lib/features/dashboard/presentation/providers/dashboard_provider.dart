@@ -11,16 +11,19 @@ import '../../domain/models/dashboard_summary.dart';
 import '../../domain/models/commitment_period.dart';
 import '../../domain/models/tomorrow_commitment_summary.dart';
 
+final dashboardNowProvider = Provider<DateTime>((ref) => DateTime.now());
+
 final dashboardSummaryProvider = FutureProvider<DashboardSummary>((ref) async {
   final lookup = await ref.watch(activeChequeLookupProvider.future);
   final filtered = commitmentEligibleCheques(lookup.cheques);
+  final now = ref.watch(dashboardNowProvider);
 
   return DashboardSummary(
     tomorrow: _tomorrowSummary(
       cheques: filtered,
       bankAccountNames: lookup.bankAccountNames,
     ),
-    periods: _buildPeriods(filtered),
+    periods: _buildPeriods(filtered, today: now),
     warnings: const [],
   );
 });
@@ -151,8 +154,6 @@ const List<String> _jalaliMonthNames = <String>[
   'اسفند',
 ];
 
-const int _periodCountForDashboard = 12;
-
 List<Cheque> commitmentEligibleCheques(List<Cheque> cheques) {
   return cheques
       .where((cheque) => cheque.status != ChequeStatus.cancelled)
@@ -198,36 +199,70 @@ TomorrowCommitmentSummary _tomorrowSummary({
   );
 }
 
-List<CommitmentPeriod> _buildPeriods(List<Cheque> cheques) {
+List<CommitmentPeriod> _buildPeriods(
+  List<Cheque> cheques, {
+  required DateTime today,
+}) {
+  if (cheques.isEmpty) {
+    return const <CommitmentPeriod>[];
+  }
+
   final periods = <CommitmentPeriod>[];
+  final currentStart = _calculateCurrentPeriodStart(today);
 
-  final today = DateTime.now();
-  var currentStart = _calculateCurrentPeriodStart(today);
+  final futureCheques = cheques
+      .where((cheque) => !cheque.dueDate.isBefore(currentStart))
+      .toList(growable: false);
 
-  for (var i = 0; i < _periodCountForDashboard; i++) {
-    final end = _calculatePeriodEnd(currentStart);
+  if (futureCheques.isEmpty) {
+    return const <CommitmentPeriod>[];
+  }
+
+  var latestDueDate = futureCheques.first.dueDate;
+  for (final cheque in futureCheques) {
+    if (cheque.dueDate.isAfter(latestDueDate)) {
+      latestDueDate = cheque.dueDate;
+    }
+  }
+
+  var currentPeriodStart = currentStart;
+  var safetyCounter = 0;
+
+  while (true) {
+    safetyCounter += 1;
+    if (safetyCounter > 10000) {
+      throw StateError('Dashboard period generation exceeded safety guard.');
+    }
+
+    final end = _calculatePeriodEnd(currentPeriodStart);
 
     var commitmentCount = 0;
     var totalAmount = 0;
 
-    for (final cheque in cheques) {
-      if (_isInRange(cheque.dueDate, currentStart, end)) {
+    for (final cheque in futureCheques) {
+      if (_isInRange(cheque.dueDate, currentPeriodStart, end)) {
         commitmentCount += 1;
         totalAmount += cheque.amountRial;
       }
     }
 
-    periods.add(
-      CommitmentPeriod(
-        title: _periodTitle(currentStart, end),
-        startDate: currentStart,
-        endDate: end,
-        commitmentCount: commitmentCount,
-        totalAmount: totalAmount,
-      ),
-    );
+    if (commitmentCount > 0) {
+      periods.add(
+        CommitmentPeriod(
+          title: _periodTitle(currentPeriodStart, end),
+          startDate: currentPeriodStart,
+          endDate: end,
+          commitmentCount: commitmentCount,
+          totalAmount: totalAmount,
+        ),
+      );
+    }
 
-    currentStart = end;
+    if (_isInRange(latestDueDate, currentPeriodStart, end)) {
+      break;
+    }
+
+    currentPeriodStart = end;
   }
 
   return periods;

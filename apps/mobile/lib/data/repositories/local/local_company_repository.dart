@@ -3,15 +3,18 @@
 import 'package:sqlite3/sqlite3.dart';
 
 import '../../../core/database/database_service.dart';
+import '../../../core/sync/sync_operation.dart';
 import '../../../core/sync/sync_queue_item.dart';
+import '../../../core/sync/sync_status.dart';
 import '../../../core/sync/sync_trigger.dart';
 import '../../../core/sync/sync_trigger_dispatcher.dart';
+import '../../../core/utils/company_name_normalizer.dart';
+import '../../../core/utils/uuid_v4.dart';
 import '../../mappers/company_mapper.dart';
 import '../../models/company.dart';
-import 'sync_queue_repository.dart';
 import '../exceptions/repository_exceptions.dart';
 import '../interfaces/company_repository.dart';
-import '../../../core/utils/company_name_normalizer.dart';
+import 'sync_queue_repository.dart';
 
 class LocalCompanyRepository implements CompanyRepository {
   LocalCompanyRepository(this._databaseService);
@@ -31,77 +34,148 @@ class LocalCompanyRepository implements CompanyRepository {
       throw ArgumentError('Company name cannot be empty.');
     }
 
-    if (await existsByName(normalizedName)) {
-      throw const DuplicateCompanyNameException();
-    }
+    final now = DateTime.now();
 
-    final entity = company.copyWith(name: normalizedName);
-    final values = CompanyMapper.toMap(entity);
-    values.remove('id');
+    late final int insertedId;
 
     _databaseService.transaction((db) {
+      _throwIfDuplicateName(db, normalizedName);
+
+      final requestedServerUuid = company.serverUuid?.trim();
+
+      final serverUuid =
+          requestedServerUuid != null && requestedServerUuid.isNotEmpty
+          ? requestedServerUuid
+          : _generateUniqueServerUuid(db);
+
+      _throwIfDuplicateServerUuid(db, serverUuid);
+
+      final entity = company.copyWith(
+        name: normalizedName,
+        serverUuid: serverUuid,
+        updatedAt: now,
+      );
+
+      final values = CompanyMapper.toMap(entity);
+
       final statement = db.prepare('''
-        INSERT INTO companies (
-          server_uuid,name,national_id,economic_code,notes,visitor_name,visitor_phone,accountant_name,accountant_phone,archived_at,created_at,updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ''');
+INSERT INTO companies (
+  server_uuid,
+  name,
+  national_id,
+  economic_code,
+  bank_name,
+  account_number,
+  card_number,
+  sheba_number,  notes,
+  visitor_name,
+  visitor_phone,
+  accountant_name,
+  accountant_phone,
+  archived_at,
+  created_at,
+  updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+''');
 
-      statement.execute([
-        values['server_uuid'],
-        values['name'],
-        values['national_id'],
-        values['economic_code'],
-        values['notes'],
-        values['visitor_name'],
-        values['visitor_phone'],
-        values['accountant_name'],
-        values['accountant_phone'],
-        values['archived_at'],
-        values['created_at'],
-        values['updated_at'],
-      ]);
+      try {
+        statement.execute([
+          values['server_uuid'],
+          values['name'],
+          values['national_id'],
+          values['economic_code'],
+          values['bank_name'],
+          values['account_number'],
+          values['card_number'],
+          values['sheba_number'],
+          values['notes'],
+          values['visitor_name'],
+          values['visitor_phone'],
+          values['accountant_name'],
+          values['accountant_phone'],
+          values['archived_at'],
+          values['created_at'],
+          values['updated_at'],
+        ]);
+      } finally {
+        statement.dispose();
+      }
 
-      statement.dispose();
+      insertedId =
+          db.select('SELECT last_insert_rowid() AS id').first['id'] as int;
+
+      /*
+       * Company row + CREATE queue row are committed together.
+       * A crash cannot leave one without the other.
+       */
+      _syncQueueRepository.addInDatabase(
+        db,
+        SyncQueueItem(
+          entityType: syncEntityTypeCompany,
+          entityId: insertedId,
+          operation: SyncOperation.create,
+          status: SyncStatus.pending,
+          retryCount: 0,
+          createdAt: now,
+        ),
+      );
     });
 
-    final id =
-        _db.select('SELECT last_insert_rowid() AS id').first['id'] as int;
-    return id;
+    SyncTriggerDispatcher.instance.request(SyncTrigger.entityChanged);
+
+    return insertedId;
   }
 
   Future<bool> existsByName(String name) async {
+    final normalized = name.trim().replaceAll(RegExp(r'\s+'), ' ');
+
     final result = _db.select(
       '''
-      SELECT COUNT(*) AS count
-      FROM companies
-      WHERE (archived_at IS NULL OR archived_at = 0)
-        AND LOWER(name)=LOWER(?)
-    ''',
-      [name.trim()],
+SELECT COUNT(*) AS count
+FROM companies
+WHERE LOWER(name) = LOWER(?)
+''',
+      [normalized],
     );
+
     return (result.first['count'] as int) > 0;
   }
 
   Future<Company?> findById(int id) async {
-    final result = _db.select('SELECT * FROM companies WHERE id=? LIMIT 1', [
-      id,
-    ]);
-    if (result.isEmpty) return null;
+    final result = _db.select(
+      '''
+SELECT *
+FROM companies
+WHERE id = ?
+LIMIT 1
+''',
+      [id],
+    );
+
+    if (result.isEmpty) {
+      return null;
+    }
+
     return CompanyMapper.fromMap(result.first);
   }
 
   Future<Company?> findByName(String name) async {
     final result = _db.select(
       '''
-      SELECT *
-      FROM companies
-      WHERE (archived_at IS NULL OR archived_at = 0)
-        AND LOWER(name)=LOWER(?)
-      LIMIT 1
-    ''',
+SELECT *
+FROM companies
+WHERE (archived_at IS NULL OR archived_at = 0)
+  AND LOWER(name) = LOWER(?)
+LIMIT 1
+''',
       [name.trim()],
     );
-    if (result.isEmpty) return null;
+
+    if (result.isEmpty) {
+      return null;
+    }
+
     return CompanyMapper.fromMap(result.first);
   }
 
@@ -109,10 +183,20 @@ class LocalCompanyRepository implements CompanyRepository {
   Future<List<Company>> getAll({bool includeArchived = false}) async {
     final result = _db.select(
       includeArchived
-          ? 'SELECT * FROM companies ORDER BY name COLLATE NOCASE'
-          : 'SELECT * FROM companies WHERE (archived_at IS NULL OR archived_at = 0) ORDER BY name COLLATE NOCASE',
+          ? '''
+SELECT *
+FROM companies
+ORDER BY name COLLATE NOCASE
+'''
+          : '''
+SELECT *
+FROM companies
+WHERE (archived_at IS NULL OR archived_at = 0)
+ORDER BY name COLLATE NOCASE
+''',
     );
-    return result.map((e) => CompanyMapper.fromMap(e)).toList();
+
+    return result.map((row) => CompanyMapper.fromMap(row)).toList();
   }
 
   @override
@@ -121,129 +205,215 @@ class LocalCompanyRepository implements CompanyRepository {
     bool includeArchived = false,
   }) async {
     final keyword = '%${query.trim()}%';
+
     final result = _db.select(
       includeArchived
           ? '''
-      SELECT *
-      FROM companies
-      WHERE (
-        LOWER(name) LIKE LOWER(?)
-        OR national_id LIKE ?
-        OR economic_code LIKE ?
-      )
-      ORDER BY name COLLATE NOCASE
-    '''
+SELECT *
+FROM companies
+WHERE (
+  LOWER(name) LIKE LOWER(?)
+  OR national_id LIKE ?
+  OR economic_code LIKE ?
+  OR bank_name LIKE ?
+  OR account_number LIKE ?
+  OR card_number LIKE ?
+  OR sheba_number LIKE ?
+)
+ORDER BY name COLLATE NOCASE
+'''
           : '''
-      SELECT *
-      FROM companies
-      WHERE (archived_at IS NULL OR archived_at = 0)
-      AND (
-        LOWER(name) LIKE LOWER(?)
-        OR national_id LIKE ?
-        OR economic_code LIKE ?
-      )
-      ORDER BY name COLLATE NOCASE
-    ''',
-      [keyword, keyword, keyword],
+SELECT *
+FROM companies
+WHERE (archived_at IS NULL OR archived_at = 0)
+  AND (
+    LOWER(name) LIKE LOWER(?)
+    OR national_id LIKE ?
+    OR economic_code LIKE ?
+    OR bank_name LIKE ?
+    OR account_number LIKE ?
+    OR card_number LIKE ?
+    OR sheba_number LIKE ?
+  )
+ORDER BY name COLLATE NOCASE
+''',
+      [keyword, keyword, keyword, keyword, keyword, keyword, keyword],
     );
-    return result.map((e) => CompanyMapper.fromMap(e)).toList();
+
+    return result.map((row) => CompanyMapper.fromMap(row)).toList();
   }
 
   @override
   Future<void> update(Company company) async {
-    if (company.id == null) {
+    final localId = company.id;
+
+    if (localId == null) {
       throw const CompanyNotFoundException();
     }
 
     final normalizedName = company.name.trim().replaceAll(RegExp(r'\s+'), ' ');
 
-    final duplicate = _db.select(
-      '''
-      SELECT id
-      FROM companies
-      WHERE (archived_at IS NULL OR archived_at = 0)
-        AND LOWER(name)=LOWER(?)
-        AND id<>?
-      LIMIT 1
-    ''',
-      [normalizedName, company.id],
-    );
-
-    if (duplicate.isNotEmpty) {
-      throw const DuplicateCompanyNameException();
+    if (normalizedName.isEmpty) {
+      throw ArgumentError('Company name cannot be empty.');
     }
 
-    final entity = company.copyWith(
-      name: normalizedName,
-      updatedAt: DateTime.now(),
-    );
+    final now = DateTime.now();
 
-    final values = CompanyMapper.toMap(entity);
+    _databaseService.transaction((db) {
+      final existingRows = db.select(
+        '''
+SELECT server_uuid
+FROM companies
+WHERE id = ?
+LIMIT 1
+''',
+        [localId],
+      );
 
-    _db.execute(
-      '''
-      UPDATE companies
-      SET
-        server_uuid=?,
-        name=?,
-        national_id=?,
-        economic_code=?,
-        notes=?,
-        visitor_name=?,
-        visitor_phone=?,
-        accountant_name=?,
-        accountant_phone=?,
-        archived_at=?,
-        updated_at=?
-      WHERE id=?
-    ''',
-      [
-        values['server_uuid'],
-        values['name'],
-        values['national_id'],
-        values['economic_code'],
-        values['notes'],
-        values['visitor_name'],
-        values['visitor_phone'],
-        values['accountant_name'],
-        values['accountant_phone'],
-        values['archived_at'],
-        values['updated_at'],
-        company.id,
-      ],
-    );
+      if (existingRows.isEmpty) {
+        throw const CompanyNotFoundException();
+      }
 
-    await _syncQueueRepository.enqueueUpdateWithMerge(
-      entityType: syncEntityTypeCompany,
-      entityId: company.id!,
-    );
+      _throwIfDuplicateName(db, normalizedName, excludeId: localId);
+
+      /*
+       * Never erase a known server UUID merely because a UI model
+       * was constructed without copying serverUuid.
+       */
+      final storedServerUuid = _trimOrNull(existingRows.first['server_uuid']);
+
+      final incomingServerUuid = _trimOrNull(company.serverUuid);
+
+      final effectiveServerUuid = incomingServerUuid ?? storedServerUuid;
+
+      final entity = company.copyWith(
+        name: normalizedName,
+        serverUuid: effectiveServerUuid,
+        updatedAt: now,
+      );
+
+      final values = CompanyMapper.toMap(entity);
+
+      db.execute(
+        '''
+UPDATE companies
+SET
+  server_uuid = ?,
+  name = ?,
+  national_id = ?,
+  economic_code = ?,
+  bank_name = ?,
+  account_number = ?,
+  card_number = ?,
+  sheba_number = ?,  notes = ?,
+  visitor_name = ?,
+  visitor_phone = ?,
+  accountant_name = ?,
+  accountant_phone = ?,
+  archived_at = ?,
+  updated_at = ?
+WHERE id = ?
+''',
+        [
+          values['server_uuid'],
+          values['name'],
+          values['national_id'],
+          values['economic_code'],
+          values['bank_name'],
+          values['account_number'],
+          values['card_number'],
+          values['sheba_number'],
+          values['notes'],
+          values['visitor_name'],
+          values['visitor_phone'],
+          values['accountant_name'],
+          values['accountant_phone'],
+          values['archived_at'],
+          values['updated_at'],
+          localId,
+        ],
+      );
+
+      _syncQueueRepository.enqueueUpdateWithMergeInDatabase(
+        db,
+        entityType: syncEntityTypeCompany,
+        entityId: localId,
+      );
+    });
+
     SyncTriggerDispatcher.instance.request(SyncTrigger.entityChanged);
   }
 
   @override
   Future<void> archive(int id) async {
     final now = DateTime.now().millisecondsSinceEpoch;
-    _db.execute('UPDATE companies SET archived_at=?, updated_at=? WHERE id=?', [
-      now,
-      now,
-      id,
-    ]);
+
+    _databaseService.transaction((db) {
+      _throwIfCompanyMissing(db, id);
+
+      db.execute(
+        '''
+UPDATE companies
+SET
+  archived_at = ?,
+  updated_at = ?
+WHERE id = ?
+''',
+        [now, now, id],
+      );
+
+      _syncQueueRepository.enqueueUpdateWithMergeInDatabase(
+        db,
+        entityType: syncEntityTypeCompany,
+        entityId: id,
+      );
+    });
+
+    SyncTriggerDispatcher.instance.request(SyncTrigger.entityChanged);
   }
 
   @override
   Future<void> restore(int id) async {
-    _db.execute(
-      'UPDATE companies SET archived_at=NULL, updated_at=? WHERE id=?',
-      [DateTime.now().millisecondsSinceEpoch, id],
-    );
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    _databaseService.transaction((db) {
+      _throwIfCompanyMissing(db, id);
+
+      db.execute(
+        '''
+UPDATE companies
+SET
+  archived_at = NULL,
+  updated_at = ?
+WHERE id = ?
+''',
+        [now, id],
+      );
+
+      _syncQueueRepository.enqueueUpdateWithMergeInDatabase(
+        db,
+        entityType: syncEntityTypeCompany,
+        entityId: id,
+      );
+    });
+
+    SyncTriggerDispatcher.instance.request(SyncTrigger.entityChanged);
   }
 
   Future<int> count({bool includeArchived = false}) async {
     final result = _db.select(
       includeArchived
-          ? 'SELECT COUNT(*) AS count FROM companies'
-          : 'SELECT COUNT(*) AS count FROM companies WHERE (archived_at IS NULL OR archived_at = 0)',
+          ? '''
+SELECT COUNT(*) AS count
+FROM companies
+'''
+          : '''
+SELECT COUNT(*) AS count
+FROM companies
+WHERE (archived_at IS NULL OR archived_at = 0)
+''',
     );
+
     return result.first['count'] as int;
   }
 
@@ -277,13 +447,108 @@ class LocalCompanyRepository implements CompanyRepository {
 
     _db.execute(
       '''
-    UPDATE companies
-    SET
-      server_uuid = ?,
-      updated_at = ?
-    WHERE id = ?
-  ''',
+UPDATE companies
+SET
+  server_uuid = ?,
+  updated_at = ?
+WHERE id = ?
+''',
       [normalized, DateTime.now().millisecondsSinceEpoch, localId],
     );
+  }
+
+  void _throwIfCompanyMissing(Database db, int id) {
+    final rows = db.select(
+      '''
+SELECT id
+FROM companies
+WHERE id = ?
+LIMIT 1
+''',
+      [id],
+    );
+
+    if (rows.isEmpty) {
+      throw const CompanyNotFoundException();
+    }
+  }
+
+  void _throwIfDuplicateName(Database db, String name, {int? excludeId}) {
+    final rows = excludeId == null
+        ? db.select(
+            '''
+SELECT id
+FROM companies
+WHERE LOWER(name) = LOWER(?)
+LIMIT 1
+''',
+            [name],
+          )
+        : db.select(
+            '''
+SELECT id
+FROM companies
+WHERE LOWER(name) = LOWER(?)
+  AND id <> ?
+LIMIT 1
+''',
+            [name, excludeId],
+          );
+
+    if (rows.isNotEmpty) {
+      throw const DuplicateCompanyNameException();
+    }
+  }
+
+  String _generateUniqueServerUuid(Database db) {
+    while (true) {
+      final candidate = generateUuidV4();
+
+      final rows = db.select(
+        '''
+SELECT id
+FROM companies
+WHERE server_uuid = ?
+LIMIT 1
+''',
+        [candidate],
+      );
+
+      if (rows.isEmpty) {
+        return candidate;
+      }
+    }
+  }
+
+  void _throwIfDuplicateServerUuid(Database db, String serverUuid) {
+    final rows = db.select(
+      '''
+SELECT id
+FROM companies
+WHERE server_uuid = ?
+LIMIT 1
+''',
+      [serverUuid],
+    );
+
+    if (rows.isNotEmpty) {
+      throw StateError(
+        'Company server UUID already exists locally: $serverUuid',
+      );
+    }
+  }
+
+  String? _trimOrNull(Object? value) {
+    if (value == null) {
+      return null;
+    }
+
+    final normalized = value.toString().trim();
+
+    if (normalized.isEmpty) {
+      return null;
+    }
+
+    return normalized;
   }
 }

@@ -3,8 +3,7 @@ description: Modern Pharmacy Financial Commitment Management System
 
 publish_to: "none"
 
-version: 1.0.0+1
-
+version: 1.0.4+5
 environment:
   sdk: ">=3.12.0 <4.0.0"
 
@@ -37,6 +36,8 @@ dependencies:
   # ==========================
   dio: ^5.10.0
   http: ^1.5.0
+  firebase_core: ^4.12.1
+  firebase_messaging: ^16.4.3
 
   # ==========================
   # Models
@@ -60,6 +61,7 @@ dependencies:
   url_launcher: ^6.3.2
   share_plus: ^11.1.0
   image_picker: ^1.1.2
+  file_picker: 10.3.10
   image: ^4.3.0
   font_awesome_flutter: ^11.0.0
   excel: ^4.0.6
@@ -77,6 +79,8 @@ dependencies:
   material_drum_picker:
     git:
       url: https://github.com/sayed3li97/material_drum_picker.git
+  pdf: ^3.12.0
+  crypto: 3.0.7
 
 dev_dependencies:
   flutter_test:

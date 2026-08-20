@@ -29,17 +29,19 @@ class CommunicationSettingsState {
   });
 
   factory CommunicationSettingsState.initial() {
-    return const CommunicationSettingsState(
+    final defaults = ConnectionSettingsDefaults.defaultProfile;
+
+    return CommunicationSettingsState(
       isLoading: true,
       isSaving: false,
       isTesting: false,
-      profileName: '',
-      host: '',
-      port: '3000',
-      apiVersion: 'v1',
-      connectTimeout: '15000',
-      receiveTimeout: '15000',
-      useHttps: false,
+      profileName: defaults.name,
+      host: defaults.host,
+      port: defaults.port.toString(),
+      apiVersion: defaults.apiVersion,
+      connectTimeout: defaults.connectTimeout.toString(),
+      receiveTimeout: defaults.receiveTimeout.toString(),
+      useHttps: defaults.useHttps,
       autoSync: false,
       wifiOnly: false,
       lastSuccessfulSyncAt: null,

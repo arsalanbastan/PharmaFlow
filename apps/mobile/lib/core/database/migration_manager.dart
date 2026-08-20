@@ -2,13 +2,17 @@ import 'package:sqlite3/sqlite3.dart';
 
 import 'queries/bank_account_queries.dart';
 import 'queries/cheque_queries.dart';
+import 'queries/cheque_attachment_queries.dart';
+import 'queries/cash_payment_queries.dart';
+import 'queries/cash_payment_attachment_queries.dart';
 import 'queries/company_queries.dart';
+import 'queries/sync_cursor_queries.dart';
 import 'queries/sync_queue_queries.dart';
 
 class MigrationManager {
   const MigrationManager._();
 
-  static const int currentVersion = 8;
+  static const int currentVersion = 13;
 
   static void migrate(Database db) {
     db.execute('PRAGMA foreign_keys = ON;');
@@ -50,6 +54,26 @@ class MigrationManager {
 
     if (version < 8) {
       _addChequeSyncColumns(db);
+    }
+
+    if (version < 9) {
+      _createIncrementalSyncInfrastructure(db);
+    }
+
+    if (version < 10) {
+      _addCompanyBankingColumns(db);
+    }
+
+    if (version < 11) {
+      _createCashPaymentsTable(db);
+    }
+
+    if (version < 12) {
+      _createCashPaymentAttachmentsTable(db);
+    }
+
+    if (version < 13) {
+      _createChequeAttachmentsTable(db);
     }
 
     db.execute('PRAGMA user_version = $currentVersion');
@@ -182,5 +206,71 @@ class MigrationManager {
     if (!chequeColumns.contains('delete_requested_at')) {
       db.execute('ALTER TABLE cheques ADD COLUMN delete_requested_at INTEGER');
     }
+  }
+
+  static void _addCompanyBankingColumns(Database db) {
+    final tableExists = db.select(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'companies'",
+    );
+
+    if (tableExists.isEmpty) {
+      return;
+    }
+
+    final columnsResult = db.select('PRAGMA table_info(companies)');
+    final columns = columnsResult.map((row) => row['name'] as String).toSet();
+
+    if (!columns.contains('bank_name')) {
+      db.execute('ALTER TABLE companies ADD COLUMN bank_name TEXT');
+    }
+
+    if (!columns.contains('account_number')) {
+      db.execute('ALTER TABLE companies ADD COLUMN account_number TEXT');
+    }
+
+    if (!columns.contains('card_number')) {
+      db.execute('ALTER TABLE companies ADD COLUMN card_number TEXT');
+    }
+
+    if (!columns.contains('sheba_number')) {
+      db.execute('ALTER TABLE companies ADD COLUMN sheba_number TEXT');
+    }
+  }
+
+  static void _createCashPaymentsTable(Database db) {
+    db.execute(CashPaymentQueries.createTable);
+
+    db.execute(CashPaymentQueries.createIndexes);
+  }
+
+  static void _createCashPaymentAttachmentsTable(Database db) {
+    db.execute(CashPaymentAttachmentQueries.createTable);
+
+    db.execute(CashPaymentAttachmentQueries.createIndexes);
+  }
+
+  static void _createChequeAttachmentsTable(Database db) {
+    db.execute(ChequeAttachmentQueries.createTable);
+
+    db.execute(ChequeAttachmentQueries.createIndexes);
+  }
+
+  static void _createIncrementalSyncInfrastructure(Database db) {
+    db.execute(SyncCursorQueries.createTable);
+
+    db.execute('''
+CREATE INDEX IF NOT EXISTS idx_companies_server_uuid
+ON companies(server_uuid);
+''');
+
+    db.execute('''
+CREATE INDEX IF NOT EXISTS idx_bank_accounts_server_uuid
+ON bank_accounts(server_uuid);
+''');
+
+    db.execute('''
+CREATE INDEX IF NOT EXISTS idx_cheques_server_uuid
+ON cheques(server_uuid);
+''');
   }
 }

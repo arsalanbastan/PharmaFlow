@@ -6,9 +6,11 @@ import '../../../../shared/app_shell/app_bottom_navigation.dart';
 import '../../../../shared/app_shell/app_scaffold.dart';
 import 'activity_report_page.dart';
 import 'bank_account_summary_report_page.dart';
+import 'company_account_activity_report_page.dart';
 import 'company_performance_report_page.dart';
 import 'large_amount_report_page.dart';
 import 'monthly_commitment_report_page.dart';
+import 'periodic_commitments_report_page.dart';
 import 'sayad_status_report_page.dart';
 import 'upcoming_commitments_report_page.dart';
 
@@ -32,6 +34,18 @@ class ReportsPage extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
           children: [
             _ReportShortcutCard(
+              title: 'گزارش دوره‌ای تعهدات',
+              subtitle: 'دوره‌های تعهدات با فیلتر تاریخ و خروجی Excel / PDF',
+              icon: Icons.table_chart_outlined,
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const PeriodicCommitmentsReportPage(),
+                  ),
+                );
+              },
+            ),
+            _ReportShortcutCard(
               title: 'گزارش تقویم تعهدات',
               subtitle: 'نمایش تقویم تعهدات (همان تقویم داشبورد)',
               icon: Icons.calendar_month_outlined,
@@ -39,6 +53,19 @@ class ReportsPage extends StatelessWidget {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const JalaliCommitmentCalendarPage(),
+                  ),
+                );
+              },
+            ),
+            _ReportShortcutCard(
+              title: 'گردش حساب طرف حساب‌ها',
+              subtitle:
+                  'چک‌ها و واریزی‌ها بر اساس تاریخ تراکنش • خروجی Excel / PDF',
+              icon: Icons.account_balance_wallet_outlined,
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const CompanyAccountActivityReportPage(),
                   ),
                 );
               },

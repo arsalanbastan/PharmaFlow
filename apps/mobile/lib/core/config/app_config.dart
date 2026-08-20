@@ -4,6 +4,10 @@ import 'app_environment.dart';
 class AppConfig {
   const AppConfig({required this.currentEnvironment, required this.settings});
 
+  static const String _compileTimeBaseUrl = String.fromEnvironment(
+    'PHARMAFLOW_API_BASE_URL',
+  );
+
   factory AppConfig.defaults({
     AppEnvironment environment = AppEnvironment.development,
   }) {
@@ -31,6 +35,14 @@ class AppConfig {
   int get receiveTimeout => activeProfile.receiveTimeout;
 
   String get baseUrl {
+    final override = _compileTimeBaseUrl.trim();
+
+    if (override.isNotEmpty) {
+      return override.endsWith('/')
+          ? override.substring(0, override.length - 1)
+          : override;
+    }
+
     final scheme = useHttps ? 'https' : 'http';
     final version = apiVersion.startsWith('v') ? apiVersion : 'v$apiVersion';
     return '$scheme://$host:$port/api/$version';

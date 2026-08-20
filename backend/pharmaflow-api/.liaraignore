@@ -1,0 +1,26 @@
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Local backups
+*.bak
+*.backup
+
+# Dependencies / generated build output
+node_modules/
+dist/
+build/
+coverage/
+
+# VCS / IDE
+.git/
+.vscode/
+.idea/
+
+# Logs / temp
+logs/
+*.log
+.temp/
+.tmp/

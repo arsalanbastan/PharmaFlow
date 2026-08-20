@@ -8,36 +8,38 @@ datasource db {
 }
 
 model Company {
-  id            String    @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid()) @db.Uuid
 
-  name          String    @unique
+  name String @unique
 
-  nationalId    String?
-  economicCode  String?
+  nationalId   String?
+  economicCode String?
 
   bankName      String?
   accountNumber String?
   cardNumber    String?
   shebaNumber   String?
 
-  notes         String?
-  visitorName   String?
-  visitorPhone  String?
-  accountantName String?
+  notes           String?
+  visitorName     String?
+  visitorPhone    String?
+  accountantName  String?
   accountantPhone String?
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  archivedAt    DateTime?
-  deletedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+  deletedAt  DateTime?
 
   cheques       Cheque[]
+  orderRequests OrderRequest[]
+  cashPayments  CashPayment[]
 
   @@map("companies")
 }
 
 model BankAccount {
-  id            String    @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid()) @db.Uuid
 
   bankName      String
   accountTitle  String?
@@ -46,45 +48,338 @@ model BankAccount {
   cardNumber    String?
   shebaNumber   String?
 
-  notes         String?
+  notes String?
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  archivedAt    DateTime?
-  deletedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+  deletedAt  DateTime?
 
-  cheques       Cheque[]
+  cheques      Cheque[]
+  cashPayments CashPayment[]
 
   @@map("bank_accounts")
 }
 
 model Cheque {
-  id            String      @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid()) @db.Uuid
 
-  chequeNumber  String
-  amount        Decimal
-  chequeDate    DateTime
-  dueDate       DateTime?
-  status        String?
+  chequeNumber String
+  amount       Decimal
+  chequeDate   DateTime
+  dueDate      DateTime?
+  status       String?
 
-  companyId     String      @db.Uuid
-  bankAccountId String      @db.Uuid
+  companyId     String @db.Uuid
+  bankAccountId String @db.Uuid
 
-  sayadStatus   String?
+  sayadStatus         String?
   isRegisteredInSayad Boolean?
-  sayadId       String?
-  imagePath     String?
-  imageData     String?
-  description   String?
+  sayadId             String?
+  imagePath           String?
+  imageData           String?
+  description         String?
 
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  archivedAt    DateTime?
-  deletedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+  deletedAt  DateTime?
 
-  company       Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  company     Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  bankAccount BankAccount        @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  attachments ChequeAttachment[]
 
   @@index([bankAccountId, chequeNumber, deletedAt], map: "cheques_bankAccountId_chequeNumber_deletedAt_idx")
   @@map("cheques")
+}
+
+model ChequeAttachment {
+  id String @id @default(uuid()) @db.Uuid
+
+  chequeId String @db.Uuid
+
+  kind String
+
+  fileName String
+  mimeType String
+
+  originalFileSize Int?
+  fileSize         Int
+
+  sha256     String
+  storageKey String @unique
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  cheque Cheque @relation(fields: [chequeId], references: [id], onDelete: Cascade)
+
+  @@index([chequeId, kind, deletedAt])
+  @@index([updatedAt, id])
+  @@map("cheque_attachments")
+}
+
+model CashPayment {
+  id String @id @default(uuid()) @db.Uuid
+
+  amount      Decimal
+  paymentDate DateTime
+
+  companyId     String @db.Uuid
+  bankAccountId String @db.Uuid
+
+  paymentMethod String
+
+  trackingNumber String?
+  description    String?
+  notes          String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+  deletedAt  DateTime?
+
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+
+  attachments CashPaymentAttachment[]
+
+  @@index([companyId, paymentDate])
+  @@index([bankAccountId, paymentDate])
+  @@index([updatedAt, id])
+  @@map("cash_payments")
+}
+
+model CashPaymentAttachment {
+  id String @id @default(uuid()) @db.Uuid
+
+  cashPaymentId String @db.Uuid
+
+  kind String
+
+  fileName String
+  mimeType String
+
+  originalFileSize Int?
+  fileSize         Int
+
+  sha256     String
+  storageKey String @unique
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  cashPayment CashPayment @relation(fields: [cashPaymentId], references: [id], onDelete: Cascade)
+
+  @@index([cashPaymentId, kind, deletedAt])
+  @@index([updatedAt, id])
+  @@map("cash_payment_attachments")
+}
+
+model OrderRequest {
+  id String @id @default(uuid()) @db.Uuid
+
+  category           String
+  itemText           String
+  normalizedItemText String
+
+  requestedQuantity Int?
+  orderedQuantity   Int?
+
+  suggestedCompanyText String?
+  notes                String?
+
+  status            String  @default("PENDING")
+  possibleDuplicate Boolean @default(false)
+
+  assignedCompanyId String? @db.Uuid
+
+  requestedByName String
+  orderedByName   String?
+  receivedByName  String?
+  canceledByName  String?
+  deletedByName   String?
+
+  requestedByUserId String? @db.Uuid
+  orderedByUserId   String? @db.Uuid
+  receivedByUserId  String? @db.Uuid
+  canceledByUserId  String? @db.Uuid
+  deletedByUserId   String? @db.Uuid
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  orderedAt  DateTime?
+  receivedAt DateTime?
+  canceledAt DateTime?
+  deletedAt  DateTime?
+
+  photoStorageKey String?
+  photoFileSize   Int?
+  photoSha256     String?
+  photoDeletedAt  DateTime?
+
+  assignedCompany Company? @relation(fields: [assignedCompanyId], references: [id], onDelete: SetNull)
+
+  @@index([status, category, createdAt])
+  @@index([updatedAt, id])
+  @@index([normalizedItemText, status])
+  @@index([assignedCompanyId, status])
+  @@map("order_requests")
+}
+
+model AppUser {
+  id String @id @default(uuid()) @db.Uuid
+
+  username     String  @unique
+  displayName  String
+  passwordHash String
+  role         String
+  isActive     Boolean @default(true)
+
+  managerAppAccess        Boolean @default(false)
+  canCreateOrders         Boolean @default(true)
+  canCreateCheques        Boolean @default(false)
+  canCreateCashPayments   Boolean @default(false)
+  canViewFinancialReports Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions    AuthSession[]
+  pushDevices PushDevice[]
+
+  @@index([role, isActive])
+  @@map("app_users")
+}
+
+model AuthSession {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId    String @db.Uuid
+  tokenHash String @unique
+
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+
+  user AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, expiresAt])
+  @@index([expiresAt, revokedAt])
+  @@map("auth_sessions")
+}
+
+model PushDevice {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @db.Uuid
+
+  fcmToken       String @unique
+  installationId String
+  platform       String
+  appPackage     String
+
+  isEnabled Boolean @default(true)
+
+  notificationsEnabled        Boolean @default(true)
+  orderNotificationMode       String  @default("AUDIBLE")
+  chequeNotificationMode      String  @default("AUDIBLE")
+  cashPaymentNotificationMode String  @default("AUDIBLE")
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  lastSeenAt DateTime  @default(now())
+  revokedAt  DateTime?
+
+  user       AppUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries PushDelivery[]
+
+  @@unique([userId, installationId, appPackage])
+  @@index([userId, isEnabled])
+  @@index([lastSeenAt])
+  @@map("push_devices")
+}
+
+model PushOutbox {
+  id String @id @default(uuid()) @db.Uuid
+
+  eventType     String
+  aggregateType String
+  aggregateId   String @db.Uuid
+  targetRole    String
+
+  payload Json @db.JsonB
+
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  claimedAt     DateTime?
+  sentAt        DateTime?
+  lastError     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deliveries PushDelivery[]
+
+  @@unique([eventType, aggregateId])
+  @@index([status, nextAttemptAt, createdAt])
+  @@index([aggregateType, aggregateId])
+  @@map("push_outbox")
+}
+
+model PushDelivery {
+  id String @id @default(uuid()) @db.Uuid
+
+  outboxId String  @db.Uuid
+  deviceId String? @db.Uuid
+
+  targetKey String
+
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  sentAt        DateTime?
+  lastError     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  outbox PushOutbox  @relation(fields: [outboxId], references: [id], onDelete: Cascade)
+  device PushDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@unique([outboxId, targetKey])
+  @@index([outboxId, status, nextAttemptAt])
+  @@index([deviceId])
+  @@map("push_deliveries")
+}
+
+model AuditLog {
+  id String @id @default(uuid()) @db.Uuid
+
+  source           String
+  actorDisplayName String?
+  actorUserId      String? @db.Uuid
+  actorVerified    Boolean @default(false)
+  deviceId         String?
+
+  action     String
+  entityType String
+  entityId   String?
+
+  beforeData Json? @db.JsonB
+  afterData  Json? @db.JsonB
+
+  ipAddress String?
+  requestId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([actorDisplayName, createdAt])
+  @@map("audit_logs")
 }

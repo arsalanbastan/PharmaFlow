@@ -1,9 +1,15 @@
 import {
+  IsDateString,
   IsOptional,
   IsString,
+  IsUUID,
 } from 'class-validator';
 
 export class CreateBankAccountDto {
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
   @IsString()
   bankName: string;
 
@@ -30,4 +36,8 @@ export class CreateBankAccountDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsDateString()
+  archivedAt?: string;
 }

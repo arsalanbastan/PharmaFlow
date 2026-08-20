@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/app_preferences_provider.dart';
@@ -127,11 +128,18 @@ class _CommitmentThresholdSettingsPageState
               const Center(child: Text('بارگذاری تنظیمات با خطا مواجه شد.')),
           data: (preferences) {
             if (!_didInitController) {
-              _greenController.text = preferences.thresholds.green.toString();
-              _orangeController.text = preferences.thresholds.orange.toString();
-              _redController.text = preferences.thresholds.red.toString();
-              _largeAmountController.text = preferences.largeAmountThreshold
-                  .toString();
+              _greenController.text = _formatRialThousands(
+                preferences.thresholds.green,
+              );
+              _orangeController.text = _formatRialThousands(
+                preferences.thresholds.orange,
+              );
+              _redController.text = _formatRialThousands(
+                preferences.thresholds.red,
+              );
+              _largeAmountController.text = _formatRialThousands(
+                preferences.largeAmountThreshold,
+              );
               _didInitController = true;
             }
 
@@ -181,9 +189,11 @@ class _CommitmentThresholdSettingsPageState
     return TextFormField(
       controller: controller,
       keyboardType: TextInputType.number,
+      inputFormatters: const <TextInputFormatter>[_RialThousandsFormatter()],
       textAlign: TextAlign.left,
       textDirection: TextDirection.ltr,
       decoration: InputDecoration(
+        suffixText: 'ریال',
         labelText: label,
         border: const OutlineInputBorder(),
       ),
@@ -194,6 +204,82 @@ class _CommitmentThresholdSettingsPageState
           });
         }
       },
+    );
+  }
+}
+
+String _formatRialThousands(int value) {
+  return _groupRialDigits(value.toString());
+}
+
+String _groupRialDigits(String value) {
+  final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+
+  if (digits.isEmpty) {
+    return '';
+  }
+
+  final buffer = StringBuffer();
+
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) {
+      buffer.write(',');
+    }
+
+    buffer.write(digits[i]);
+  }
+
+  return buffer.toString();
+}
+
+class _RialThousandsFormatter extends TextInputFormatter {
+  const _RialThousandsFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var safeSelectionEnd = newValue.selection.end;
+
+    if (safeSelectionEnd < 0) {
+      safeSelectionEnd = newValue.text.length;
+    }
+
+    if (safeSelectionEnd > newValue.text.length) {
+      safeSelectionEnd = newValue.text.length;
+    }
+
+    final digitsBeforeCursor = newValue.text
+        .substring(0, safeSelectionEnd)
+        .replaceAll(RegExp(r'[^0-9]'), '')
+        .length;
+
+    final formatted = _groupRialDigits(newValue.text);
+
+    var formattedCursor = 0;
+    var seenDigits = 0;
+
+    if (digitsBeforeCursor > 0) {
+      formattedCursor = formatted.length;
+
+      for (var i = 0; i < formatted.length; i++) {
+        final code = formatted.codeUnitAt(i);
+
+        if (code >= 48 && code <= 57) {
+          seenDigits += 1;
+        }
+
+        if (seenDigits == digitsBeforeCursor) {
+          formattedCursor = i + 1;
+          break;
+        }
+      }
+    }
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formattedCursor),
     );
   }
 }

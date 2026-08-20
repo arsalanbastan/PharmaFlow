@@ -1,7 +1,4 @@
-import {
-  IsOptional,
-  IsString,
-} from 'class-validator';
+import { IsDateString, IsOptional, IsString } from 'class-validator';
 
 export class UpdateBankAccountDto {
   @IsOptional()
@@ -10,25 +7,29 @@ export class UpdateBankAccountDto {
 
   @IsOptional()
   @IsString()
-  accountTitle?: string;
+  accountTitle?: string | null;
 
   @IsOptional()
   @IsString()
-  accountHolder?: string;
+  accountHolder?: string | null;
 
   @IsOptional()
   @IsString()
-  accountNumber?: string;
+  accountNumber?: string | null;
 
   @IsOptional()
   @IsString()
-  cardNumber?: string;
+  cardNumber?: string | null;
 
   @IsOptional()
   @IsString()
-  shebaNumber?: string;
+  shebaNumber?: string | null;
 
   @IsOptional()
   @IsString()
-  notes?: string;
+  notes?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  archivedAt?: string | null;
 }

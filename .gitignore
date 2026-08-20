@@ -65,3 +65,32 @@ yarn-error.log*
 # Keep assets
 !apps/mobile/assets/**
 !docs/**
+# PharmaFlow Android release signing secrets
+apps/mobile/android/key.properties
+*.jks
+*.keystore
+# BEGIN PHARMAFLOW LOCAL-ONLY ARTIFACTS
+*.bak
+*.bak.*
+*.pre-*.bak
+*.ps1
+*.apk
+*.tar
+*.patch
+*_audit.txt
+*_current_source.txt
+*_source.txt
+phase2_*.txt
+phone_*.txt
+installed_phone_*
+apps/mobile/$db
+apps/mobile/tool/
+apps/mobile/fcm_stage1/
+**/google-services*.json
+**/*firebase-adminsdk*.json
+**/service-account*.json
+**/key.properties
+**/*.jks
+**/*.keystore
+docs/liara key.txt
+# END PHARMAFLOW LOCAL-ONLY ARTIFACTS

@@ -7,20 +7,37 @@ import '../../../../core/config/app_config.dart';
 import '../../../../core/config/app_environment.dart';
 import '../../../../core/identity/identity_bootstrap_service.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/sync/bank_account_pull_merge_service.dart';
+import '../../../../core/sync/cash_payment_attachment_pull_merge_service.dart';
+import '../../../../core/sync/cash_payment_attachment_push_service.dart';
+import '../../../../core/sync/cash_payment_pull_merge_service.dart';
+import '../../../../core/sync/cheque_pull_merge_service.dart';
+import '../../../../core/sync/cheque_attachment_pull_merge_service.dart';
+import '../../../../core/sync/cheque_attachment_push_service.dart';
 import '../../../../core/sync/cheque_sync_identity_resolver.dart';
+import '../../../../core/sync/company_pull_merge_service.dart';
 import '../../../../core/sync/sync_engine.dart';
 import '../../../../core/sync/sync_identity_resolver.dart';
 import '../../../../core/sync/sync_state.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../data/repositories/local/local_bank_account_repository.dart';
+import '../../../../data/repositories/local/local_cash_payment_attachment_repository.dart';
+import '../../../../data/repositories/local/local_cash_payment_repository.dart';
 import '../../../../core/settings/connection_profile.dart';
 import '../../../../core/settings/connection_settings_repository.dart';
 import '../../../../data/repositories/local/local_cheque_repository.dart';
+import '../../../../data/repositories/local/local_cheque_attachment_repository.dart';
 import '../../../../data/repositories/local/local_company_repository.dart';
+import '../../../../data/repositories/local/sync_cursor_repository.dart';
 import '../../../../data/repositories/local/sync_queue_repository.dart';
 import '../../../../data/repositories/remote/remote_bank_accounts_repository.dart';
+import '../../../../data/repositories/remote/remote_cash_payment_attachment_repository.dart';
+import '../../../../data/repositories/remote/remote_cash_payment_repository.dart';
 import '../../../../data/repositories/remote/remote_cheque_repository.dart';
+import '../../../../data/repositories/remote/remote_cheque_attachment_repository.dart';
 import '../../../../data/repositories/remote/remote_company_repository.dart';
+import '../../../bank_accounts/presentation/providers/bank_account_provider.dart';
+import '../../../cheques/presentation/providers/active_cheques_provider.dart';
 import 'communication_settings_state.dart';
 
 final connectionSettingsRepositoryProvider =
@@ -66,7 +83,18 @@ final appConfigProvider = Provider<AppConfig>((ref) {
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   final config = ref.watch(appConfigProvider);
-  return ApiClient(appConfig: config);
+  final settingsRepository = ref.watch(connectionSettingsRepositoryProvider);
+
+  return ApiClient(
+    appConfig: config,
+    actorDisplayNameProvider: () async {
+      final settings = await settingsRepository.load();
+
+      final displayName = settings.displayName.trim();
+
+      return displayName.isEmpty ? null : displayName;
+    },
+  );
 });
 
 final identityBootstrapServiceProvider = Provider<IdentityBootstrapService>((
@@ -85,24 +113,107 @@ final syncQueueRepositoryProvider = Provider<SyncQueueRepository>((ref) {
   return SyncQueueRepository(DatabaseService.instance);
 });
 
+final syncCursorRepositoryProvider = Provider<SyncCursorRepository>((ref) {
+  return SyncCursorRepository(DatabaseService.instance);
+});
+
 final syncWorkerServiceProvider = Provider<SyncService>((ref) {
   final localCompanyRepository = LocalCompanyRepository(
     DatabaseService.instance,
   );
+
   final localBankAccountRepository = LocalBankAccountRepository(
     DatabaseService.instance,
   );
+
   final localChequeRepository = LocalChequeRepository(DatabaseService.instance);
+
+  final localChequeAttachmentRepository = LocalChequeAttachmentRepository(
+    DatabaseService.instance,
+  );
+
+  final localCashPaymentRepository = LocalCashPaymentRepository(
+    DatabaseService.instance,
+  );
+
+  final localCashPaymentAttachmentRepository =
+      LocalCashPaymentAttachmentRepository(DatabaseService.instance);
+
   final syncIdentityResolver = SyncIdentityResolver(DatabaseService.instance);
+
   final remoteCompanyRepository = RemoteCompanyRepository(
     ref.watch(apiClientProvider),
   );
+
+  final companyPullMergeService = CompanyPullMergeService(
+    databaseService: DatabaseService.instance,
+    remoteRepository: remoteCompanyRepository,
+    cursorRepository: ref.watch(syncCursorRepositoryProvider),
+  );
+
   final remoteBankAccountsRepository = RemoteBankAccountsRepository(
     ref.watch(apiClientProvider),
   );
+
+  final bankAccountPullMergeService = BankAccountPullMergeService(
+    databaseService: DatabaseService.instance,
+    remoteRepository: remoteBankAccountsRepository,
+    cursorRepository: ref.watch(syncCursorRepositoryProvider),
+  );
+
   final remoteChequeRepository = RemoteChequeRepository(
     ref.watch(apiClientProvider),
   );
+
+  final chequePullMergeService = ChequePullMergeService(
+    databaseService: DatabaseService.instance,
+    remoteRepository: remoteChequeRepository,
+    cursorRepository: ref.watch(syncCursorRepositoryProvider),
+  );
+
+  final remoteChequeAttachmentRepository = RemoteChequeAttachmentRepository(
+    ref.watch(apiClientProvider),
+  );
+
+  final chequeAttachmentPushService = ChequeAttachmentPushService(
+    localAttachmentRepository: localChequeAttachmentRepository,
+    localChequeRepository: localChequeRepository,
+    remoteAttachmentRepository: remoteChequeAttachmentRepository,
+    syncQueueRepository: ref.watch(syncQueueRepositoryProvider),
+  );
+
+  final chequeAttachmentPullMergeService = ChequeAttachmentPullMergeService(
+    databaseService: DatabaseService.instance,
+    remoteRepository: remoteChequeAttachmentRepository,
+    cursorRepository: ref.watch(syncCursorRepositoryProvider),
+  );
+
+  final remoteCashPaymentRepository = RemoteCashPaymentRepository(
+    ref.watch(apiClientProvider),
+  );
+
+  final cashPaymentPullMergeService = CashPaymentPullMergeService(
+    databaseService: DatabaseService.instance,
+    remoteRepository: remoteCashPaymentRepository,
+    cursorRepository: ref.watch(syncCursorRepositoryProvider),
+  );
+
+  final remoteCashPaymentAttachmentRepository =
+      RemoteCashPaymentAttachmentRepository(ref.watch(apiClientProvider));
+
+  final cashPaymentAttachmentPushService = CashPaymentAttachmentPushService(
+    localAttachmentRepository: localCashPaymentAttachmentRepository,
+    localCashPaymentRepository: localCashPaymentRepository,
+    remoteAttachmentRepository: remoteCashPaymentAttachmentRepository,
+    syncQueueRepository: ref.watch(syncQueueRepositoryProvider),
+  );
+
+  final cashPaymentAttachmentPullMergeService =
+      CashPaymentAttachmentPullMergeService(
+        databaseService: DatabaseService.instance,
+        remoteRepository: remoteCashPaymentAttachmentRepository,
+        cursorRepository: ref.watch(syncCursorRepositoryProvider),
+      );
 
   return SyncService(
     syncQueueRepository: ref.watch(syncQueueRepositoryProvider),
@@ -118,6 +229,42 @@ final syncWorkerServiceProvider = Provider<SyncService>((ref) {
       remoteChequeRepository: remoteChequeRepository,
       identityResolver: syncIdentityResolver,
     ),
+    companyPullMergeService: companyPullMergeService,
+    bankAccountPullMergeService: bankAccountPullMergeService,
+    chequePullMergeService: chequePullMergeService,
+    chequeAttachmentPushService: chequeAttachmentPushService,
+    chequeAttachmentPullMergeService: chequeAttachmentPullMergeService,
+    localCashPaymentRepository: localCashPaymentRepository,
+    remoteCashPaymentRepository: remoteCashPaymentRepository,
+    cashPaymentPullMergeService: cashPaymentPullMergeService,
+    cashPaymentAttachmentPushService: cashPaymentAttachmentPushService,
+    cashPaymentAttachmentPullMergeService:
+        cashPaymentAttachmentPullMergeService,
+    onCompanyPullMerged: (result) async {
+      if (!result.changedLocalData) {
+        return;
+      }
+
+      ref.invalidate(activeChequeLookupProvider);
+      ref.invalidate(activeChequesProvider);
+    },
+    onBankAccountPullMerged: (result) async {
+      if (!result.changedLocalData) {
+        return;
+      }
+
+      await ref.read(bankAccountProvider.notifier).loadAccounts();
+      ref.invalidate(activeChequeLookupProvider);
+      ref.invalidate(activeChequesProvider);
+    },
+    onChequePullMerged: (result) async {
+      if (!result.changedLocalData) {
+        return;
+      }
+
+      ref.invalidate(activeChequeLookupProvider);
+      ref.invalidate(activeChequesProvider);
+    },
   );
 });
 
@@ -139,6 +286,10 @@ final syncServiceProvider = Provider<SyncEngine>((ref) {
       connectionSettingsRepositoryProvider,
     ),
   );
+
+  // A settings/provider rebuild can replace this engine instance.
+  // Start every new instance here; SyncEngine.start() is idempotent.
+  unawaited(engine.start());
 
   ref.onDispose(() {
     unawaited(engine.dispose());
@@ -236,7 +387,9 @@ class CommunicationSettingsNotifier
   Future<void> onSyncCompletedSuccessfully() async {
     final now = DateTime.now();
 
-    await _settingsRepository.save(_buildSettings(lastSuccessfulSyncAt: now));
+    await _settingsRepository.save(
+      await _buildSettingsPreservingPreferences(lastSuccessfulSyncAt: now),
+    );
 
     state = state.copyWith(lastSuccessfulSyncAt: now, clearError: true);
   }
@@ -272,7 +425,9 @@ class CommunicationSettingsNotifier
     state = state.copyWith(isSaving: true, clearError: true);
 
     try {
-      await _settingsRepository.save(_buildSettings());
+      await _settingsRepository.save(
+        await _buildSettingsPreservingPreferences(),
+      );
 
       state = state.copyWith(
         isSaving: false,
@@ -309,7 +464,9 @@ class CommunicationSettingsNotifier
       final health = await apiClient.checkHealth();
 
       final now = DateTime.now();
-      await _settingsRepository.save(_buildSettings(lastSuccessfulCheck: now));
+      await _settingsRepository.save(
+        await _buildSettingsPreservingPreferences(lastSuccessfulCheck: now),
+      );
 
       final dbStatus = health.database?.status?.trim().isNotEmpty == true
           ? health.database!.status!.trim()
@@ -399,6 +556,35 @@ class CommunicationSettingsNotifier
 
     return ApiClient(
       appConfig: AppConfig(currentEnvironment: environment, settings: settings),
+    );
+  }
+
+  Future<ConnectionSettings> _buildSettingsPreservingPreferences({
+    DateTime? lastSuccessfulSyncAt,
+    DateTime? lastSyncAttemptAt,
+    DateTime? lastSuccessfulCheck,
+  }) async {
+    final persisted = await _settingsRepository.load();
+
+    final communicationSettings = _buildSettings(
+      lastSuccessfulSyncAt: lastSuccessfulSyncAt,
+      lastSyncAttemptAt: lastSyncAttemptAt,
+      lastSuccessfulCheck: lastSuccessfulCheck,
+    );
+
+    return communicationSettings.copyWith(
+      displayName: persisted.displayName,
+      greenThreshold: persisted.greenThreshold,
+      orangeThreshold: persisted.orangeThreshold,
+      redThreshold: persisted.redThreshold,
+      largeAmountThreshold: persisted.largeAmountThreshold,
+      lastSuccessfulSyncAt:
+          lastSuccessfulSyncAt ?? persisted.lastSuccessfulSyncAt,
+      lastSyncAttemptAt: lastSyncAttemptAt ?? persisted.lastSyncAttemptAt,
+      consecutiveConnectionFailures: persisted.consecutiveConnectionFailures,
+      autoRetrySuspended: persisted.autoRetrySuspended,
+      lastSyncUserSafeErrorMessage: persisted.lastSyncUserSafeErrorMessage,
+      lastSuccessfulCheck: lastSuccessfulCheck ?? persisted.lastSuccessfulCheck,
     );
   }
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 
+import '../../../../core/auth/manager_app_auth_gate.dart';
 import '../../../../core/sync/sync_state.dart';
 import '../providers/dashboard_provider.dart';
 import '../../../settings/presentation/providers/communication_settings_provider.dart';
@@ -27,7 +28,12 @@ class DashboardHeader extends ConsumerWidget {
     final connectionFailures = syncState?.consecutiveConnectionFailures ?? 0;
     final autoRetrySuspended = syncState?.autoRetrySuspended ?? false;
     final preferences = ref.watch(appPreferencesProvider).valueOrNull;
-    final displayName = preferences?.displayName ?? 'ارسلان';
+    final authenticatedDisplayName = ManagerAccessScope.maybeOf(
+      context,
+    )?.user.displayName.trim();
+    final displayName = authenticatedDisplayName?.isNotEmpty == true
+        ? authenticatedDisplayName!
+        : (preferences?.displayName ?? 'مدیر');
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -125,11 +131,11 @@ class DashboardHeader extends ConsumerWidget {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 4),
                         Flexible(
                           child: ConstrainedBox(
                             constraints: BoxConstraints(
-                              maxWidth: constraints.maxWidth * 0.52,
+                              maxWidth: constraints.maxWidth * 0.66,
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
@@ -223,57 +229,87 @@ class DashboardHeader extends ConsumerWidget {
                                         ],
                                       ),
                                       const SizedBox(height: 2),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (syncState?.isSyncing == true) ...[
-                                            const SizedBox(
-                                              width: 11,
-                                              height: 11,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 1.6,
-                                                color:
-                                                    DashboardThemeColors.green,
+                                      Transform.translate(
+                                        offset: const Offset(10, 0),
+                                        child: Align(
+                                          alignment: Alignment.centerRight,
+                                          child: Stack(
+                                            clipBehavior: Clip.none,
+                                            alignment: Alignment.centerRight,
+                                            children: [
+                                              Text(
+                                                'آخرین سینک: $lastSyncText',
+                                                key: const ValueKey(
+                                                  'dashboard-last-sync-text',
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                textAlign: TextAlign.right,
+                                                style: const TextStyle(
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w500,
+                                                  color:
+                                                      DashboardThemeColors.ink,
+                                                ),
                                               ),
-                                            ),
-                                            const SizedBox(width: 6),
-                                          ] else ...[
-                                            Icon(
-                                              failedCount > 0
-                                                  ? Icons.error_outline
-                                                  : Icons.sync,
-                                              size: 12,
-                                              color: failedCount > 0
-                                                  ? Colors.redAccent
-                                                  : DashboardThemeColors.green,
-                                            ),
-                                            const SizedBox(width: 4),
-                                          ],
-                                          Flexible(
-                                            child: Text(
-                                              'آخرین همگام سازی موفق: $lastSyncText',
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              textAlign: TextAlign.right,
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                                color: DashboardThemeColors.ink,
+                                              Positioned(
+                                                right: -16,
+                                                child: SizedBox(
+                                                  width: 14,
+                                                  height: 14,
+                                                  child: Center(
+                                                    child:
+                                                        syncState?.isSyncing ==
+                                                            true
+                                                        ? const SizedBox(
+                                                            width: 11,
+                                                            height: 11,
+                                                            child: CircularProgressIndicator(
+                                                              strokeWidth: 1.6,
+                                                              color:
+                                                                  DashboardThemeColors
+                                                                      .green,
+                                                            ),
+                                                          )
+                                                        : Icon(
+                                                            failedCount > 0
+                                                                ? Icons
+                                                                      .error_outline
+                                                                : Icons.sync,
+                                                            size: 12,
+                                                            color:
+                                                                failedCount > 0
+                                                                ? Colors
+                                                                      .redAccent
+                                                                : DashboardThemeColors
+                                                                      .green,
+                                                          ),
+                                                  ),
+                                                ),
                                               ),
-                                            ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
                                       ),
                                       const SizedBox(height: 2),
-                                      Text(
-                                        'آخرین تلاش: $lastAttemptText',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        textAlign: TextAlign.right,
-                                        style: const TextStyle(
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w500,
-                                          color: DashboardThemeColors.ink,
+                                      Transform.translate(
+                                        offset: const Offset(10, 0),
+                                        child: Align(
+                                          alignment: Alignment.centerRight,
+                                          child: Text(
+                                            'آخرین تلاش: $lastAttemptText',
+                                            key: const ValueKey(
+                                              'dashboard-last-attempt-text',
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.right,
+                                            style: const TextStyle(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w500,
+                                              color: DashboardThemeColors.ink,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                       if (autoRetrySuspended) ...[
@@ -382,12 +418,13 @@ class DashboardHeader extends ConsumerWidget {
     }
 
     final local = value.toLocal();
-    final month = local.month.toString().padLeft(2, '0');
-    final day = local.day.toString().padLeft(2, '0');
+    final jalali = Jalali.fromDateTime(local);
+    final month = jalali.month.toString().padLeft(2, '0');
+    final day = jalali.day.toString().padLeft(2, '0');
     final hour = local.hour.toString().padLeft(2, '0');
     final minute = local.minute.toString().padLeft(2, '0');
 
-    return '${local.year}/$month/$day $hour:$minute';
+    return '${jalali.year}/$month/$day - $hour:$minute';
   }
 
   Widget _statusBadge({

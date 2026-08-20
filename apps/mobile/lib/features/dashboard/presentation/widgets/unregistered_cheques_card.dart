@@ -4,6 +4,7 @@ import 'package:intl/intl.dart' show NumberFormat;
 import 'package:shamsi_date/shamsi_date.dart';
 
 import '../../../../data/models/cheque.dart';
+import '../../../cheques/presentation/pages/cheque_details_page.dart';
 import '../providers/dashboard_provider.dart';
 import 'dashboard_visuals.dart';
 
@@ -35,7 +36,7 @@ class _UnregisteredChequesCardState
           side: BorderSide(color: DashboardThemeColors.border, width: 0.8),
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -56,7 +57,7 @@ class _UnregisteredChequesCardState
                           color: DashboardThemeColors.ink,
                         ),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 5),
 
                       if (cheques.isEmpty)
                         const Padding(
@@ -71,7 +72,7 @@ class _UnregisteredChequesCardState
                         )
                       else
                         SizedBox(
-                          height: 166,
+                          height: 82,
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             itemCount: cheques.length,
@@ -90,14 +91,19 @@ class _UnregisteredChequesCardState
 
                               return SizedBox(
                                 width: 280,
-                                child: _UnregisteredChequeItem(
-                                  cheque: cheque,
-                                  companyName: companyName,
-                                  bankName: bankName,
-                                  isPending: isPending,
-                                  onChecked: () => _confirmAndMarkAsRegistered(
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () => _openChequeDetails(cheque),
+                                  child: _UnregisteredChequeItem(
                                     cheque: cheque,
                                     companyName: companyName,
+                                    bankName: bankName,
+                                    isPending: isPending,
+                                    onChecked: () =>
+                                        _confirmAndMarkAsRegistered(
+                                          cheque: cheque,
+                                          companyName: companyName,
+                                        ),
                                   ),
                                 ),
                               );
@@ -165,6 +171,19 @@ class _UnregisteredChequesCardState
         ),
       ),
     );
+  }
+
+  Future<void> _openChequeDetails(Cheque cheque) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => ChequeDetailsPage(chequeId: cheque.id)),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    ref.invalidate(unregisteredChequesCardProvider);
+    ref.invalidate(dashboardSummaryProvider);
   }
 
   Future<void> _markAsRegistered(Cheque cheque) async {
@@ -256,15 +275,19 @@ class _UnregisteredChequeItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final due = Jalali.fromDateTime(cheque.dueDate);
+
     final dueText = _toPersianDigits(
-      '${due.year.toString().padLeft(4, '0')}/${due.month.toString().padLeft(2, '0')}/${due.day.toString().padLeft(2, '0')}',
+      '${due.year.toString().padLeft(4, '0')}/'
+      '${due.month.toString().padLeft(2, '0')}/'
+      '${due.day.toString().padLeft(2, '0')}',
     );
+
     final amount = _toPersianDigits(
       NumberFormat.decimalPattern('en').format(cheque.amountRial),
     );
 
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -278,12 +301,23 @@ class _UnregisteredChequeItem extends StatelessWidget {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Expanded(child: _infoRow('شرکت', companyName)),
-              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  companyName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    color: DashboardThemeColors.ink,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -324,49 +358,73 @@ class _UnregisteredChequeItem extends StatelessWidget {
                               debugPrint(
                                 'cheque.id=${cheque.id} current.isRegisteredInSayad=${cheque.isRegisteredInSayad} new.requestedValue=$value',
                               );
+
                               if (value == true) {
                                 onChecked();
                               }
+
                               debugPrint(
                                 'EXIT unregistered_cheques_card.dart -> Checkbox.onChanged',
                               );
                             },
                           ),
                   ),
-                  const SizedBox(width: 5),
+                  const SizedBox(width: 4),
                   const Text(
                     'ثبت نشده',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 10.5,
                       fontWeight: FontWeight.w600,
-                      color: DashboardThemeColors.ink,
+                      color: DashboardThemeColors.muted,
                     ),
                   ),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          _infoRow('حساب', bankName),
-          const SizedBox(height: 6),
-          _infoRow('شماره چک', cheque.chequeNumber),
-          const SizedBox(height: 6),
-          _infoRow('سررسید', dueText),
-          const SizedBox(height: 6),
-          _infoRow('مبلغ', '$amount ریال'),
-          const Spacer(),
+
+          const SizedBox(height: 7),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _infoRow('حساب', bankName),
+                    const SizedBox(height: 4),
+                    _infoRow('شماره چک', cheque.chequeNumber),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _infoRow('سررسید', dueText),
+                    const SizedBox(height: 4),
+                    _infoRow('مبلغ', '$amount ریال', emphasizeValue: true),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _infoRow(String label, String value) {
+  Widget _infoRow(String label, String value, {bool emphasizeValue = false}) {
     return Row(
       children: [
         Text(
           '$label: ',
           style: const TextStyle(
-            fontSize: 11.5,
+            fontSize: 10.5,
             fontWeight: FontWeight.w700,
             color: DashboardThemeColors.ink,
           ),
@@ -376,9 +434,13 @@ class _UnregisteredChequeItem extends StatelessWidget {
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 11.5,
-              color: DashboardThemeColors.muted,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: emphasizeValue ? FontWeight.w800 : FontWeight.w400,
+              color: emphasizeValue
+                  ? DashboardThemeColors.ink
+                  : DashboardThemeColors.muted,
             ),
           ),
         ),
@@ -388,9 +450,11 @@ class _UnregisteredChequeItem extends StatelessWidget {
 
   String _toPersianDigits(String value) {
     const english = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
     const persian = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
 
     var result = value;
+
     for (var i = 0; i < english.length; i++) {
       result = result.replaceAll(english[i], persian[i]);
     }

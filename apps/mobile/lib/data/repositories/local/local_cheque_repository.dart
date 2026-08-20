@@ -9,6 +9,7 @@ import '../../../core/sync/sync_queue_item.dart';
 import '../../../core/sync/sync_status.dart';
 import '../../../core/sync/sync_trigger.dart';
 import '../../../core/sync/sync_trigger_dispatcher.dart';
+import '../../../core/utils/uuid_v4.dart';
 import '../../mappers/cheque_mapper.dart';
 import '../../models/cheque.dart';
 import '../interfaces/cheque_repository.dart';
@@ -29,11 +30,22 @@ class LocalChequeRepository implements ChequeRepository {
   Future<int> insert(Cheque cheque) async {
     _logger.debug('LocalChequeRepository.insert() START');
 
-    final params = _writeParams(cheque)..remove('id');
     var insertedId = 0;
 
     try {
       _databaseService.transaction((db) {
+        final requestedServerUuid = cheque.serverUuid?.trim();
+        final serverUuid =
+            requestedServerUuid != null && requestedServerUuid.isNotEmpty
+            ? requestedServerUuid
+            : _generateUniqueServerUuid(db);
+
+        _throwIfDuplicateServerUuid(db, serverUuid);
+
+        final params = _writeParams(
+          cheque.copyWith(serverUuid: serverUuid, updatedAt: DateTime.now()),
+        )..remove('id');
+
         final statement = db.prepare(ChequeQueries.insert);
 
         try {
@@ -133,12 +145,13 @@ class LocalChequeRepository implements ChequeRepository {
         } finally {
           statement.dispose();
         }
-      });
 
-      await _syncQueueRepository.enqueueUpdateWithMerge(
-        entityType: syncEntityTypeCheque,
-        entityId: cheque.id,
-      );
+        _syncQueueRepository.enqueueUpdateWithMergeInDatabase(
+          db,
+          entityType: syncEntityTypeCheque,
+          entityId: cheque.id,
+        );
+      });
 
       SyncTriggerDispatcher.instance.request(SyncTrigger.entityChanged);
     } catch (error, stackTrace) {
@@ -305,6 +318,8 @@ class LocalChequeRepository implements ChequeRepository {
   Map<String, Object?> _updateParams(Cheque cheque) {
     final params = {
       'id': cheque.id,
+      'companyId': cheque.companyId,
+      'bankAccountId': cheque.bankAccountId,
       'chequeNumber': cheque.chequeNumber,
       'amountRial': cheque.amountRial,
       'issueDate': cheque.issueDate.millisecondsSinceEpoch,
@@ -342,6 +357,44 @@ class LocalChequeRepository implements ChequeRepository {
       'createdAt': cheque.createdAt.millisecondsSinceEpoch,
       'updatedAt': cheque.updatedAt.millisecondsSinceEpoch,
     };
+  }
+
+  String _generateUniqueServerUuid(Database db) {
+    while (true) {
+      final candidate = generateUuidV4();
+
+      final rows = db.select(
+        '''
+SELECT id
+FROM cheques
+WHERE server_uuid = ?
+LIMIT 1
+''',
+        [candidate],
+      );
+
+      if (rows.isEmpty) {
+        return candidate;
+      }
+    }
+  }
+
+  void _throwIfDuplicateServerUuid(Database db, String serverUuid) {
+    final rows = db.select(
+      '''
+SELECT id
+FROM cheques
+WHERE server_uuid = ?
+LIMIT 1
+''',
+      [serverUuid],
+    );
+
+    if (rows.isNotEmpty) {
+      throw StateError(
+        'Cheque server UUID already exists locally: $serverUuid',
+      );
+    }
   }
 
   String _statusToDb(ChequeStatus status) {

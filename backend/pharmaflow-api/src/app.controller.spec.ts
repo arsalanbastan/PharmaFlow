@@ -1,22 +1,44 @@
 import { Test, TestingModule } from '@nestjs/testing';
+
+import { PrismaService } from './database/prisma/prisma.service';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
 describe('AppController', () => {
   let appController: AppController;
 
+  const prisma = {
+    company: {
+      findMany: jest.fn(),
+    },
+  };
+
   beforeEach(async () => {
+    jest.clearAllMocks();
+    prisma.company.findMany.mockResolvedValue([]);
+
     const app: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
-      providers: [AppService],
+      providers: [
+        AppService,
+        {
+          provide: PrismaService,
+          useValue: prisma,
+        },
+      ],
     }).compile();
 
     appController = app.get<AppController>(AppController);
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('returns backend status and companies from AppService', async () => {
+      await expect(appController.getHello()).resolves.toEqual({
+        message: 'PharmaFlow Backend is running',
+        companies: [],
+      });
+
+      expect(prisma.company.findMany).toHaveBeenCalledTimes(1);
     });
   });
 });

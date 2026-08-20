@@ -349,7 +349,6 @@ final upcomingCommitmentsReportProvider =
         ),
       ];
     });
-
 final bankAccountSummaryReportProvider =
     FutureProvider<List<BankAccountSummaryRow>>((ref) async {
       final lookup = await ref.watch(activeChequeLookupProvider.future);

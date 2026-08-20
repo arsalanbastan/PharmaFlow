@@ -22,6 +22,10 @@ class _CompanyFormPageState extends ConsumerState<CompanyFormPage> {
   late final TextEditingController _nameController;
   late final TextEditingController _nationalIdController;
   late final TextEditingController _economicCodeController;
+  late final TextEditingController _bankNameController;
+  late final TextEditingController _accountNumberController;
+  late final TextEditingController _cardNumberController;
+  late final TextEditingController _shebaNumberController;
   late final TextEditingController _notesController;
   late final TextEditingController _visitorNameController;
   late final TextEditingController _visitorPhoneController;
@@ -44,6 +48,22 @@ class _CompanyFormPageState extends ConsumerState<CompanyFormPage> {
 
     _economicCodeController = TextEditingController(
       text: widget.company?.economicCode ?? '',
+    );
+
+    _bankNameController = TextEditingController(
+      text: widget.company?.bankName ?? '',
+    );
+
+    _accountNumberController = TextEditingController(
+      text: widget.company?.accountNumber ?? '',
+    );
+
+    _cardNumberController = TextEditingController(
+      text: _formatCardNumber(widget.company?.cardNumber ?? ''),
+    );
+
+    _shebaNumberController = TextEditingController(
+      text: _digitsOnly(widget.company?.shebaNumber ?? ''),
     );
 
     _notesController = TextEditingController(text: widget.company?.notes ?? '');
@@ -70,12 +90,66 @@ class _CompanyFormPageState extends ConsumerState<CompanyFormPage> {
     _nameController.dispose();
     _nationalIdController.dispose();
     _economicCodeController.dispose();
+    _bankNameController.dispose();
+    _accountNumberController.dispose();
+    _cardNumberController.dispose();
+    _shebaNumberController.dispose();
     _notesController.dispose();
     _visitorNameController.dispose();
     _visitorPhoneController.dispose();
     _accountantNameController.dispose();
     _accountantPhoneController.dispose();
     super.dispose();
+  }
+
+  String _digitsOnly(String value) {
+    return value.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+
+  String _formatCardNumber(String value) {
+    final digits = _digitsOnly(value);
+
+    if (digits.isEmpty) {
+      return '';
+    }
+
+    final limited = digits.length > 16 ? digits.substring(0, 16) : digits;
+
+    final groups = <String>[];
+
+    for (var index = 0; index < limited.length; index += 4) {
+      final end = (index + 4 < limited.length) ? index + 4 : limited.length;
+
+      groups.add(limited.substring(index, end));
+    }
+
+    return groups.join(' ');
+  }
+
+  Future<void> _copyBankValue(String value, {bool digitsOnly = false}) async {
+    final normalized = digitsOnly
+        ? value.replaceAll(RegExp(r'[^0-9]'), '')
+        : value.trim();
+
+    if (normalized.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('مقداری برای کپی وجود ندارد.'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: normalized));
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('کپی شد'), duration: Duration(seconds: 1)),
+    );
   }
 
   Future<void> _save() async {
@@ -95,6 +169,18 @@ class _CompanyFormPageState extends ConsumerState<CompanyFormPage> {
         economicCode: _economicCodeController.text.trim().isEmpty
             ? null
             : _economicCodeController.text.trim(),
+        bankName: _bankNameController.text.trim().isEmpty
+            ? null
+            : _bankNameController.text.trim(),
+        accountNumber: _accountNumberController.text.trim().isEmpty
+            ? null
+            : _accountNumberController.text.trim(),
+        cardNumber: _digitsOnly(_cardNumberController.text).isEmpty
+            ? null
+            : _digitsOnly(_cardNumberController.text),
+        shebaNumber: _digitsOnly(_shebaNumberController.text).isEmpty
+            ? null
+            : _digitsOnly(_shebaNumberController.text),
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
@@ -155,9 +241,13 @@ class _CompanyFormPageState extends ConsumerState<CompanyFormPage> {
 
     try {
       if (widget.company?.archivedAt == null) {
-        await ref.read(companyProvider.notifier).archiveCompany(widget.company!.id!);
+        await ref
+            .read(companyProvider.notifier)
+            .archiveCompany(widget.company!.id!);
       } else {
-        await ref.read(companyProvider.notifier).restoreCompany(widget.company!.id!);
+        await ref
+            .read(companyProvider.notifier)
+            .restoreCompany(widget.company!.id!);
       }
 
       if (!mounted) return;
@@ -166,9 +256,9 @@ class _CompanyFormPageState extends ConsumerState<CompanyFormPage> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('عملیات با خطا روبرو شد.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('عملیات با خطا روبرو شد.')));
     }
   }
 
@@ -223,6 +313,125 @@ class _CompanyFormPageState extends ConsumerState<CompanyFormPage> {
                 ),
               ),
               const SizedBox(height: 16),
+              Text(
+                'اطلاعات بانکی شرکت',
+                textAlign: TextAlign.right,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+
+              TextFormField(
+                controller: _bankNameController,
+                textAlign: TextAlign.right,
+                decoration: const InputDecoration(
+                  labelText: 'نام بانک',
+                  prefixIcon: Icon(Icons.account_balance_outlined),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _accountNumberController,
+                keyboardType: TextInputType.number,
+                textDirection: TextDirection.ltr,
+                textAlign: TextAlign.left,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: InputDecoration(
+                  labelText: 'شماره حساب',
+                  suffixIcon: IconButton(
+                    tooltip: 'کپی شماره حساب',
+                    onPressed: () => _copyBankValue(
+                      _accountNumberController.text,
+                      digitsOnly: true,
+                    ),
+                    icon: const Icon(Icons.copy_outlined),
+                  ),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _cardNumberController,
+                keyboardType: TextInputType.number,
+                textDirection: TextDirection.ltr,
+                textAlign: TextAlign.left,
+                inputFormatters: const [_CardNumberGroupingFormatter()],
+                decoration: InputDecoration(
+                  labelText: 'شماره کارت',
+                  hintText: '۱۶ رقم',
+                  suffixIcon: IconButton(
+                    tooltip: 'کپی شماره کارت',
+                    onPressed: () => _copyBankValue(
+                      _cardNumberController.text,
+                      digitsOnly: true,
+                    ),
+                    icon: const Icon(Icons.copy_outlined),
+                  ),
+                  border: const OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  final digits = _digitsOnly(value ?? '');
+
+                  if (digits.isEmpty) {
+                    return null;
+                  }
+
+                  if (!RegExp(r'^\d{16}$').hasMatch(digits)) {
+                    return 'شماره کارت باید ۱۶ رقم باشد.';
+                  }
+
+                  return null;
+                },
+              ),
+
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _shebaNumberController,
+                keyboardType: TextInputType.number,
+                textDirection: TextDirection.ltr,
+                textAlign: TextAlign.left,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(24),
+                ],
+                decoration: InputDecoration(
+                  labelText: 'شماره شبا',
+                  hintText: '24 رقم',
+                  prefixText: 'IR ',
+                  suffixIcon: IconButton(
+                    tooltip: 'کپی شماره شبا',
+                    onPressed: () => _copyBankValue(
+                      _shebaNumberController.text,
+                      digitsOnly: true,
+                    ),
+                    icon: const Icon(Icons.copy_outlined),
+                  ),
+                  border: const OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  final digits = _digitsOnly(value ?? '');
+
+                  if (digits.isEmpty) {
+                    return null;
+                  }
+
+                  if (!RegExp(r'^\d{24}$').hasMatch(digits)) {
+                    return 'شماره شبا باید دقیقاً ۲۴ رقم باشد.';
+                  }
+
+                  return null;
+                },
+              ),
+
+              const SizedBox(height: 24),
+
               TextFormField(
                 controller: _notesController,
                 maxLines: 4,
@@ -321,6 +530,37 @@ class _CompanyFormPageState extends ConsumerState<CompanyFormPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CardNumberGroupingFormatter extends TextInputFormatter {
+  const _CardNumberGroupingFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+
+    final limited = digits.length > 16 ? digits.substring(0, 16) : digits;
+
+    final buffer = StringBuffer();
+
+    for (var index = 0; index < limited.length; index++) {
+      if (index > 0 && index % 4 == 0) {
+        buffer.write(' ');
+      }
+
+      buffer.write(limited[index]);
+    }
+
+    final formatted = buffer.toString();
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }

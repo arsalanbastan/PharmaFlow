@@ -14,14 +14,18 @@ class SyncQueueRepository {
   Database get _db => _databaseService.database;
 
   Future<int> add(SyncQueueItem item) async {
+    return addInDatabase(_db, item);
+  }
+
+  int addInDatabase(Database db, SyncQueueItem item) {
     final params = _namedParams(item.toDbMap()..remove('id'));
-    final statement = _db.prepare(SyncQueueQueries.insert);
+
+    final statement = db.prepare(SyncQueueQueries.insert);
 
     try {
       statement.executeWith(StatementParameters.named(params));
-      final insertedId =
-          _db.select('SELECT last_insert_rowid() AS id').first['id'] as int;
-      return insertedId;
+
+      return db.select('SELECT last_insert_rowid() AS id').first['id'] as int;
     } finally {
       statement.dispose();
     }
@@ -31,6 +35,7 @@ class SyncQueueRepository {
     final statement = _db.prepare(SyncQueueQueries.findPending);
 
     late final ResultSet rows;
+
     try {
       rows = statement.selectWith(
         StatementParameters.named(
@@ -41,13 +46,14 @@ class SyncQueueRepository {
       statement.dispose();
     }
 
-    return rows.map((row) => SyncQueueItem.fromDbMap(row)).toList();
+    return rows.map(SyncQueueItem.fromDbMap).toList();
   }
 
   Future<List<SyncQueueItem>> getProcessable() async {
     final statement = _db.prepare(SyncQueueQueries.findProcessable);
 
     late final ResultSet rows;
+
     try {
       rows = statement.selectWith(
         StatementParameters.named(
@@ -61,13 +67,14 @@ class SyncQueueRepository {
       statement.dispose();
     }
 
-    return rows.map((row) => SyncQueueItem.fromDbMap(row)).toList();
+    return rows.map(SyncQueueItem.fromDbMap).toList();
   }
 
   Future<List<SyncQueueItem>> getFailedItems() async {
     final statement = _db.prepare(SyncQueueQueries.findFailedNewest);
 
     late final ResultSet rows;
+
     try {
       rows = statement.selectWith(
         StatementParameters.named({':status': SyncStatus.failed.dbValue}),
@@ -76,20 +83,21 @@ class SyncQueueRepository {
       statement.dispose();
     }
 
-    return rows.map((row) => SyncQueueItem.fromDbMap(row)).toList();
+    return rows.map(SyncQueueItem.fromDbMap).toList();
   }
 
   Future<List<SyncQueueItem>> getAllItems() async {
     final statement = _db.prepare(SyncQueueQueries.findAllNewest);
 
     late final ResultSet rows;
+
     try {
       rows = statement.select();
     } finally {
       statement.dispose();
     }
 
-    return rows.map((row) => SyncQueueItem.fromDbMap(row)).toList();
+    return rows.map(SyncQueueItem.fromDbMap).toList();
   }
 
   Future<SyncQueueItem?> findById(int id) async {
@@ -97,9 +105,11 @@ class SyncQueueRepository {
 
     try {
       final rows = statement.selectWith(StatementParameters.named({':id': id}));
+
       if (rows.isEmpty) {
         return null;
       }
+
       return SyncQueueItem.fromDbMap(rows.first);
     } finally {
       statement.dispose();
@@ -108,6 +118,7 @@ class SyncQueueRepository {
 
   Future<int> countAll() async {
     final row = _db.select(SyncQueueQueries.countAll).first;
+
     return _toInt(row['total']);
   }
 
@@ -118,6 +129,7 @@ class SyncQueueRepository {
       final rows = statement.selectWith(
         StatementParameters.named(_namedParams({'status': status.dbValue})),
       );
+
       return _toInt(rows.first['total']);
     } finally {
       statement.dispose();
@@ -248,34 +260,169 @@ class SyncQueueRepository {
     required String entityType,
     required int entityId,
   }) async {
-    final existing = await _findLatestActiveByEntity(
+    enqueueUpdateWithMergeInDatabase(
+      _db,
+      entityType: entityType,
+      entityId: entityId,
+    );
+  }
+
+  void enqueueUpdateWithMergeInDatabase(
+    Database db, {
+    required String entityType,
+    required int entityId,
+  }) {
+    final existing = _findLatestActiveByEntityInDatabase(
+      db,
       entityType: entityType,
       entityId: entityId,
     );
 
     if (existing == null) {
-      await _insertPendingUpdate(entityType: entityType, entityId: entityId);
+      _insertPendingUpdateInDatabase(
+        db,
+        entityType: entityType,
+        entityId: entityId,
+      );
       return;
     }
 
-    if (existing.operation == SyncOperation.create ||
-        existing.operation == SyncOperation.delete) {
+    /*
+     * Pending/failed CREATE has not started its
+     * current network attempt yet.
+     *
+     * Because SyncService reads the current entity
+     * snapshot when CREATE is eventually processed,
+     * no separate UPDATE is required.
+     *
+     * PROCESSING is different: the CREATE request may
+     * already contain an older snapshot. In that case
+     * preserve the new mutation as a follow-up UPDATE.
+     */
+    if (existing.operation == SyncOperation.create) {
+      if (existing.status == SyncStatus.processing) {
+        _insertPendingUpdateInDatabase(
+          db,
+          entityType: entityType,
+          entityId: entityId,
+        );
+      }
+
+      return;
+    }
+
+    /*
+     * Once DELETE is active, UPDATE must not resurrect
+     * the entity.
+     */
+    if (existing.operation == SyncOperation.delete) {
       return;
     }
 
     if (existing.operation == SyncOperation.update && existing.id != null) {
-      await _requeueExistingUpdate(existing.id!);
+      /*
+       * Never rewrite an in-flight PROCESSING row back
+       * to PENDING. The currently running sync could
+       * mark that same row SYNCED after the local
+       * mutation and silently swallow the change.
+       *
+       * A new pending UPDATE is the follow-up work.
+       */
+      if (existing.status == SyncStatus.processing) {
+        _insertPendingUpdateInDatabase(
+          db,
+          entityType: entityType,
+          entityId: entityId,
+        );
+      } else {
+        _requeueExistingUpdateInDatabase(db, existing.id!);
+      }
+
       return;
     }
 
-    await _insertPendingUpdate(entityType: entityType, entityId: entityId);
+    _insertPendingUpdateInDatabase(
+      db,
+      entityType: entityType,
+      entityId: entityId,
+    );
   }
 
-  Future<SyncQueueItem?> _findLatestActiveByEntity({
+  void enqueueDeleteWithMergeInDatabase(
+    Database db, {
     required String entityType,
     required int entityId,
-  }) async {
-    final statement = _db.prepare(SyncQueueQueries.findLatestActiveByEntity);
+  }) {
+    final existing = _findLatestActiveByEntityInDatabase(
+      db,
+      entityType: entityType,
+      entityId: entityId,
+    );
+
+    if (existing != null) {
+      if (existing.operation == SyncOperation.delete) {
+        return;
+      }
+
+      if (existing.operation == SyncOperation.create) {
+        /*
+         * A pending CREATE has definitely not started yet, so deleting the
+         * local entity can cancel that CREATE without a remote DELETE.
+         *
+         * FAILED / PROCESSING CREATE is different: the request may already
+         * have reached the server. Keep the CREATE work alive. CashPayment
+         * SyncService will enqueue a follow-up DELETE after an idempotent
+         * CREATE succeeds when deleteRequestedAt is present.
+         */
+        if (existing.status == SyncStatus.pending && existing.id != null) {
+          final cancelStatement = db.prepare(SyncQueueQueries.deleteById);
+
+          try {
+            cancelStatement.executeWith(
+              StatementParameters.named({':id': existing.id}),
+            );
+          } finally {
+            cancelStatement.dispose();
+          }
+        }
+
+        return;
+      }
+
+      if (existing.operation == SyncOperation.update &&
+          existing.id != null &&
+          existing.status != SyncStatus.processing) {
+        final cancelStatement = db.prepare(SyncQueueQueries.deleteById);
+
+        try {
+          cancelStatement.executeWith(
+            StatementParameters.named({':id': existing.id}),
+          );
+        } finally {
+          cancelStatement.dispose();
+        }
+      }
+    }
+
+    addInDatabase(
+      db,
+      SyncQueueItem(
+        entityType: entityType,
+        entityId: entityId,
+        operation: SyncOperation.delete,
+        status: SyncStatus.pending,
+        retryCount: 0,
+        createdAt: DateTime.now(),
+      ),
+    );
+  }
+
+  SyncQueueItem? _findLatestActiveByEntityInDatabase(
+    Database db, {
+    required String entityType,
+    required int entityId,
+  }) {
+    final statement = db.prepare(SyncQueueQueries.findLatestActiveByEntity);
 
     try {
       final rows = statement.selectWith(
@@ -298,11 +445,13 @@ class SyncQueueRepository {
     }
   }
 
-  Future<void> _insertPendingUpdate({
+  void _insertPendingUpdateInDatabase(
+    Database db, {
     required String entityType,
     required int entityId,
-  }) async {
-    await add(
+  }) {
+    addInDatabase(
+      db,
       SyncQueueItem(
         entityType: entityType,
         entityId: entityId,
@@ -314,8 +463,8 @@ class SyncQueueRepository {
     );
   }
 
-  Future<void> _requeueExistingUpdate(int id) async {
-    final statement = _db.prepare(SyncQueueQueries.requeueExistingUpdate);
+  void _requeueExistingUpdateInDatabase(Database db, int id) {
+    final statement = db.prepare(SyncQueueQueries.requeueExistingUpdate);
 
     try {
       statement.executeWith(

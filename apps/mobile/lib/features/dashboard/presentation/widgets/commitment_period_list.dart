@@ -11,7 +11,14 @@ import '../providers/dashboard_provider.dart';
 import 'dashboard_visuals.dart';
 
 class CommitmentPeriodList extends ConsumerStatefulWidget {
-  const CommitmentPeriodList({super.key});
+  const CommitmentPeriodList({
+    super.key,
+    this.parentScrollController,
+    this.fillAvailableHeight = false,
+  });
+
+  final ScrollController? parentScrollController;
+  final bool fillAvailableHeight;
 
   @override
   ConsumerState<CommitmentPeriodList> createState() =>
@@ -20,6 +27,32 @@ class CommitmentPeriodList extends ConsumerStatefulWidget {
 
 class _CommitmentPeriodListState extends ConsumerState<CommitmentPeriodList> {
   final Set<String> _expandedPeriods = <String>{};
+
+  bool _handleOverscroll(OverscrollNotification notification) {
+    if (notification.depth != 0) {
+      return false;
+    }
+
+    final parentController = widget.parentScrollController;
+
+    if (parentController == null ||
+        !parentController.hasClients ||
+        notification.overscroll == 0) {
+      return false;
+    }
+
+    final position = parentController.position;
+
+    final target = (parentController.offset + notification.overscroll)
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+
+    if (target != parentController.offset) {
+      parentController.jumpTo(target);
+    }
+
+    return false;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,33 +96,38 @@ class _CommitmentPeriodListState extends ConsumerState<CommitmentPeriodList> {
                       ),
                     )
                   : SizedBox(
-                      height: 390,
-                      child: ListView.separated(
-                        itemCount: periods.length,
-                        separatorBuilder: (context, index) {
-                          return const Divider(height: 1, thickness: 0.6);
-                        },
-                        itemBuilder: (context, index) {
-                          final period = periods[index];
-                          final isExpanded = _expandedPeriods.contains(
-                            period.title,
-                          );
+                      height: widget.fillAvailableHeight
+                          ? double.infinity
+                          : 330,
+                      child: NotificationListener<OverscrollNotification>(
+                        onNotification: _handleOverscroll,
+                        child: ListView.separated(
+                          itemCount: periods.length,
+                          separatorBuilder: (context, index) {
+                            return const Divider(height: 1, thickness: 0.6);
+                          },
+                          itemBuilder: (context, index) {
+                            final period = periods[index];
+                            final isExpanded = _expandedPeriods.contains(
+                              period.title,
+                            );
 
-                          return _PeriodGroup(
-                            period: period,
-                            thresholds: thresholds,
-                            expanded: isExpanded,
-                            onTap: () {
-                              setState(() {
-                                if (isExpanded) {
-                                  _expandedPeriods.remove(period.title);
-                                } else {
-                                  _expandedPeriods.add(period.title);
-                                }
-                              });
-                            },
-                          );
-                        },
+                            return _PeriodGroup(
+                              period: period,
+                              thresholds: thresholds,
+                              expanded: isExpanded,
+                              onTap: () {
+                                setState(() {
+                                  if (isExpanded) {
+                                    _expandedPeriods.remove(period.title);
+                                  } else {
+                                    _expandedPeriods.add(period.title);
+                                  }
+                                });
+                              },
+                            );
+                          },
+                        ),
                       ),
                     ),
             ),
@@ -143,7 +181,7 @@ class _PeriodGroup extends StatelessWidget {
             onTap: onTap,
             borderRadius: BorderRadius.circular(14),
             child: SizedBox(
-              height: 64,
+              height: 54,
               child: Row(
                 children: [
                   Expanded(

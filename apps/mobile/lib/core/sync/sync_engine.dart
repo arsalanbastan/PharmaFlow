@@ -93,12 +93,9 @@ class SyncEngine {
       }
     });
 
-    _periodicTimer = Timer.periodic(_periodicInterval, (_) async {
-      final hasPending = await _hasQueuedWork();
-      if (hasPending) {
-        _logger.debug('Periodic trigger found queued work. Scheduling sync.');
-        unawaited(requestSync(trigger: SyncTrigger.periodic));
-      }
+    _periodicTimer = Timer.periodic(_periodicInterval, (_) {
+      _logger.debug('Periodic Auto Sync tick. Scheduling incremental sync.');
+      unawaited(requestSync(trigger: SyncTrigger.periodic));
     });
 
     _logger.info('SyncEngine started.');
@@ -112,16 +109,30 @@ class SyncEngine {
     await _stateController.close();
   }
 
-  Future<SyncServiceResult> syncNow() {
+  Future<SyncServiceResult> syncNow() async {
+    await _prepareManualSyncRequest();
     return requestSync(trigger: SyncTrigger.manual);
   }
 
   Future<SyncServiceResult> retryManually() async {
+    await _prepareManualSyncRequest();
+    return requestSync(trigger: SyncTrigger.manual);
+  }
+
+  Future<void> _prepareManualSyncRequest() async {
     await _setConnectionFailureState(
       consecutiveFailures: 0,
       autoRetrySuspended: false,
+      clearLastUserSafeErrorMessage: true,
     );
-    return requestSync(trigger: SyncTrigger.manual);
+
+    _emit(
+      _state.copyWith(
+        syncStatus: SyncUiStatus.idle,
+        clearLastUserSafeErrorMessage: true,
+        clearLastError: true,
+      ),
+    );
   }
 
   Future<void> refreshState() async {
@@ -133,6 +144,22 @@ class SyncEngine {
 
     if (!_metadataHydrated) {
       await _hydrateSyncMetadata();
+    }
+
+    if (trigger != SyncTrigger.manual) {
+      final settings = await _connectionSettingsRepository.load();
+
+      if (!settings.autoSync) {
+        _logger.info('Automatic sync ignored because Auto Sync is disabled.');
+        await _refreshStateCounts();
+        return const SyncServiceResult(
+          totalPending: 0,
+          processed: 0,
+          succeeded: 0,
+          failed: 0,
+          performedServerCheck: false,
+        );
+      }
     }
 
     if (_state.autoRetrySuspended && trigger != SyncTrigger.manual) {
@@ -305,6 +332,7 @@ class SyncEngine {
           await _setConnectionFailureState(
             consecutiveFailures: 0,
             autoRetrySuspended: false,
+            clearLastUserSafeErrorMessage: true,
           );
           _emit(
             _state.copyWith(
@@ -402,18 +430,16 @@ class SyncEngine {
 
   Future<SyncServiceResult> _runSingleAttempt() async {
     final hasQueuedWork = await _hasQueuedWork();
+    var performedHealthCheck = false;
 
     if (!hasQueuedWork) {
       _emit(_state.copyWith(syncStatus: SyncUiStatus.checkingServer));
 
       try {
         await _apiClient.checkHealth();
-        return const SyncServiceResult(
-          totalPending: 0,
-          processed: 0,
-          succeeded: 0,
-          failed: 0,
-          performedServerCheck: true,
+        performedHealthCheck = true;
+        _logger.debug(
+          'Empty-queue health check succeeded; continuing into incremental sync.',
         );
       } catch (error, stackTrace) {
         final details = _syncService.classifyFailure(error);
@@ -447,9 +473,27 @@ class SyncEngine {
     }
 
     try {
-      await _ensureBootstrap();
+      if (hasQueuedWork) {
+        await _ensureBootstrap();
+      }
+
       final result = await _syncService.sync();
-      return result;
+
+      if (!performedHealthCheck || result.performedServerCheck) {
+        return result;
+      }
+
+      return SyncServiceResult(
+        totalPending: result.totalPending,
+        processed: result.processed,
+        succeeded: result.succeeded,
+        failed: result.failed,
+        wasAlreadyRunning: result.wasAlreadyRunning,
+        stoppedAtPhase: result.stoppedAtPhase,
+        serverUnavailable: result.serverUnavailable,
+        failureDetails: result.failureDetails,
+        performedServerCheck: true,
+      );
     } catch (error, stackTrace) {
       final details = _syncService.classifyFailure(error);
       _logger.error(
@@ -466,7 +510,7 @@ class SyncEngine {
           failed: 0,
           serverUnavailable: true,
           failureDetails: details,
-          performedServerCheck: true,
+          performedServerCheck: performedHealthCheck || hasQueuedWork,
         );
       }
 
@@ -476,7 +520,7 @@ class SyncEngine {
         succeeded: 0,
         failed: 1,
         failureDetails: details,
-        performedServerCheck: true,
+        performedServerCheck: performedHealthCheck || hasQueuedWork,
       );
     }
   }
@@ -615,15 +659,22 @@ class SyncEngine {
   Future<void> _setConnectionFailureState({
     required int consecutiveFailures,
     required bool autoRetrySuspended,
+    bool clearLastUserSafeErrorMessage = false,
   }) async {
+    const suspendedMessage =
+        'عدم دسترسی به سرور؛ تلاش خودکار پس از ۳ بار ناموفق متوقف شد.';
+    final shouldClearStoredError =
+        clearLastUserSafeErrorMessage && !autoRetrySuspended;
+
     final settings = await _connectionSettingsRepository.load();
     await _connectionSettingsRepository.save(
       settings.copyWith(
         consecutiveConnectionFailures: consecutiveFailures,
         autoRetrySuspended: autoRetrySuspended,
         lastSyncUserSafeErrorMessage: autoRetrySuspended
-            ? 'عدم دسترسی به سرور؛ تلاش خودکار پس از ۳ بار ناموفق متوقف شد.'
-            : _state.lastUserSafeErrorMessage,
+            ? suspendedMessage
+            : null,
+        clearLastSyncUserSafeErrorMessage: shouldClearStoredError,
       ),
     );
 
@@ -631,6 +682,8 @@ class SyncEngine {
       _state.copyWith(
         consecutiveConnectionFailures: consecutiveFailures,
         autoRetrySuspended: autoRetrySuspended,
+        lastUserSafeErrorMessage: autoRetrySuspended ? suspendedMessage : null,
+        clearLastUserSafeErrorMessage: shouldClearStoredError,
       ),
     );
   }

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 
 import { CompaniesService } from './companies.service';
@@ -28,6 +29,19 @@ export class CompaniesController {
   @Get()
   findAll() {
     return this.companiesService.findAll();
+  }
+
+  @Get('changes')
+  findChanges(
+    @Query('updatedAfter') updatedAfter?: string,
+    @Query('afterId') afterId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.companiesService.findChanges({
+      updatedAfter,
+      afterId,
+      limit,
+    });
   }
 
   @Get(':id')

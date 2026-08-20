@@ -10,6 +10,10 @@ import {
 import { Type } from 'class-transformer';
 
 export class CreateChequeDto {
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
   @IsString()
   chequeNumber: string;
 
@@ -57,4 +61,8 @@ export class CreateChequeDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsDateString()
+  archivedAt?: string;
 }

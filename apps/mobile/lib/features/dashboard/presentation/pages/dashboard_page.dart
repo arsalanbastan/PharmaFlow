@@ -15,31 +15,20 @@ class DashboardPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppScaffold(
       title: '',
-
       currentDestination: AppShellDestination.home,
-
-      body: Directionality(
+      body: const Directionality(
         textDirection: TextDirection.rtl,
-
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 5),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-
-            children: const [
+            children: [
               DashboardHeader(),
-
               SizedBox(height: 8),
-
               TomorrowCommitmentCard(),
-
               SizedBox(height: 8),
-
-              CommitmentPeriodList(),
-
-              SizedBox(height: 8),
-
+              Expanded(child: CommitmentPeriodList(fillAvailableHeight: true)),
+              SizedBox(height: 5),
               UnregisteredChequesCard(),
             ],
           ),

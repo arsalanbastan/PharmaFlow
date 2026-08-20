@@ -13,6 +13,11 @@ CREATE TABLE companies (
 
   economic_code TEXT,
 
+  bank_name TEXT,
+  account_number TEXT,
+  card_number TEXT,
+  sheba_number TEXT,
+
   notes TEXT,
 
   visitor_name TEXT,

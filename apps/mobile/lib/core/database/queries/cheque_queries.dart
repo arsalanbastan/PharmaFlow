@@ -115,6 +115,8 @@ INSERT INTO cheques (
   static const String updateEditableById = '''
 UPDATE cheques
 SET
+  company_id = :companyId,
+  bank_account_id = :bankAccountId,
   cheque_number = :chequeNumber,
   amount_rial = :amountRial,
   issue_date = :issueDate,

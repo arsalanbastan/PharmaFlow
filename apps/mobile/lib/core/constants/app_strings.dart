@@ -67,8 +67,7 @@ abstract final class AppStrings {
   // Bottom Navigation
   // =========================
 
-  static const home = 'خانه';
-
+  static const home = 'مالی';
   static const cheques = 'چک‌ها';
 
   static const accounts = 'حساب‌ها';

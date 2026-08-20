@@ -1,4 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
+import '../auth/manager_app_auth_gate.dart';
 
 import '../../features/dashboard/domain/models/commitment_period.dart';
 import '../../features/dashboard/presentation/pages/commitment_period_detail_page.dart';
@@ -7,12 +10,16 @@ import '../../features/dashboard/presentation/pages/dashboard_page.dart';
 import '../../features/dashboard/presentation/pages/dashboard_test_page.dart';
 import '../../features/dashboard/presentation/pages/sync_failures_page.dart';
 import '../../features/menu/presentation/pages/menu_page.dart';
+import '../../features/orders/presentation/pages/orders_dashboard_page.dart';
 import '../../features/reports/presentation/pages/reports_page.dart';
 
 class AppRouter {
   AppRouter._();
 
+  static final GlobalKey<NavigatorState> rootNavigatorKey =
+      GlobalKey<NavigatorState>();
   static final GoRouter router = GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/',
 
     routes: [
@@ -29,9 +36,17 @@ class AppRouter {
       ),
 
       GoRoute(
+        path: '/orders',
+        name: 'orders',
+        builder: (context, state) => const OrdersDashboardPage(),
+      ),
+      GoRoute(
         path: '/reports',
         name: 'reports',
-        builder: (context, state) => const ReportsPage(),
+        builder: (context, state) => const ManagerPermissionGate(
+          permission: ManagerAppPermission.financialReports,
+          child: ReportsPage(),
+        ),
       ),
 
       GoRoute(

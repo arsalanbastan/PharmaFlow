@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum AppShellDestination {
-  home,
-  reports,
-  menu,
-}
+enum AppShellDestination { home, orders, reports, menu }
 
 class AppBottomNavigation extends StatelessWidget {
   const AppBottomNavigation({
@@ -18,9 +14,9 @@ class AppBottomNavigation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final compactTheme = Theme.of(context).copyWith(
-      visualDensity: const VisualDensity(horizontal: 0, vertical: -2),
-    );
+    final compactTheme = Theme.of(
+      context,
+    ).copyWith(visualDensity: const VisualDensity(horizontal: 0, vertical: -2));
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -37,7 +33,12 @@ class AppBottomNavigation extends StatelessWidget {
             NavigationDestination(
               icon: Icon(Icons.home_outlined),
               selectedIcon: Icon(Icons.home),
-              label: 'خانه',
+              label: 'مالی',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.shopping_cart_outlined),
+              selectedIcon: Icon(Icons.shopping_cart),
+              label: 'سفارشات',
             ),
             NavigationDestination(
               icon: Icon(Icons.bar_chart_outlined),

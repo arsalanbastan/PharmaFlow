@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 
 import { BankAccountsService } from './bank-accounts.service';
@@ -28,6 +29,19 @@ export class BankAccountsController {
   @Get()
   findAll() {
     return this.bankAccountsService.findAll();
+  }
+
+  @Get('changes')
+  findChanges(
+    @Query('updatedAfter') updatedAfter?: string,
+    @Query('afterId') afterId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.bankAccountsService.findChanges({
+      updatedAfter,
+      afterId,
+      limit,
+    });
   }
 
   @Get(':id')

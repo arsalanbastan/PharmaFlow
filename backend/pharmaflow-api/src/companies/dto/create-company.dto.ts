@@ -1,53 +1,63 @@
 import {
+  IsDateString,
   IsOptional,
   IsString,
+  IsUUID,
 } from 'class-validator';
 
 export class CreateCompanyDto {
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
   @IsString()
   name: string;
 
   @IsOptional()
   @IsString()
-  nationalId?: string;
+  nationalId?: string | null;
 
   @IsOptional()
   @IsString()
-  economicCode?: string;
+  economicCode?: string | null;
 
   @IsOptional()
   @IsString()
-  bankName?: string;
+  bankName?: string | null;
 
   @IsOptional()
   @IsString()
-  accountNumber?: string;
+  accountNumber?: string | null;
 
   @IsOptional()
   @IsString()
-  cardNumber?: string;
+  cardNumber?: string | null;
 
   @IsOptional()
   @IsString()
-  shebaNumber?: string;
+  shebaNumber?: string | null;
 
   @IsOptional()
   @IsString()
-  notes?: string;
+  notes?: string | null;
 
   @IsOptional()
   @IsString()
-  visitorName?: string;
+  visitorName?: string | null;
 
   @IsOptional()
   @IsString()
-  visitorPhone?: string;
+  visitorPhone?: string | null;
 
   @IsOptional()
   @IsString()
-  accountantName?: string;
+  accountantName?: string | null;
 
   @IsOptional()
   @IsString()
-  accountantPhone?: string;
+  accountantPhone?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  archivedAt?: string | null;
 }

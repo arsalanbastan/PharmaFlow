@@ -14,9 +14,9 @@ class DashboardAmountThresholds {
 
 const DashboardAmountThresholds defaultDashboardAmountThresholds =
     DashboardAmountThresholds(
-      green: 600000000,
-      orange: 700000000,
-      red: 800000000,
+      green: 6000000000,
+      orange: 7000000000,
+      red: 8000000000,
     );
 
 class DashboardThemeColors {

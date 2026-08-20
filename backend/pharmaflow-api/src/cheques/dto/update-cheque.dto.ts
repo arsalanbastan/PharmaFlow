@@ -25,7 +25,7 @@ export class UpdateChequeDto {
 
   @IsOptional()
   @IsDateString()
-  dueDate?: string;
+  dueDate?: string | null;
 
   @IsOptional()
   @IsUUID()
@@ -37,11 +37,11 @@ export class UpdateChequeDto {
 
   @IsOptional()
   @IsString()
-  sayadStatus?: string;
+  sayadStatus?: string | null;
 
   @IsOptional()
   @IsString()
-  status?: string;
+  status?: string | null;
 
   @IsOptional()
   @IsBoolean()
@@ -49,7 +49,7 @@ export class UpdateChequeDto {
 
   @IsOptional()
   @IsString()
-  sayadId?: string;
+  sayadId?: string | null;
 
   @IsOptional()
   @IsString()
@@ -61,5 +61,9 @@ export class UpdateChequeDto {
 
   @IsOptional()
   @IsString()
-  description?: string;
+  description?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  archivedAt?: string | null;
 }

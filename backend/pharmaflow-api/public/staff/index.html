@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <base href="/staff/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="سامانه ثبت و پیگیری درخواست‌های کارکنان داروخانه">
+  <meta name="theme-color" content="#176B5B">
+  <meta name="color-scheme" content="light">
+
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="PharmaFlow Staff">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
+  <link rel="manifest" href="manifest.json">
+
+  <title>PharmaFlow Staff</title>
+</head>
+<body style="margin:0;background:#F7FBF9">
+  <noscript>برای اجرای PharmaFlow Staff باید JavaScript مرورگر فعال باشد.</noscript>
+  <script>
+    (() => {
+      window.__pharmaFlowStaffRelease = '1.0.2-role-cache-hotfix-1';
+
+      if (!('serviceWorker' in navigator)) {
+        return;
+      }
+
+      let reloadingForNewRelease = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloadingForNewRelease) {
+          return;
+        }
+
+        reloadingForNewRelease = true;
+        window.location.reload();
+      });
+
+      window.addEventListener('load', async () => {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        const staffPath = new URL('staff/', window.location.origin + '/').pathname;
+
+        await Promise.all(
+          registrations
+            .filter((registration) => new URL(registration.scope).pathname.startsWith(staffPath))
+            .map((registration) => registration.update()),
+        );
+      });
+    })();
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

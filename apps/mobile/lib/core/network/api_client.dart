@@ -15,6 +15,7 @@ class ApiClient {
     http.Client? httpClient,
     Duration? timeout,
     AuthTokenStorage? authTokenStorage,
+    this._actorDisplayNameProvider,
   }) : _httpClient = httpClient ?? http.Client(),
        _appConfig = appConfig ?? AppConfig.defaults(),
        _timeoutOverride = timeout,
@@ -24,6 +25,7 @@ class ApiClient {
   final AppConfig _appConfig;
   final Duration? _timeoutOverride;
   final AuthTokenStorage _authTokenStorage;
+  final Future<String?> Function()? _actorDisplayNameProvider;
 
   Duration get _timeout {
     final override = _timeoutOverride;
@@ -81,6 +83,7 @@ class ApiClient {
     final uri = _buildUri(endpoint, queryParameters: queryParameters);
     final requestHeaders = await _buildHeaders(
       headers: {HttpHeaders.contentTypeHeader: 'application/json', ...?headers},
+      includeActor: true,
     );
 
     try {
@@ -124,6 +127,7 @@ class ApiClient {
     final uri = _buildUri(endpoint, queryParameters: queryParameters);
     final requestHeaders = await _buildHeaders(
       headers: {HttpHeaders.contentTypeHeader: 'application/json', ...?headers},
+      includeActor: true,
     );
 
     try {
@@ -164,7 +168,10 @@ class ApiClient {
     Map<String, String>? queryParameters,
   }) async {
     final uri = _buildUri(endpoint, queryParameters: queryParameters);
-    final requestHeaders = await _buildHeaders(headers: headers);
+    final requestHeaders = await _buildHeaders(
+      headers: headers,
+      includeActor: true,
+    );
 
     try {
       final response = await _httpClient
@@ -247,11 +254,35 @@ class ApiClient {
 
   Future<Map<String, String>> _buildHeaders({
     Map<String, String>? headers,
+    bool includeActor = false,
   }) async {
     final requestHeaders = <String, String>{
       HttpHeaders.acceptHeader: 'application/json',
       ...?headers,
     };
+
+    if (includeActor) {
+      final actorDisplayNameProvider = _actorDisplayNameProvider;
+
+      if (actorDisplayNameProvider != null) {
+        try {
+          final rawActorDisplayName = await actorDisplayNameProvider();
+
+          final actorDisplayName = rawActorDisplayName?.trim();
+
+          if (actorDisplayName != null && actorDisplayName.isNotEmpty) {
+            final encodedActorDisplayName = base64Encode(
+              utf8.encode(actorDisplayName),
+            );
+
+            requestHeaders['x-pharmaflow-actor-name'] =
+                'utf8b64:$encodedActorDisplayName';
+          }
+        } catch (_) {
+          // Audit metadata must never block the real mutation.
+        }
+      }
+    }
 
     final token = await _authTokenStorage.getToken();
     if (token != null && token.trim().isNotEmpty) {

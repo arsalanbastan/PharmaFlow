@@ -31,11 +31,9 @@ class _CompanyListPageState extends ConsumerState<CompanyListPage> {
   }
 
   Future<void> _openCreatePage() async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => const CompanyFormPage(),
-      ),
-    );
+    final result = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => const CompanyFormPage()));
 
     if (result == true && mounted) {
       await ref.read(companyProvider.notifier).loadCompanies();
@@ -44,11 +42,7 @@ class _CompanyListPageState extends ConsumerState<CompanyListPage> {
 
   Future<void> _openEditPage(Company company) async {
     final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => CompanyFormPage(
-          company: company,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => CompanyFormPage(company: company)),
     );
 
     if (result == true && mounted) {
@@ -80,14 +74,16 @@ class _CompanyListPageState extends ConsumerState<CompanyListPage> {
               icon: Icon(
                 _includeArchived ? Icons.archive_outlined : Icons.archive,
               ),
-              tooltip: _includeArchived ? 'نمایش شرکت‌های فعال' : 'نمایش همه شرکت‌ها',
+              tooltip: _includeArchived
+                  ? 'نمایش شرکت‌های فعال'
+                  : 'نمایش همه شرکت‌ها',
             ),
           ],
         ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openCreatePage,
-        child: const Icon(Icons.add),
-      ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _openCreatePage,
+          child: const Icon(Icons.add),
+        ),
         body: Column(
           children: [
             Padding(
@@ -110,9 +106,7 @@ class _CompanyListPageState extends ConsumerState<CompanyListPage> {
               child: Builder(
                 builder: (_) {
                   if (state.isLoading) {
-                    return const Center(
-                      child: CircularProgressIndicator(),
-                    );
+                    return const Center(child: CircularProgressIndicator());
                   }
 
                   if (state.errorMessage != null) {
@@ -143,6 +137,10 @@ class _CompanyListPageState extends ConsumerState<CompanyListPage> {
                           final searchableValues = [
                             company.name,
                             company.nationalId,
+                            company.bankName,
+                            company.accountNumber,
+                            company.cardNumber,
+                            company.shebaNumber,
                             company.visitorName,
                             company.visitorPhone,
                             company.accountantName,
@@ -169,7 +167,8 @@ class _CompanyListPageState extends ConsumerState<CompanyListPage> {
                     child: ListView.separated(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                       itemCount: filteredCompanies.length,
-                      separatorBuilder: (_, index) => const SizedBox(height: 12),
+                      separatorBuilder: (_, index) =>
+                          const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final company = filteredCompanies[index];
 
@@ -214,7 +213,8 @@ class _CompanyListPageState extends ConsumerState<CompanyListPage> {
                                     children: [
                                       Expanded(
                                         child: PhoneActionRow(
-                                          phoneNumber: company.visitorPhone ?? '',
+                                          phoneNumber:
+                                              company.visitorPhone ?? '',
                                         ),
                                       ),
                                     ],
@@ -231,7 +231,8 @@ class _CompanyListPageState extends ConsumerState<CompanyListPage> {
                                     children: [
                                       Expanded(
                                         child: PhoneActionRow(
-                                          phoneNumber: company.accountantPhone ?? '',
+                                          phoneNumber:
+                                              company.accountantPhone ?? '',
                                         ),
                                       ),
                                     ],
