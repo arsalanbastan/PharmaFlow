@@ -355,11 +355,134 @@ class _CashPaymentAttachmentSectionState
   }
 
   Future<void> _addStatementAttachments() async {
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.camera_alt_outlined),
+                    title: const Text('دوربین'),
+                    subtitle: const Text('گرفتن عکس جدید از صورتحساب'),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop('camera');
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.folder_open_outlined),
+                    title: const Text('گالری / فایل PDF'),
+                    subtitle: const Text('انتخاب یک یا چند تصویر یا فایل PDF'),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop('files');
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (source == null || !mounted) {
+      return;
+    }
+
+    if (source == 'camera') {
+      await _addStatementFromCamera();
+      return;
+    }
+
+    await _addStatementFiles();
+  }
+
+  Future<void> _addStatementFromCamera() async {
+    if (_isBusy) {
+      return;
+    }
+
+    setState(() {
+      _isBusy = true;
+    });
+
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 92,
+      );
+
+      if (picked == null) {
+        return;
+      }
+
+      final bytes = await picked.readAsBytes();
+
+      final originalName = picked.name.trim().isEmpty
+          ? p.basename(picked.path)
+          : picked.name.trim();
+
+      await _persistPickedAttachment(
+        kind: CashPaymentAttachmentKind.statement,
+        fileName: originalName,
+        pathHint: picked.path,
+        bytes: bytes,
+      );
+
+      if (widget.cashPaymentId != null) {
+        await _load();
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      final message = widget.cashPaymentId == null
+          ? 'تصویر صورتحساب آماده است و همراه با ذخیره واریزی ثبت می‌شود.'
+          : 'تصویر صورتحساب ذخیره شد و در صف همگام‌سازی قرار گرفت.';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message, textAlign: TextAlign.right)),
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CashPaymentAttachmentSection._addStatementFromCamera failed: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) {
+        return;
+      }
+
+      final message = error is StateError
+          ? error.message.toString()
+          : 'ثبت تصویر صورتحساب با خطا مواجه شد.';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message, textAlign: TextAlign.right)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _addStatementFiles() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
       allowMultiple: true,
     );
+
     final pickedFiles = result?.files ?? const <PlatformFile>[];
 
     if (pickedFiles.isEmpty || !mounted) {
@@ -388,8 +511,9 @@ class _CashPaymentAttachmentSectionState
           added += 1;
         } catch (error, stackTrace) {
           failed += 1;
+
           debugPrint(
-            'CashPaymentAttachmentSection._addStatementAttachments '
+            'CashPaymentAttachmentSection._addStatementFiles '
             'skipped ${picked.name}: $error',
           );
           debugPrintStack(stackTrace: stackTrace);
@@ -413,8 +537,7 @@ class _CashPaymentAttachmentSectionState
       );
     } catch (error, stackTrace) {
       debugPrint(
-        'CashPaymentAttachmentSection._addStatementAttachments failed: '
-        '$error',
+        'CashPaymentAttachmentSection._addStatementFiles failed: $error',
       );
       debugPrintStack(stackTrace: stackTrace);
 
