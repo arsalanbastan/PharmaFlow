@@ -434,12 +434,19 @@ class _CashPaymentFormPageState extends State<CashPaymentFormPage> {
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (_) {
-        return _SearchSelectionSheet<T>(
-          title: title,
-          items: items,
-          itemLabel: itemLabel,
-          itemSubtitle: itemSubtitle,
+      builder: (sheetContext) {
+        final keyboardInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+
+        return AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(bottom: keyboardInset),
+          child: _SearchSelectionSheet<T>(
+            title: title,
+            items: items,
+            itemLabel: itemLabel,
+            itemSubtitle: itemSubtitle,
+          ),
         );
       },
     );
@@ -740,7 +747,10 @@ class _SearchSelectionSheetState<T> extends State<_SearchSelectionSheet<T>> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.72,
+        height:
+            (MediaQuery.of(context).size.height -
+                MediaQuery.of(context).viewInsets.bottom) *
+            0.82,
         child: Column(
           children: [
             Padding(
