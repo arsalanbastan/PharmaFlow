@@ -9,6 +9,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { AuditContextService } from './audit/audit-context.service';
 import { decodeActorDisplayNameHeader } from './audit/audit-actor-header';
 import { mountStaffWebAssets } from './staff-web/staff-web-assets';
+import { ADMIN_DASHBOARD_RELEASE } from './admin/admin-view';
 
 const DEFAULT_PORT = 3000;
 
@@ -28,6 +29,9 @@ function adminBasicAuth(
   response: Response,
   next: NextFunction,
 ): void {
+  response.setHeader('X-PharmaFlow-Admin-Release', ADMIN_DASHBOARD_RELEASE);
+  response.setHeader('Cache-Control', 'no-store, max-age=0');
+
   const expectedUsername = process.env.ADMIN_USERNAME?.trim();
 
   const expectedPassword = process.env.ADMIN_PASSWORD ?? '';
@@ -132,11 +136,17 @@ async function bootstrap() {
     const isAdminRequest =
       request.path === '/admin' || request.path.startsWith('/admin/');
 
+    const isArsenSyncRequest = request.path.startsWith(
+      '/api/v1/integrations/arsen/',
+    );
+
     const source = isAdminRequest
       ? 'WEB_ADMIN'
-      : request.path.startsWith('/api/v1/')
-        ? 'MOBILE_APP'
-        : 'SYSTEM';
+      : isArsenSyncRequest
+        ? 'ARSEN_BRIDGE'
+        : request.path.startsWith('/api/v1/')
+          ? 'MOBILE_APP'
+          : 'SYSTEM';
 
     const actorDisplayName = isAdminRequest
       ? process.env.ADMIN_USERNAME?.trim() || undefined

@@ -1,108 +1,188 @@
+import { ConflictException } from '@nestjs/common';
+
+import { AuditLogService } from '../audit/audit-log.service';
+import { PrismaService } from '../database/prisma/prisma.service';
 import { AdminService } from './admin.service';
-import { CompaniesService } from '../companies/companies.service';
-import { BankAccountsService } from '../bank-accounts/bank-accounts.service';
-import { ChequesService } from '../cheques/cheques.service';
 
-describe('AdminService clearability', () => {
-  let service: AdminService;
-
-  const companiesService = {} as CompaniesService;
-
-  const bankAccountsService = {
-    update: jest.fn(),
-  } as unknown as BankAccountsService;
-
-  const chequesService = {
-    update: jest.fn(),
-  } as unknown as ChequesService;
+describe('AdminService full dashboard safety', () => {
+  const auditLog = {
+    record: jest.fn(),
+  } as unknown as AuditLogService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
 
-    service = new AdminService(
-      companiesService,
-      bankAccountsService,
-      chequesService,
+  it('returns counts for all dashboard domains including the Arsen catalog', async () => {
+    const count = jest
+      .fn()
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(5)
+      .mockResolvedValueOnce(6)
+      .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(8)
+      .mockResolvedValueOnce(9)
+      .mockResolvedValueOnce(10);
+    const prisma = {
+      company: { count },
+      bankAccount: { count },
+      cheque: { count },
+      cashPayment: { count },
+      appUser: { count },
+      orderRequest: { count },
+      auditLog: { count },
+      arsenCatalogItem: { count },
+    } as unknown as PrismaService;
+    const service = new AdminService(prisma, auditLog);
+
+    await expect(service.dashboard()).resolves.toEqual({
+      companies: 2,
+      bankAccounts: 3,
+      cheques: 4,
+      cashPayments: 5,
+      users: 6,
+      orders: 7,
+      pendingOrders: 8,
+      auditLogs: 9,
+      catalogItems: 10,
+    });
+  });
+
+  it('blocks company hard-delete while financial dependencies exist', async () => {
+    const tx = {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'company-id',
+          _count: { cheques: 1, cashPayments: 2, arsenCompanyMappings: 0 },
+        }),
+        delete: jest.fn(),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new AdminService(prisma, auditLog);
+
+    await expect(service.hardDeleteCompany('company-id')).rejects.toBeInstanceOf(
+      ConflictException,
     );
+    expect(tx.company.delete).not.toHaveBeenCalled();
   });
 
-  it('clears nullable BankAccount fields and unarchives', async () => {
-    (bankAccountsService.update as jest.Mock).mockResolvedValue({
-      id: 'bank-id',
-    });
+  it('blocks company hard-delete while an Arsen mapping exists', async () => {
+    const tx = {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'company-id',
+          _count: {
+            cheques: 0,
+            cashPayments: 0,
+            arsenCompanyMappings: 1,
+          },
+        }),
+        delete: jest.fn(),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new AdminService(prisma, auditLog);
 
-    await service.updateBankAccount('bank-id', {
-      bankName: 'بانک تست',
-      accountTitle: '',
-      accountHolder: '   ',
-      accountNumber: '',
-      cardNumber: '',
-      shebaNumber: '',
-      notes: '',
-      archived: '0',
-    });
-
-    expect(bankAccountsService.update).toHaveBeenCalledWith('bank-id', {
-      bankName: 'بانک تست',
-      accountTitle: null,
-      accountHolder: null,
-      accountNumber: null,
-      cardNumber: null,
-      shebaNumber: null,
-      notes: null,
-      archivedAt: null,
-    });
+    await expect(service.hardDeleteCompany('company-id')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(tx.company.delete).not.toHaveBeenCalled();
   });
 
-  it('clears nullable Cheque fields and unarchives', async () => {
-    (chequesService.update as jest.Mock).mockResolvedValue({
-      id: 'cheque-id',
-    });
+  it('hard-deletes a cheque and related push event in one transaction', async () => {
+    const tx = {
+      cheque: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'cheque-id',
+          attachments: [{ id: 'attachment-id' }],
+        }),
+        delete: jest.fn().mockResolvedValue({ id: 'cheque-id' }),
+      },
+      pushOutbox: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new AdminService(prisma, auditLog);
 
-    await service.updateCheque('cheque-id', {
-      chequeNumber: '12345',
-      amount: '1000000',
-      chequeDate: '2026-08-14',
-      dueDate: '',
-      companyId: '11111111-1111-4111-8111-111111111111',
-      bankAccountId: '22222222-2222-4222-8222-222222222222',
-      status: '',
-      sayadStatus: '',
-      sayadId: '',
-      description: '',
-      isRegisteredInSayad: '0',
-      archived: '0',
-    });
+    await service.hardDeleteCheque('cheque-id');
 
-    expect(chequesService.update).toHaveBeenCalledWith('cheque-id', {
-      chequeNumber: '12345',
-      amount: 1000000,
-      chequeDate: '2026-08-14',
-      dueDate: null,
-      companyId: '11111111-1111-4111-8111-111111111111',
-      bankAccountId: '22222222-2222-4222-8222-222222222222',
-      status: null,
-      sayadStatus: null,
-      isRegisteredInSayad: false,
-      sayadId: null,
-      description: null,
-      archivedAt: null,
+    expect(tx.pushOutbox.deleteMany).toHaveBeenCalledWith({
+      where: { aggregateId: 'cheque-id' },
     });
+    expect(tx.cheque.delete).toHaveBeenCalledWith({
+      where: { id: 'cheque-id' },
+    });
+    expect(auditLog.record).toHaveBeenCalled();
   });
 
-  it('still archives when archive is selected', async () => {
-    (bankAccountsService.update as jest.Mock).mockResolvedValue({
-      id: 'bank-id',
+  it('never hard-deletes the final active manager', async () => {
+    const tx = {
+      appUser: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'manager-id',
+          role: 'MANAGER',
+          isActive: true,
+          _count: { sessions: 1, pushDevices: 1 },
+        }),
+        count: jest.fn().mockResolvedValue(1),
+        delete: jest.fn(),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new AdminService(prisma, auditLog);
+
+    await expect(service.hardDeleteUser('manager-id')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(tx.appUser.delete).not.toHaveBeenCalled();
+  });
+
+  it('normalizes order text during a full admin edit', async () => {
+    const tx = {
+      orderRequest: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'order-id',
+          orderedAt: null,
+          receivedAt: null,
+          canceledAt: null,
+          deletedAt: null,
+        }),
+        update: jest.fn().mockImplementation(({ data }) => ({
+          id: 'order-id',
+          ...data,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new AdminService(prisma, auditLog);
+
+    await service.updateOrder('order-id', {
+      category: 'DRUG',
+      itemText: '  Ø¢Ø³Ù¾Ø±ÛŒÙ†  ',
+      status: 'PENDING',
+      requestedByName: 'Ú©Ø§Ø±Ø¨Ø± ØªØ³Øª',
     });
 
-    await service.updateBankAccount('bank-id', {
-      bankName: 'بانک تست',
-      archived: '1',
-    });
-
-    const call = (bankAccountsService.update as jest.Mock).mock.calls[0][1];
-
-    expect(call.archivedAt).toEqual(expect.any(String));
-    expect(Number.isNaN(Date.parse(call.archivedAt))).toBe(false);
+    expect(tx.orderRequest.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          itemText: 'Ø¢Ø³Ù¾Ø±ÛŒÙ†',
+          normalizedItemText: expect.any(String),
+          status: 'PENDING',
+        }),
+      }),
+    );
   });
 });

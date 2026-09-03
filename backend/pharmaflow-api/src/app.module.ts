@@ -15,6 +15,7 @@ import { OrdersModule } from './orders/orders.module';
 
 import { StaffAppUpdateModule } from './staff-app-update/staff-app-update.module';
 import { AuthModule } from './auth/auth.module';
+import { ArsenSyncModule } from './arsen-sync/arsen-sync.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AuthModule } from './auth/auth.module';
     OrdersModule,
     StaffAppUpdateModule,
     AuthModule,
+    ArsenSyncModule,
   ],
   controllers: [AppController],
   providers: [AppService],

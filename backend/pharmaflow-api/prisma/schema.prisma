@@ -31,11 +31,151 @@ model Company {
   archivedAt DateTime?
   deletedAt  DateTime?
 
-  cheques       Cheque[]
-  orderRequests OrderRequest[]
-  cashPayments  CashPayment[]
+  cheques                Cheque[]
+  orderRequests          OrderRequest[]
+  cashPayments           CashPayment[]
+  arsenCompanyMappings   ArsenCompanyMapping[]
+  arsenInvoices           ArsenInvoice[]
 
   @@map("companies")
+}
+
+model ArsenCompanyMapping {
+  id String @id @default(uuid()) @db.Uuid
+
+  arsenBusinessPartnerId Int @unique
+  arsenName              String
+
+  companyId String @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId])
+  @@map("arsen_company_mappings")
+}
+
+model ArsenInvoice {
+  id String @id @default(uuid()) @db.Uuid
+
+  ingestSequence BigInt @unique @default(autoincrement())
+  arsenFactorId  Int    @unique
+
+  invoiceNumber  String?
+  invoiceDate    String?
+  docDate        String?
+  settlementDate String?
+  description    String?
+
+  factorDocType     Int
+  factorDocTypeName String?
+  factorType        Int?
+  factorTypeName    String?
+  factorItemType    String?
+
+  arsenBusinessPartnerId   Int
+  arsenBusinessPartnerName String
+  companyId                 String @db.Uuid
+
+  factorTotalPrice   Decimal? @db.Decimal(20, 4)
+  factorDiscount     Decimal? @db.Decimal(20, 4)
+  factorTax          Decimal? @db.Decimal(20, 4)
+  factorPayablePrice Decimal? @db.Decimal(20, 4)
+  barbariPrice       Decimal? @db.Decimal(20, 4)
+  paymentDays         Int?
+
+  isDeletedInArsen Boolean  @default(false)
+  isLockedInArsen  Boolean?
+  arsenSaveDateTime DateTime?
+
+  itemCount Int @default(0)
+
+  sourceFingerprint String? @db.VarChar(64)
+
+  importedAt     DateTime @default(now())
+  sourceSyncedAt DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  items   ArsenInvoiceItem[]
+
+  @@index([companyId, ingestSequence(sort: Desc)])
+  @@index([factorDocType, ingestSequence(sort: Desc)])
+  @@index([invoiceDate, ingestSequence(sort: Desc)])
+  @@index([invoiceNumber])
+  @@map("arsen_invoices")
+}
+
+model ArsenInvoiceItem {
+  id String @id @default(uuid()) @db.Uuid
+
+  invoiceId String @db.Uuid
+
+  arsenFactorDetailId  BigInt @unique
+  arsenFactorDetailsId Int?
+  arsenDrugId          BigInt?
+
+  drugName String?
+  barcode  String?
+
+  packetQuantity Int?
+  quantity       Float?
+  salePrice      Decimal? @db.Decimal(20, 4)
+  purchasePrice  Decimal? @db.Decimal(20, 4)
+  rowDiscount    Decimal? @db.Decimal(20, 4)
+  hasTax         Int?
+
+  expireDate          String?
+  expireDateGregorian DateTime?
+  batchNumber         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoice ArsenInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId, arsenFactorDetailsId])
+  @@index([arsenDrugId])
+  @@map("arsen_invoice_items")
+}
+
+
+model ArsenCatalogItem {
+  id String @id @default(uuid()) @db.Uuid
+
+  ingestSequence BigInt @unique @default(autoincrement())
+  arsenDrugId    BigInt @unique
+
+  category String
+
+  persianName      String?
+  genericName      String?
+  persianBrandName String?
+  brandName        String?
+
+  unit      String?
+  shapeName String?
+
+  packetQuantity    Int?
+  salesPrice        Decimal? @db.Decimal(20, 4)
+  lastPurchasePrice Decimal? @db.Decimal(20, 4)
+
+  isActive    Boolean
+  description String?
+
+  sourceFingerprint String @db.VarChar(64)
+
+  importedAt     DateTime @default(now())
+  sourceSyncedAt DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([category, isActive, ingestSequence(sort: Desc)])
+  @@index([isActive, ingestSequence(sort: Desc)])
+  @@map("arsen_catalog_items")
 }
 
 model BankAccount {
