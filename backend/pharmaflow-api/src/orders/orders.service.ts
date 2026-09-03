@@ -64,6 +64,8 @@ const UUID_PATTERN =
 const PHOTO_CLEANUP_STATUSES = ['ORDERED', 'RECEIVED', 'CANCELED', 'DELETED'];
 const PHOTO_CLEANUP_BATCH_SIZE = 50;
 const PHOTO_CLEANUP_RETRY_MS = 5 * 60 * 1000;
+const CANCELED_ORDER_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
+const CANCELED_ORDER_EXPIRY_BATCH_SIZE = 100;
 const ACTIVE_DUPLICATE_STATUSES = new Set(['PENDING', 'ORDERED']);
 const ACTIVE_STAFF_DASHBOARD_STATUSES = ['PENDING', 'ORDERED'];
 const ORDER_SIMILARITY_MATCH_LIMIT = 8;
@@ -72,6 +74,7 @@ const ORDER_SIMILARITY_MATCH_LIMIT = 8;
 export class OrdersService {
   private photoCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private photoCleanupRetryRunning = false;
+  private canceledOrderExpiryRunning = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -90,9 +93,11 @@ export class OrdersService {
     }
 
     void this.retryPhotoCleanupBatch();
+    void this.expireCanceledOrdersBatch();
 
     this.photoCleanupTimer = setInterval(() => {
       void this.retryPhotoCleanupBatch();
+      void this.expireCanceledOrdersBatch();
     }, PHOTO_CLEANUP_RETRY_MS);
   }
 
@@ -1052,6 +1057,100 @@ export class OrdersService {
     return updated;
   }
 
+  async restoreCanceled(id: string) {
+    const actor = this.requireAuthenticatedActor();
+
+    this.assertManager(actor);
+
+    const existing = await this.requireOrder(id);
+
+    if (existing.status !== 'CANCELED') {
+      throw new BadRequestException(
+        'Only CANCELED orders can be restored.',
+      );
+    }
+
+    if (existing.canceledAt == null) {
+      throw new BadRequestException(
+        'Canceled order has no cancellation timestamp.',
+      );
+    }
+
+    const now = new Date();
+
+    if (
+      now.getTime() - existing.canceledAt.getTime() >=
+      CANCELED_ORDER_RETENTION_MS
+    ) {
+      throw new BadRequestException(
+        'Canceled order restore window has expired.',
+      );
+    }
+
+    const restoreToOrdered = existing.orderedAt != null;
+
+    return this.prisma.$transaction(async (tx) => {
+      const changed = await tx.orderRequest.updateMany({
+        where: {
+          id,
+          status: 'CANCELED',
+        },
+        data: {
+          status: restoreToOrdered ? 'ORDERED' : 'PENDING',
+          canceledAt: null,
+          canceledByName: null,
+          canceledByUserId: null,
+          ...(restoreToOrdered
+            ? {}
+            : {
+                assignedCompanyId: null,
+                orderedQuantity: null,
+                orderedAt: null,
+                orderedByName: null,
+                orderedByUserId: null,
+              }),
+        },
+      });
+
+      if (changed.count !== 1) {
+        throw new BadRequestException(
+          'Order status changed before restore. Reload and try again.',
+        );
+      }
+
+      const current = await tx.orderRequest.findUnique({
+        where: {
+          id,
+        },
+        include: {
+          assignedCompany: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      if (current == null) {
+        throw new NotFoundException('Order request not found.');
+      }
+
+      await this.auditLog.record(
+        {
+          action: 'ORDER_RESTORED_FROM_CANCELED',
+          entityType: 'ORDER_REQUEST',
+          entityId: current.id,
+          before: existing,
+          after: current,
+        },
+        tx,
+      );
+
+      return current;
+    });
+  }
+
   async removePending(id: string) {
     const actor = this.requireAuthenticatedActor();
 
@@ -1110,6 +1209,106 @@ export class OrdersService {
     await this.tryCleanupPhoto(updated.id);
 
     return updated;
+  }
+
+  async expireCanceledOrdersBatch(now = new Date()): Promise<number> {
+    if (this.canceledOrderExpiryRunning) {
+      return 0;
+    }
+
+    this.canceledOrderExpiryRunning = true;
+
+    try {
+      const cutoff = new Date(
+        now.getTime() - CANCELED_ORDER_RETENTION_MS,
+      );
+
+      const stale = await this.prisma.orderRequest.findMany({
+        where: {
+          status: 'CANCELED',
+          canceledAt: {
+            lte: cutoff,
+          },
+        },
+        orderBy: [
+          {
+            canceledAt: 'asc',
+          },
+          {
+            id: 'asc',
+          },
+        ],
+        take: CANCELED_ORDER_EXPIRY_BATCH_SIZE,
+      });
+
+      let expiredCount = 0;
+
+      for (const existing of stale) {
+        try {
+          const expired = await this.prisma.$transaction(async (tx) => {
+            const changed = await tx.orderRequest.updateMany({
+              where: {
+                id: existing.id,
+                status: 'CANCELED',
+                canceledAt: {
+                  lte: cutoff,
+                },
+              },
+              data: {
+                status: 'DELETED',
+                deletedAt: now,
+                deletedByName: 'SYSTEM',
+                deletedByUserId: null,
+              },
+            });
+
+            if (changed.count !== 1) {
+              return false;
+            }
+
+            const current = await tx.orderRequest.findUnique({
+              where: {
+                id: existing.id,
+              },
+            });
+
+            if (current == null) {
+              return false;
+            }
+
+            await this.auditLog.record(
+              {
+                action: 'AUTO_DELETE_CANCELED_ORDER',
+                entityType: 'ORDER_REQUEST',
+                entityId: current.id,
+                before: existing,
+                after: current,
+              },
+              tx,
+            );
+
+            return true;
+          });
+
+          if (expired) {
+            expiredCount += 1;
+          }
+        } catch {
+          console.warn(
+            '[Orders] Automatic expiry failed for canceled order ' +
+              existing.id +
+              '.',
+          );
+        }
+      }
+
+      return expiredCount;
+    } catch {
+      console.warn('[Orders] Background canceled-order expiry batch failed.');
+      return 0;
+    } finally {
+      this.canceledOrderExpiryRunning = false;
+    }
   }
 
   private async tryCleanupPhoto(orderId: string): Promise<boolean> {

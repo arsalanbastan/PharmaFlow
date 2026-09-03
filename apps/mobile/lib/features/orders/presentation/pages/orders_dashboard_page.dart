@@ -2173,6 +2173,98 @@ class _DenseReadOnlyOrderRowState
     }
   }
 
+  Future<void> _restoreCanceled() async {
+    if (_busy || widget.order.status != 'CANCELED') {
+      return;
+    }
+
+    final restoreToOrdered =
+        widget.order.assignedCompanyId != null ||
+        widget.order.orderedQuantity != null;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(
+            restoreToOrdered
+                ? 'بازگردانی به سفارش‌شده'
+                : 'بازگردانی به در انتظار',
+          ),
+          content: Text(
+            'لغو «${widget.order.itemText}» بازگردانی شود؟\n\n'
+            'این امکان فقط تا ۳ روز پس از لغو وجود دارد.',
+            textAlign: TextAlign.right,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('انصراف'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.restore_rounded),
+              label: const Text('بازگردانی'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+    });
+
+    try {
+      await ref
+          .read(managerOrdersRepositoryProvider)
+          .restoreCanceled(orderId: widget.order.id);
+
+      ref.invalidate(managerOrdersProvider);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              duration: const Duration(seconds: 2),
+              content: Text(
+                restoreToOrdered
+                    ? 'سفارش لغوشده به فهرست سفارش‌شده برگشت.'
+                    : 'درخواست لغوشده به فهرست در انتظار برگشت.',
+              ),
+            ),
+          );
+      }
+    } on ApiHttpException catch (error) {
+      if (error.statusCode == 401 || error.statusCode == 403) {
+        await widget.onSessionInvalid();
+        return;
+      }
+
+      if (error.statusCode == 400) {
+        _showMutationError(
+          'بازگردانی ممکن نیست؛ وضعیت درخواست تغییر کرده یا مهلت ۳ روزه پایان یافته است.',
+        );
+        return;
+      }
+
+      _showMutationError(error.message);
+    } catch (_) {
+      _showMutationError('بازگردانی درخواست لغوشده انجام نشد.');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+        });
+      }
+    }
+  }
+
   void _showMutationError(String message) {
     if (!mounted) {
       return;
@@ -2221,6 +2313,15 @@ class _DenseReadOnlyOrderRowState
               icon: Icons.undo_rounded,
               foregroundColor: colors.primary,
               onPressed: _busy ? null : _returnToPending,
+            ),
+            const SizedBox(width: 2),
+          ],
+          if (order.status == 'CANCELED') ...[
+            _DenseRowAction(
+              tooltip: 'بازگردانی لغو',
+              icon: Icons.restore_rounded,
+              foregroundColor: colors.primary,
+              onPressed: _busy ? null : _restoreCanceled,
             ),
             const SizedBox(width: 2),
           ],

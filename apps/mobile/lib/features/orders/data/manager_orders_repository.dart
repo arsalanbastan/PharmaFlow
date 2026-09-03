@@ -204,6 +204,18 @@ class ManagerOrdersRepository {
     );
   }
 
+  Future<void> restoreCanceled({required String orderId}) async {
+    final normalizedOrderId = orderId.trim();
+
+    if (normalizedOrderId.isEmpty) {
+      throw ArgumentError('orderId cannot be empty.');
+    }
+
+    await _apiClient.post(
+      '${ApiConstants.ordersEndpoint}/$normalizedOrderId/restore',
+    );
+  }
+
   String? _nullIfBlank(String? value) {
     final normalized = value?.trim();
     return normalized == null || normalized.isEmpty ? null : normalized;
