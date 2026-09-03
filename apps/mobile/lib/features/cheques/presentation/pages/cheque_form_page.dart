@@ -889,27 +889,19 @@ class _ChequeFormPageState extends State<ChequeFormPage> {
                     errorText: _companyError,
                     onTap: _selectCompany,
                   ),
-                  if (_editingCheque != null &&
-                      (_selectedCompany?.nationalId?.trim().isNotEmpty ??
-                          false)) ...[
-                    const SizedBox(height: 8),
-                    InputDecorator(
-                      decoration: InputDecoration(
-                        labelText: 'شناسه ملی شرکت',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          tooltip: 'کپی شناسه ملی شرکت',
-                          onPressed: () => _copyDigits(
-                            _selectedCompany!.nationalId!,
-                            label: 'شناسه ملی شرکت',
-                          ),
-                          icon: const Icon(Icons.copy_outlined),
-                        ),
-                      ),
+                  if (_selectedCompany?.nationalId?.trim().isNotEmpty ??
+                      false) ...[
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: Text(
-                        _selectedCompany!.nationalId!,
-                        textDirection: TextDirection.ltr,
-                        textAlign: TextAlign.left,
+                        'شناسه ملی: ${_selectedCompany!.nationalId!.trim()}',
+                        textAlign: TextAlign.right,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w400,
+                        ),
                       ),
                     ),
                   ],
