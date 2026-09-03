@@ -311,6 +311,7 @@ export class PushWorkerService implements OnModuleInit, OnModuleDestroy {
         orderNotificationMode: true,
         chequeNotificationMode: true,
         cashPaymentNotificationMode: true,
+        notificationAggregationVersion: true,
       },
     });
 
@@ -381,12 +382,39 @@ export class PushWorkerService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
 
+      let notificationAggregation:
+        | {
+            deliveryId: string;
+            count: number;
+          }
+        | undefined;
+
+      if (device.notificationAggregationVersion >= 1) {
+        const previousSentUnacknowledged =
+          await this.prisma.pushDelivery.count({
+            where: {
+              deviceId: device.id,
+              status: 'SENT',
+              acknowledgedAt: null,
+              outbox: {
+                eventType: outbox.eventType,
+              },
+            },
+          });
+
+        notificationAggregation = {
+          deliveryId: delivery.id,
+          count: previousSentUnacknowledged + 1,
+        };
+      }
+
       const result = await this.sender.sendCreatedEvent(
         outbox.eventType as
           'ORDER_CREATED' | 'CHEQUE_CREATED' | 'CASH_PAYMENT_CREATED',
         device.fcmToken,
         outbox.aggregateId,
         notificationMode,
+        notificationAggregation,
       );
 
       await this.applyDeliveryResult(

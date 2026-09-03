@@ -429,6 +429,8 @@ model PushDevice {
   chequeNotificationMode      String  @default("AUDIBLE")
   cashPaymentNotificationMode String  @default("AUDIBLE")
 
+  notificationAggregationVersion Int @default(0)
+
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   lastSeenAt DateTime  @default(now())
@@ -457,8 +459,9 @@ model PushOutbox {
   attempts      Int       @default(0)
   nextAttemptAt DateTime  @default(now())
   claimedAt     DateTime?
-  sentAt        DateTime?
-  lastError     String?
+  sentAt         DateTime?
+  lastError      String?
+  acknowledgedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -474,6 +477,8 @@ model PushOutbox {
 model PushDelivery {
   id String @id @default(uuid()) @db.Uuid
 
+  deliverySequence BigInt @unique @default(autoincrement())
+
   outboxId String  @db.Uuid
   deviceId String? @db.Uuid
 
@@ -482,8 +487,9 @@ model PushDelivery {
   status        String    @default("PENDING")
   attempts      Int       @default(0)
   nextAttemptAt DateTime  @default(now())
-  sentAt        DateTime?
-  lastError     String?
+  sentAt         DateTime?
+  lastError      String?
+  acknowledgedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -494,6 +500,7 @@ model PushDelivery {
   @@unique([outboxId, targetKey])
   @@index([outboxId, status, nextAttemptAt])
   @@index([deviceId])
+  @@index([deviceId, acknowledgedAt, deliverySequence])
   @@map("push_deliveries")
 }
 

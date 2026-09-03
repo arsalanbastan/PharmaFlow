@@ -6,6 +6,7 @@ import {
 
 import type { AuthPrincipal } from '../auth/auth.types';
 import { PrismaService } from '../database/prisma/prisma.service';
+import { AcknowledgePushNotificationDto } from './dto/acknowledge-push-notification.dto';
 import { ReadPushDevicePreferencesDto } from './dto/read-push-device-preferences.dto';
 import { RegisterPushDeviceDto } from './dto/register-push-device.dto';
 import { UnregisterPushDeviceDto } from './dto/unregister-push-device.dto';
@@ -56,6 +57,8 @@ export class PushDeviceService {
             isEnabled: true,
             revokedAt: null,
             lastSeenAt: now,
+            notificationAggregationVersion:
+              dto.notificationAggregationVersion ?? 0,
           },
         });
       }
@@ -69,6 +72,8 @@ export class PushDeviceService {
           appPackage,
           isEnabled: true,
           lastSeenAt: now,
+          notificationAggregationVersion:
+            dto.notificationAggregationVersion ?? 0,
         },
       });
     });
@@ -115,6 +120,77 @@ export class PushDeviceService {
 
     return this.toPublicPreferences(updated);
   }
+  async acknowledgeNotification(
+    user: AuthPrincipal,
+    dto: AcknowledgePushNotificationDto,
+  ) {
+    this.assertManager(user);
+
+    const delivery = await this.prisma.pushDelivery.findFirst({
+      where: {
+        id: dto.deliveryId,
+        device: {
+          is: {
+            userId: user.userId,
+          },
+        },
+      },
+      select: {
+        id: true,
+        deviceId: true,
+        deliverySequence: true,
+        outbox: {
+          select: {
+            eventType: true,
+          },
+        },
+      },
+    });
+
+    if (delivery == null || delivery.deviceId == null) {
+      throw new NotFoundException('Push notification delivery not found.');
+    }
+
+    const now = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      // The tapped delivery can reach the phone milliseconds before the
+      // worker persists SENT, so acknowledge it independently of status.
+      await tx.pushDelivery.updateMany({
+        where: {
+          id: delivery.id,
+          acknowledgedAt: null,
+        },
+        data: {
+          acknowledgedAt: now,
+        },
+      });
+
+      // Reset only notifications that were already actually sent and are
+      // not newer than the notification the user tapped.
+      await tx.pushDelivery.updateMany({
+        where: {
+          deviceId: delivery.deviceId,
+          status: 'SENT',
+          acknowledgedAt: null,
+          deliverySequence: {
+            lte: delivery.deliverySequence,
+          },
+          outbox: {
+            eventType: delivery.outbox.eventType,
+          },
+        },
+        data: {
+          acknowledgedAt: now,
+        },
+      });
+    });
+
+    return {
+      ok: true,
+    };
+  }
+
   async unregister(user: AuthPrincipal, dto: UnregisterPushDeviceDto) {
     this.assertManager(user);
 

@@ -27,6 +27,7 @@ describe('PushDeviceService', () => {
     updatedAt: new Date('2026-08-18T10:00:00.000Z'),
     lastSeenAt: new Date('2026-08-18T10:00:00.000Z'),
     revokedAt: null,
+    notificationAggregationVersion: 0,
   };
 
   const tx = {
@@ -36,11 +37,17 @@ describe('PushDeviceService', () => {
       update: jest.fn(),
       create: jest.fn(),
     },
+    pushDelivery: {
+      updateMany: jest.fn(),
+    },
   };
 
   const prisma = {
     pushDevice: {
       updateMany: jest.fn(),
+    },
+    pushDelivery: {
+      findFirst: jest.fn(),
     },
     $transaction: jest.fn(
       async (callback: (transaction: typeof tx) => Promise<unknown>) =>
@@ -69,6 +76,7 @@ describe('PushDeviceService', () => {
       installationId: existingDevice.installationId,
       platform: 'android',
       appPackage: existingDevice.appPackage,
+      notificationAggregationVersion: 1,
     });
 
     expect(tx.pushDevice.update).toHaveBeenCalledWith(
@@ -80,6 +88,7 @@ describe('PushDeviceService', () => {
           fcmToken: 'new-token-1234567890',
           isEnabled: true,
           revokedAt: null,
+          notificationAggregationVersion: 1,
         }),
       }),
     );
@@ -99,6 +108,55 @@ describe('PushDeviceService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
 
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges only sent notifications up to the tapped delivery', async () => {
+    const deliveryId =
+      'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+    prisma.pushDelivery.findFirst.mockResolvedValue({
+      id: deliveryId,
+      deviceId: existingDevice.id,
+      deliverySequence: 7n,
+      outbox: {
+        eventType: 'ORDER_CREATED',
+      },
+    });
+
+    tx.pushDelivery.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(
+      service.acknowledgeNotification(manager, {
+        deliveryId,
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(tx.pushDelivery.updateMany).toHaveBeenNthCalledWith(1, {
+      where: {
+        id: deliveryId,
+        acknowledgedAt: null,
+      },
+      data: {
+        acknowledgedAt: expect.any(Date),
+      },
+    });
+
+    expect(tx.pushDelivery.updateMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        deviceId: existingDevice.id,
+        status: 'SENT',
+        acknowledgedAt: null,
+        deliverySequence: {
+          lte: 7n,
+        },
+        outbox: {
+          eventType: 'ORDER_CREATED',
+        },
+      },
+      data: {
+        acknowledgedAt: expect.any(Date),
+      },
+    });
   });
 
   it('revokes only the current MANAGER installation on unregister', async () => {

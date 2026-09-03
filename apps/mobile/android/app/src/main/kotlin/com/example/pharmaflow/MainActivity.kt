@@ -45,6 +45,9 @@ class MainActivity : FlutterActivity() {
         private const val EXTRA_PUSH_TYPE =
             "pharmaflow_push_type"
 
+        private const val EXTRA_PUSH_DELIVERY_ID =
+            "pharmaflow_push_delivery_id"
+
         private const val NOTIFICATION_COUNTER_PREFERENCES =
             "pharmaflow_notification_counters"
     }
@@ -52,6 +55,7 @@ class MainActivity : FlutterActivity() {
     private var foregroundNotificationChannel: MethodChannel? = null
     private var pendingForegroundOrderId: String? = null
     private var pendingForegroundPushType: String? = null
+    private var pendingForegroundPushDeliveryId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -179,6 +183,13 @@ class MainActivity : FlutterActivity() {
                                     ?: "ORDER_CREATED"
                             val silent =
                                 call.argument<Boolean>("silent") ?: false
+                            val count =
+                                (call.argument<Int>("count") ?: 1)
+                                    .coerceAtLeast(1)
+                            val deliveryId =
+                                call.argument<String>("deliveryId")
+                                    ?.trim()
+                                    ?.takeIf { it.isNotEmpty() }
 
                             if (
                                 title.isNullOrEmpty() ||
@@ -201,6 +212,8 @@ class MainActivity : FlutterActivity() {
                                     orderId = orderId,
                                     type = type,
                                     silent = silent,
+                                    count = count,
+                                    deliveryId = deliveryId,
                                 )
                                 result.success(null)
                             } catch (error: Exception) {
@@ -215,18 +228,28 @@ class MainActivity : FlutterActivity() {
                         "consumePendingOrderId" -> {
                             val orderId = pendingForegroundOrderId
                             val type = pendingForegroundPushType
+                            val deliveryId =
+                                pendingForegroundPushDeliveryId
+
                             pendingForegroundOrderId = null
                             pendingForegroundPushType = null
+                            pendingForegroundPushDeliveryId = null
 
                             if (orderId == null) {
                                 result.success(null)
                             } else {
-                                result.success(
-                                    mapOf(
-                                        "type" to (type ?: "ORDER_CREATED"),
+                                val target =
+                                    mutableMapOf<String, Any>(
+                                        "type" to
+                                            (type ?: "ORDER_CREATED"),
                                         "id" to orderId,
-                                    ),
-                                )
+                                    )
+
+                                if (deliveryId != null) {
+                                    target["deliveryId"] = deliveryId
+                                }
+
+                                result.success(target)
                             }
                         }
 
@@ -275,6 +298,8 @@ class MainActivity : FlutterActivity() {
         orderId: String,
         type: String,
         silent: Boolean,
+        count: Int,
+        deliveryId: String?,
     ) {
         val notificationManager =
             getSystemService(
@@ -299,6 +324,10 @@ class MainActivity : FlutterActivity() {
                 putExtra(EXTRA_ORDER_ID, orderId)
                 putExtra(EXTRA_PUSH_TYPE, type)
 
+                if (deliveryId != null) {
+                    putExtra(EXTRA_PUSH_DELIVERY_ID, deliveryId)
+                }
+
                 addFlags(
                     Intent.FLAG_ACTIVITY_SINGLE_TOP or
                         Intent.FLAG_ACTIVITY_CLEAR_TOP,
@@ -316,10 +345,7 @@ class MainActivity : FlutterActivity() {
             notificationIdForType(type)
 
         val notificationCount =
-            nextNotificationCount(
-                notificationManager = notificationManager,
-                type = type,
-            )
+            count.coerceAtLeast(1)
 
         val notificationBody =
             aggregatedNotificationBody(
@@ -481,13 +507,18 @@ class MainActivity : FlutterActivity() {
                 ?.uppercase()
                 ?: "ORDER_CREATED"
 
-        resetNotificationCount(type)
-
+        val deliveryId =
+            source.getStringExtra(EXTRA_PUSH_DELIVERY_ID)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
 
         source.removeExtra(EXTRA_ORDER_ID)
         source.removeExtra(EXTRA_PUSH_TYPE)
+        source.removeExtra(EXTRA_PUSH_DELIVERY_ID)
+
         pendingForegroundOrderId = orderId
         pendingForegroundPushType = type
+        pendingForegroundPushDeliveryId = deliveryId
 
         if (!deliverToFlutter) {
             return
@@ -496,15 +527,24 @@ class MainActivity : FlutterActivity() {
         val channel = foregroundNotificationChannel
 
         if (channel != null) {
-            channel.invokeMethod(
-                "orderNotificationTapped",
-                mapOf(
+            val target =
+                mutableMapOf<String, Any>(
                     "type" to type,
                     "id" to orderId,
-                ),
+                )
+
+            if (deliveryId != null) {
+                target["deliveryId"] = deliveryId
+            }
+
+            channel.invokeMethod(
+                "orderNotificationTapped",
+                target,
             )
+
             pendingForegroundOrderId = null
             pendingForegroundPushType = null
+            pendingForegroundPushDeliveryId = null
         }
     }
     private fun readAppVersion(): Map<String, Any> {

@@ -1,4 +1,13 @@
-import { IsIn, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class RegisterPushDeviceDto {
   @IsString()
@@ -16,4 +25,10 @@ export class RegisterPushDeviceDto {
 
   @IsIn(['com.example.pharmaflow', 'com.example.pharmaflow.dev'])
   appPackage!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1)
+  notificationAggregationVersion?: number;
 }

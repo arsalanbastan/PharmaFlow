@@ -24,5 +24,7 @@ abstract final class ApiConstants {
       '/push/devices/preferences/read';
   static const String pushDevicePreferencesEndpoint =
       '/push/devices/preferences';
+  static const String pushNotificationAcknowledgeEndpoint =
+      '/push/notifications/acknowledge';
   static const String ordersEndpoint = '/orders';
 }

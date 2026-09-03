@@ -43,6 +43,7 @@ class FcmPushTarget {
     required this.kind,
     required this.type,
     required this.id,
+    this.notificationDeliveryId,
   });
 
   static const String orderCreatedType = 'ORDER_CREATED';
@@ -52,6 +53,7 @@ class FcmPushTarget {
   final FcmPushTargetKind kind;
   final String type;
   final String id;
+  final String? notificationDeliveryId;
 
   static final RegExp _uuidPattern = RegExp(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
@@ -81,7 +83,19 @@ class FcmPushTarget {
       return null;
     }
 
-    return FcmPushTarget(kind: kind, type: type, id: id);
+    final rawDeliveryId = _readString(data['notificationDeliveryId']);
+
+    final notificationDeliveryId =
+        rawDeliveryId != null && _uuidPattern.hasMatch(rawDeliveryId)
+        ? rawDeliveryId
+        : null;
+
+    return FcmPushTarget(
+      kind: kind,
+      type: type,
+      id: id,
+      notificationDeliveryId: notificationDeliveryId,
+    );
   }
 
   static FcmPushTarget? fromNative(Object? value) {
@@ -96,28 +110,30 @@ class FcmPushTarget {
       return null;
     }
 
-    final type = _readString(value['type']);
+    final type = _readString(value['type'])?.toUpperCase();
     final id = _readString(value['id']);
+    final deliveryId = _readString(value['deliveryId']);
 
     if (type == null || id == null) {
       return null;
     }
 
-    return switch (type.toUpperCase()) {
-      orderCreatedType => fromData(<String, dynamic>{
-        'type': orderCreatedType,
-        'orderId': id,
-      }),
-      chequeCreatedType => fromData(<String, dynamic>{
-        'type': chequeCreatedType,
-        'chequeId': id,
-      }),
-      cashPaymentCreatedType => fromData(<String, dynamic>{
-        'type': cashPaymentCreatedType,
-        'cashPaymentId': id,
-      }),
+    final idKey = switch (type) {
+      orderCreatedType => 'orderId',
+      chequeCreatedType => 'chequeId',
+      cashPaymentCreatedType => 'cashPaymentId',
       _ => null,
     };
+
+    if (idKey == null) {
+      return null;
+    }
+
+    return fromData(<String, dynamic>{
+      'type': type,
+      idKey: id,
+      if (deliveryId != null) 'notificationDeliveryId': deliveryId,
+    });
   }
 
   static String? _readString(Object? value) {

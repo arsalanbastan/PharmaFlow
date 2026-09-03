@@ -101,6 +101,7 @@ class ManagerPushDeviceRegistrationService {
         'installationId': installationId,
         'platform': 'android',
         'appPackage': _appPackage,
+        'notificationAggregationVersion': 1,
       },
     );
 
@@ -151,6 +152,21 @@ class ManagerPushDeviceRegistrationService {
     }
 
     return ManagerNotificationPreferences.fromJson(response);
+  }
+
+  Future<bool> acknowledgeNotification(String deliveryId) async {
+    final normalizedDeliveryId = deliveryId.trim();
+
+    if (normalizedDeliveryId.isEmpty) {
+      return false;
+    }
+
+    await _apiClient.post(
+      ApiConstants.pushNotificationAcknowledgeEndpoint,
+      body: <String, dynamic>{'deliveryId': normalizedDeliveryId},
+    );
+
+    return true;
   }
 
   Future<bool> unregister() async {

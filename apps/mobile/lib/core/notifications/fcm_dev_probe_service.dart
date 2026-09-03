@@ -20,6 +20,7 @@ class FcmDevProbeService {
   static Future<void> Function(String chequeId)? _onChequeOpened;
   static Future<void> Function(String cashPaymentId)? _onCashPaymentOpened;
   static Future<void> Function(String token)? _onTokenAvailable;
+  static Future<void> Function(String deliveryId)? _onNotificationAcknowledged;
   static String? _lastOpenedMessageKey;
 
   static Future<void> initialize({
@@ -27,11 +28,13 @@ class FcmDevProbeService {
     Future<void> Function(String chequeId)? onChequeOpened,
     Future<void> Function(String cashPaymentId)? onCashPaymentOpened,
     Future<void> Function(String token)? onTokenAvailable,
+    Future<void> Function(String deliveryId)? onNotificationAcknowledged,
   }) async {
     _onOrderOpened = onOrderOpened;
     _onChequeOpened = onChequeOpened;
     _onCashPaymentOpened = onCashPaymentOpened;
     _onTokenAvailable = onTokenAvailable;
+    _onNotificationAcknowledged = onNotificationAcknowledged;
 
     if (_initialized) {
       return;
@@ -168,6 +171,10 @@ class FcmDevProbeService {
     try {
       final isSilent = notification?.android?.channelId == 'pharmaflow_silent';
 
+      final notificationCount =
+          int.tryParse(message.data['notificationCount']?.toString() ?? '') ??
+          1;
+
       await _foregroundNotificationChannel
           .invokeMethod<void>('showOrderNotification', <String, dynamic>{
             'title': title,
@@ -175,6 +182,8 @@ class FcmDevProbeService {
             'orderId': target.id,
             'type': target.type,
             'silent': isSilent,
+            'count': notificationCount < 1 ? 1 : notificationCount,
+            'deliveryId': target.notificationDeliveryId,
           });
 
       if (kDebugMode) {
@@ -255,7 +264,32 @@ class FcmDevProbeService {
     await _dispatchTarget(target);
   }
 
+  static Future<void> _acknowledgeTappedNotification(
+    FcmPushTarget target,
+  ) async {
+    final deliveryId = target.notificationDeliveryId;
+    final callback = _onNotificationAcknowledged;
+
+    if (deliveryId == null || callback == null) {
+      return;
+    }
+
+    try {
+      await callback(deliveryId);
+
+      if (kDebugMode) {
+        debugPrint('PHARMAFLOW_NOTIFICATION_ACK=$deliveryId');
+      }
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('PHARMAFLOW_NOTIFICATION_ACK_ERROR=${error.runtimeType}');
+      }
+    }
+  }
+
   static Future<void> _dispatchTarget(FcmPushTarget target) async {
+    await _acknowledgeTappedNotification(target);
+
     switch (target.kind) {
       case FcmPushTargetKind.order:
         final callback = _onOrderOpened;

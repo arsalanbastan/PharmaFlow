@@ -60,6 +60,7 @@ class _AppBootstrapState extends ConsumerState<_AppBootstrap> {
         onChequeOpened: _openChequeFromPush,
         onCashPaymentOpened: _openCashPaymentFromPush,
         onTokenAvailable: _registerPushToken,
+        onNotificationAcknowledged: _acknowledgePushNotification,
       );
     });
   }
@@ -76,6 +77,12 @@ class _AppBootstrapState extends ConsumerState<_AppBootstrap> {
         );
       }
     }
+  }
+
+  Future<void> _acknowledgePushNotification(String deliveryId) async {
+    await ManagerPushDeviceRegistrationService(
+      apiClient: ref.read(apiClientProvider),
+    ).acknowledgeNotification(deliveryId);
   }
 
   Future<void> _openOrderFromPush(String orderId) async {
