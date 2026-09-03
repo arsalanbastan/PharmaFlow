@@ -459,9 +459,8 @@ model PushOutbox {
   attempts      Int       @default(0)
   nextAttemptAt DateTime  @default(now())
   claimedAt     DateTime?
-  sentAt         DateTime?
-  lastError      String?
-  acknowledgedAt DateTime?
+  sentAt        DateTime?
+  lastError     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
