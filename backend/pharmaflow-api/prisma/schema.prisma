@@ -86,8 +86,9 @@ model ArsenInvoice {
   barbariPrice       Decimal? @db.Decimal(20, 4)
   paymentDays         Int?
 
-  isDeletedInArsen Boolean  @default(false)
-  isLockedInArsen  Boolean?
+  isDeletedInArsen     Boolean  @default(false)
+  isLockedInArsen      Boolean?
+  isPaidInPharmaFlow   Boolean  @default(false)
   arsenSaveDateTime DateTime?
 
   itemCount Int @default(0)
