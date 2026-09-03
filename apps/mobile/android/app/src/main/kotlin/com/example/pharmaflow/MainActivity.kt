@@ -70,6 +70,24 @@ class MainActivity : FlutterActivity() {
         handleForegroundOrderIntent(intent, deliverToFlutter = true)
     }
 
+    override fun onResume() {
+        super.onResume()
+        clearDisplayedPushNotifications()
+    }
+
+    private fun clearDisplayedPushNotifications() {
+        val notificationManager =
+            getSystemService(
+                Context.NOTIFICATION_SERVICE,
+            ) as NotificationManager
+
+        notificationManager.cancelAll()
+
+        resetNotificationCount("ORDER_CREATED")
+        resetNotificationCount("CHEQUE_CREATED")
+        resetNotificationCount("CASH_PAYMENT_CREATED")
+    }
+
     override fun configureFlutterEngine(
         flutterEngine: FlutterEngine,
     ) {

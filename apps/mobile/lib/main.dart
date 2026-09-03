@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -14,8 +16,6 @@ import 'core/theme/app_colors.dart';
 import 'core/theme/app_text_styles.dart';
 import 'features/cash_payments/presentation/pages/cash_payment_form_page.dart';
 import 'features/cheques/presentation/pages/cheque_form_page.dart';
-import 'features/orders/data/manager_orders_repository.dart';
-import 'features/orders/presentation/pages/order_details_page.dart';
 import 'shared/quick_actions/quick_actions_edge_panel.dart';
 import 'core/update/app_update_service.dart';
 import 'features/settings/presentation/pages/software_update_settings_page.dart';
@@ -44,17 +44,23 @@ class _AppBootstrap extends ConsumerStatefulWidget {
   ConsumerState<_AppBootstrap> createState() => _AppBootstrapState();
 }
 
-class _AppBootstrapState extends ConsumerState<_AppBootstrap> {
+class _AppBootstrapState extends ConsumerState<_AppBootstrap>
+    with WidgetsBindingObserver {
   bool _startupUpdateCheckStarted = false;
+  bool _notificationResetInFlight = false;
 
   @override
   void initState() {
     super.initState();
 
+    WidgetsBinding.instance.addObserver(this);
+
     Future.microtask(() => ref.read(syncServiceProvider).start());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _runStartupUpdateCheck();
+      unawaited(_resetNotificationsForAppOpen());
+
       FcmDevProbeService.initialize(
         onOrderOpened: _openOrderFromPush,
         onChequeOpened: _openChequeFromPush,
@@ -63,6 +69,46 @@ class _AppBootstrapState extends ConsumerState<_AppBootstrap> {
         onNotificationAcknowledged: _acknowledgePushNotification,
       );
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_resetNotificationsForAppOpen());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _resetNotificationsForAppOpen() async {
+    if (!mounted || _notificationResetInFlight) {
+      return;
+    }
+
+    _notificationResetInFlight = true;
+
+    try {
+      await ManagerPushDeviceRegistrationService(
+        apiClient: ref.read(apiClientProvider),
+      ).acknowledgeAllNotifications();
+
+      if (kDebugMode) {
+        debugPrint('PHARMAFLOW_NOTIFICATION_RESET_ON_APP_OPEN=1');
+      }
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint(
+          'PHARMAFLOW_NOTIFICATION_RESET_ON_APP_OPEN_ERROR='
+          '${error.runtimeType}',
+        );
+      }
+    } finally {
+      _notificationResetInFlight = false;
+    }
   }
 
   Future<void> _registerPushToken(String token) async {
@@ -85,40 +131,14 @@ class _AppBootstrapState extends ConsumerState<_AppBootstrap> {
     ).acknowledgeNotification(deliveryId);
   }
 
-  Future<void> _openOrderFromPush(String orderId) async {
-    if (!mounted) {
-      return;
-    }
-
-    NavigatorState? navigator;
-
-    for (var attempt = 0; attempt < 20; attempt++) {
-      if (!mounted) {
-        return;
-      }
-
-      navigator = AppRouter.rootNavigatorKey.currentState;
-
-      if (navigator != null) {
-        break;
-      }
-
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-    }
+  Future<void> _openOrderFromPush(String _) async {
+    final navigator = await _waitForRootNavigator();
 
     if (!mounted || navigator == null) {
       return;
     }
 
-    await navigator.push<void>(
-      MaterialPageRoute<void>(
-        settings: RouteSettings(name: 'push-order-details/$orderId'),
-        builder: (_) => OrderDetailsPage(
-          orderId: orderId,
-          repository: ManagerOrdersRepository(ref.read(apiClientProvider)),
-        ),
-      ),
-    );
+    AppRouter.router.goNamed('orders');
   }
 
   Future<NavigatorState?> _waitForRootNavigator() async {

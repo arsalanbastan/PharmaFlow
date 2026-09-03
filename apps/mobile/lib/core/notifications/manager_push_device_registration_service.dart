@@ -169,6 +169,20 @@ class ManagerPushDeviceRegistrationService {
     return true;
   }
 
+  Future<bool> acknowledgeAllNotifications() async {
+    final installationId = await _installationIdProvider();
+
+    await _apiClient.post(
+      ApiConstants.pushNotificationsAcknowledgeAllEndpoint,
+      body: <String, dynamic>{
+        'installationId': installationId,
+        'appPackage': _appPackage,
+      },
+    );
+
+    return true;
+  }
+
   Future<bool> unregister() async {
     final installationId = await _installationIdProvider();
 

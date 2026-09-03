@@ -49,6 +49,14 @@ export class PushController {
     return this.pushDevices.acknowledgeNotification(user, dto);
   }
 
+  @Post('notifications/acknowledge-all')
+  acknowledgeAllNotifications(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() dto: ReadPushDevicePreferencesDto,
+  ) {
+    return this.pushDevices.acknowledgeAllNotifications(user, dto);
+  }
+
   @Post('devices/unregister')
   unregister(
     @CurrentUser() user: AuthPrincipal,

@@ -191,6 +191,35 @@ export class PushDeviceService {
     };
   }
 
+  async acknowledgeAllNotifications(
+    user: AuthPrincipal,
+    dto: ReadPushDevicePreferencesDto,
+  ) {
+    this.assertManager(user);
+
+    const device = await this.findRegisteredDevice(
+      user,
+      dto.installationId,
+      dto.appPackage,
+    );
+
+    const result = await this.prisma.pushDelivery.updateMany({
+      where: {
+        deviceId: device.id,
+        status: 'SENT',
+        acknowledgedAt: null,
+      },
+      data: {
+        acknowledgedAt: new Date(),
+      },
+    });
+
+    return {
+      ok: true,
+      acknowledgedCount: result.count,
+    };
+  }
+
   async unregister(user: AuthPrincipal, dto: UnregisterPushDeviceDto) {
     this.assertManager(user);
 

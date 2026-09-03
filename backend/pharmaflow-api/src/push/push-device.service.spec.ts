@@ -44,10 +44,12 @@ describe('PushDeviceService', () => {
 
   const prisma = {
     pushDevice: {
+      findFirst: jest.fn(),
       updateMany: jest.fn(),
     },
     pushDelivery: {
       findFirst: jest.fn(),
+      updateMany: jest.fn(),
     },
     $transaction: jest.fn(
       async (callback: (transaction: typeof tx) => Promise<unknown>) =>
@@ -152,6 +154,32 @@ describe('PushDeviceService', () => {
         outbox: {
           eventType: 'ORDER_CREATED',
         },
+      },
+      data: {
+        acknowledgedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it('acknowledges all sent notifications for the current installation', async () => {
+    prisma.pushDevice.findFirst.mockResolvedValue(existingDevice);
+    prisma.pushDelivery.updateMany.mockResolvedValue({ count: 3 });
+
+    await expect(
+      service.acknowledgeAllNotifications(manager, {
+        installationId: existingDevice.installationId,
+        appPackage: existingDevice.appPackage,
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      acknowledgedCount: 3,
+    });
+
+    expect(prisma.pushDelivery.updateMany).toHaveBeenCalledWith({
+      where: {
+        deviceId: existingDevice.id,
+        status: 'SENT',
+        acknowledgedAt: null,
       },
       data: {
         acknowledgedAt: expect.any(Date),
