@@ -1223,6 +1223,7 @@ class _DensePendingOrderRow extends ConsumerStatefulWidget {
 class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
   _AssignableCompany? _selectedCompany;
   bool _busy = false;
+  int? _lastCompanyFieldTapAt;
 
   _AssignableCompany? _companyById(String? id) {
     final normalized = id?.trim();
@@ -1240,32 +1241,78 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
     return null;
   }
 
-  void _applyLastCompany(TextEditingController controller) {
-    if (_selectedCompany != null || controller.text.trim().isNotEmpty) {
+  _AssignableCompany? _companyByName(String value) {
+    final normalized = value.trim().toLowerCase();
+
+    if (normalized.isEmpty) {
+      return null;
+    }
+
+    for (final company in widget.companies) {
+      if (company.name.trim().toLowerCase() == normalized) {
+        return company;
+      }
+    }
+
+    return null;
+  }
+
+  void _openCompanyOptionsForEmptyField(TextEditingController controller) {
+    if (controller.text.isNotEmpty) {
       return;
     }
 
-    final lastCompany = _companyById(widget.lastCompanyId);
-
-    if (lastCompany == null) {
-      return;
-    }
-
-    controller.value = TextEditingValue(
-      text: lastCompany.name,
-      selection: TextSelection.collapsed(offset: lastCompany.name.length),
+    controller.value = const TextEditingValue(
+      text: ' ',
+      selection: TextSelection.collapsed(offset: 1),
     );
 
-    setState(() {
-      _selectedCompany = lastCompany;
-    });
+    controller.value = const TextEditingValue(
+      text: '',
+      selection: TextSelection.collapsed(offset: 0),
+    );
+  }
+
+  void _handleCompanyFieldTap(TextEditingController controller) {
+    if (_busy) {
+      return;
+    }
+
+    if (controller.text.isEmpty) {
+      _openCompanyOptionsForEmptyField(controller);
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final previous = _lastCompanyFieldTapAt;
+
+    _lastCompanyFieldTapAt = now;
+
+    if (previous == null || now - previous > 450) {
+      return;
+    }
+
+    _lastCompanyFieldTapAt = null;
+
+    final company = _selectedCompany ?? _companyByName(controller.text);
+
+    if (company == null) {
+      return;
+    }
+
+    if (_selectedCompany?.id != company.id) {
+      setState(() {
+        _selectedCompany = company;
+      });
+    }
+
+    unawaited(_assign());
   }
 
   Iterable<_AssignableCompany> _optionsFor(String query) {
     final normalized = query.trim().toLowerCase();
 
     if (normalized.isEmpty) {
-      final preferred = _selectedCompany ?? _companyById(widget.lastCompanyId);
+      final preferred = _companyById(widget.lastCompanyId);
       final result = <_AssignableCompany>[];
 
       if (preferred != null) {
@@ -1315,7 +1362,6 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
     });
 
     focusNode.unfocus();
-    unawaited(widget.onDefaultCompanyChanged(firstCompany));
   }
 
   Future<void> _assign() async {
@@ -1515,6 +1561,8 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
     final quantityText = quantity == null
         ? '—'
         : _toPersianDigits(quantity.toString());
+    final suggestedCompanyText = widget.order.suggestedCompanyText?.trim();
+    final notes = widget.order.notes?.trim();
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -1560,14 +1608,30 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
                   ),
                   const SizedBox(width: 1),
                   Expanded(
-                    child: Text(
-                      widget.order.itemText,
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: widget.order.itemText,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                          if (suggestedCompanyText != null &&
+                              suggestedCompanyText.isNotEmpty)
+                            TextSpan(
+                              text: '  $suggestedCompanyText',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                        ],
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12.5,
-                      ),
                     ),
                   ),
                   if (widget.order.possibleDuplicate) ...[
@@ -1631,12 +1695,10 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
 
                         return _optionsFor(textEditingValue.text);
                       },
-                      onSelected: (company) async {
+                      onSelected: (company) {
                         setState(() {
                           _selectedCompany = company;
                         });
-
-                        await widget.onDefaultCompanyChanged(company);
                       },
                       fieldViewBuilder:
                           (
@@ -1651,10 +1713,11 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
                               enabled: !_busy,
                               style: const TextStyle(fontSize: 11.5),
                               maxLines: 1,
+                              onTapAlwaysCalled: true,
                               onTap: () {
                                 if (!widget.companiesLoading &&
                                     !widget.companiesError) {
-                                  _applyLastCompany(textController);
+                                  _handleCompanyFieldTap(textController);
                                 }
                               },
                               onTapOutside: (_) {
@@ -1719,6 +1782,26 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
                 ],
               ),
             ),
+            if (notes != null && notes.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  const SizedBox(width: 59),
+                  Expanded(
+                    child: Text(
+                      notes,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
