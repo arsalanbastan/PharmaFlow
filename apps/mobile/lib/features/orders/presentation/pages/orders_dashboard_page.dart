@@ -1652,6 +1652,15 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
                   const SizedBox(width: 3),
                   _MiniCategoryBadge(category: widget.order.category),
                   const SizedBox(width: 1),
+                  if (widget.order.hasPhoto) ...[
+                    _DenseRowAction(
+                      tooltip: 'تصویر سفارش',
+                      icon: Icons.image_outlined,
+                      foregroundColor: colors.primary,
+                      onPressed: _busy ? null : _openDetails,
+                    ),
+                    const SizedBox(width: 1),
+                  ],
                   _DenseRowAction(
                     tooltip: 'ویرایش',
                     icon: Icons.edit_outlined,

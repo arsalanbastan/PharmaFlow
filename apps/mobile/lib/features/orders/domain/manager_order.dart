@@ -14,6 +14,7 @@ class ManagerOrder {
     this.requestedByUserId,
     this.assignedCompanyId,
     this.assignedCompanyName,
+    this.hasPhoto = false,
   });
 
   final String id;
@@ -30,6 +31,7 @@ class ManagerOrder {
   final DateTime createdAt;
   final String? assignedCompanyId;
   final String? assignedCompanyName;
+  final bool hasPhoto;
 
   bool get isPending => status == 'PENDING';
 
@@ -73,6 +75,9 @@ class ManagerOrder {
       createdAt: createdAt,
       assignedCompanyId: assignedCompanyId,
       assignedCompanyName: assignedCompanyName,
+      hasPhoto:
+          _optionalString(json['photoStorageKey']) != null &&
+          json['photoDeletedAt'] == null,
     );
   }
 
