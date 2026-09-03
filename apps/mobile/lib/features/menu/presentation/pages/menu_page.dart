@@ -58,7 +58,8 @@ class MenuPage extends StatelessWidget {
               leading: const Icon(Icons.inventory_2_outlined),
               title: const Text('دارو / کالاها', textAlign: TextAlign.right),
               onTap: () => _open(context, const CatalogPage()),
-            ),            ListTile(
+            ),
+            ListTile(
               leading: const Icon(Icons.settings_outlined),
               title: const Text('تنظیمات', textAlign: TextAlign.right),
               onTap: () => _open(context, const SettingsPage()),

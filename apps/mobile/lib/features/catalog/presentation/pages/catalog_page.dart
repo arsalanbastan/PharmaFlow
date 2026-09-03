@@ -8,9 +8,7 @@ class CatalogPage extends StatelessWidget {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('دارو / کالاها'),
-        ),
+        appBar: AppBar(title: const Text('دارو / کالاها')),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -25,9 +23,9 @@ class CatalogPage extends StatelessWidget {
                 const SizedBox(height: 16),
                 Text(
                   'دارو / کالاها',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
                 const Text(

@@ -8,9 +8,7 @@ class InvoicesPage extends StatelessWidget {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('فاکتورها'),
-        ),
+        appBar: AppBar(title: const Text('فاکتورها')),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -25,9 +23,9 @@ class InvoicesPage extends StatelessWidget {
                 const SizedBox(height: 16),
                 Text(
                   'فاکتورها',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
                 const Text(
