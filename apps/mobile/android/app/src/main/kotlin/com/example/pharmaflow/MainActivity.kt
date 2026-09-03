@@ -44,6 +44,9 @@ class MainActivity : FlutterActivity() {
 
         private const val EXTRA_PUSH_TYPE =
             "pharmaflow_push_type"
+
+        private const val NOTIFICATION_COUNTER_PREFERENCES =
+            "pharmaflow_notification_counters"
     }
 
     private var foregroundNotificationChannel: MethodChannel? = null
@@ -309,9 +312,21 @@ class MainActivity : FlutterActivity() {
             pendingIntentFlags =
                 pendingIntentFlags or PendingIntent.FLAG_IMMUTABLE
         }
-
         val requestCode =
-            "$type:$orderId".hashCode() and Int.MAX_VALUE
+            notificationIdForType(type)
+
+        val notificationCount =
+            nextNotificationCount(
+                notificationManager = notificationManager,
+                type = type,
+            )
+
+        val notificationBody =
+            aggregatedNotificationBody(
+                type = type,
+                count = notificationCount,
+                fallbackBody = body,
+            )
 
         val openOrderPendingIntent =
             PendingIntent.getActivity(
@@ -337,7 +352,8 @@ class MainActivity : FlutterActivity() {
             builder
                 .setSmallIcon(applicationInfo.icon)
                 .setContentTitle(title)
-                .setContentText(body)
+                .setContentText(notificationBody)
+                .setNumber(notificationCount)
                 .setAutoCancel(true)
                 .setContentIntent(openOrderPendingIntent)
                 .setCategory(Notification.CATEGORY_MESSAGE)
@@ -358,6 +374,91 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    private fun notificationIdForType(type: String): Int {
+        val normalizedType = type.trim().uppercase()
+
+        return "pharmaflow:$normalizedType".hashCode() and Int.MAX_VALUE
+    }
+
+    private fun notificationCountKey(type: String): String {
+        return "count_${type.trim().uppercase()}"
+    }
+
+    private fun nextNotificationCount(
+        notificationManager: NotificationManager,
+        type: String,
+    ): Int {
+        val notificationId = notificationIdForType(type)
+
+        val preferences =
+            getSharedPreferences(
+                NOTIFICATION_COUNTER_PREFERENCES,
+                Context.MODE_PRIVATE,
+            )
+
+        val hasActiveNotification =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                notificationManager.activeNotifications.any {
+                    it.id == notificationId
+                }
+            } else {
+                preferences.getInt(
+                    notificationCountKey(type),
+                    0,
+                ) > 0
+            }
+
+        val previousCount =
+            if (hasActiveNotification) {
+                preferences.getInt(
+                    notificationCountKey(type),
+                    0,
+                )
+            } else {
+                0
+            }
+
+        val nextCount = previousCount + 1
+
+        preferences
+            .edit()
+            .putInt(
+                notificationCountKey(type),
+                nextCount,
+            )
+            .apply()
+
+        return nextCount
+    }
+
+    private fun resetNotificationCount(type: String) {
+        getSharedPreferences(
+            NOTIFICATION_COUNTER_PREFERENCES,
+            Context.MODE_PRIVATE,
+        )
+            .edit()
+            .remove(notificationCountKey(type))
+            .apply()
+    }
+
+    private fun aggregatedNotificationBody(
+        type: String,
+        count: Int,
+        fallbackBody: String,
+    ): String {
+        return when (type.trim().uppercase()) {
+            "ORDER_CREATED" ->
+                "شما $count سفارش جدید دارید"
+
+            "CHEQUE_CREATED" ->
+                "شما $count چک جدید دارید"
+
+            "CASH_PAYMENT_CREATED" ->
+                "شما $count واریزی جدید دارید"
+
+            else -> fallbackBody
+        }
+    }
     private fun handleForegroundOrderIntent(
         source: Intent?,
         deliverToFlutter: Boolean,
@@ -379,6 +480,9 @@ class MainActivity : FlutterActivity() {
                 ?.trim()
                 ?.uppercase()
                 ?: "ORDER_CREATED"
+
+        resetNotificationCount(type)
+
 
         source.removeExtra(EXTRA_ORDER_ID)
         source.removeExtra(EXTRA_PUSH_TYPE)
