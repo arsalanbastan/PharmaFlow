@@ -30,4 +30,5 @@ abstract final class ApiConstants {
       '/push/notifications/acknowledge-all';
   static const String ordersEndpoint = '/orders';
   static const String invoicesEndpoint = '/invoices';
+  static const String catalogEndpoint = '/catalog';
 }
