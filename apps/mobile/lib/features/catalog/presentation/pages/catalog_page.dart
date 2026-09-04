@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,6 +17,9 @@ class CatalogPage extends ConsumerStatefulWidget {
 class _CatalogPageState extends ConsumerState<CatalogPage> {
   final _searchController = TextEditingController();
   final List<ManagerCatalogSummary> _items = [];
+
+  Timer? _searchDebounce;
+  int _requestSerial = 0;
 
   bool _loading = true;
   bool _loadingMore = false;
@@ -38,11 +43,16 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
   Future<void> _load({required bool reset}) async {
+    final requestId = reset ? ++_requestSerial : _requestSerial;
+    final querySnapshot = _query;
+    final categorySnapshot = _category;
+
     if (reset) {
       setState(() {
         _loading = true;
@@ -63,12 +73,15 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
       final requestedPage = reset ? 1 : _page + 1;
 
       final result = await _repository.getPage(
-        query: _query,
-        category: _category,
+        query: querySnapshot,
+        category: categorySnapshot,
         page: requestedPage,
       );
 
-      if (!mounted) {
+      if (!mounted ||
+          requestId != _requestSerial ||
+          querySnapshot != _query ||
+          categorySnapshot != _category) {
         return;
       }
 
@@ -87,7 +100,7 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
         _error = null;
       });
     } catch (_) {
-      if (!mounted) {
+      if (!mounted || requestId != _requestSerial) {
         return;
       }
 
@@ -95,7 +108,7 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
         _error = 'دریافت فهرست دارو و کالا انجام نشد.';
       });
     } finally {
-      if (mounted) {
+      if (mounted && requestId == _requestSerial) {
         setState(() {
           _loading = false;
           _loadingMore = false;
@@ -104,7 +117,26 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
     }
   }
 
+  void _scheduleLiveSearch(String value) {
+    _searchDebounce?.cancel();
+
+    final nextQuery = value.trim();
+
+    setState(() {
+      _query = nextQuery;
+    });
+
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) {
+        return;
+      }
+
+      _load(reset: true);
+    });
+  }
+
   Future<void> _search() async {
+    _searchDebounce?.cancel();
     FocusScope.of(context).unfocus();
 
     setState(() {
@@ -115,6 +147,7 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
   }
 
   Future<void> _clearSearch() async {
+    _searchDebounce?.cancel();
     _searchController.clear();
 
     setState(() {
@@ -128,6 +161,8 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
     if (_category == category) {
       return;
     }
+
+    _searchDebounce?.cancel();
 
     setState(() {
       _category = category;
@@ -158,10 +193,11 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
               child: TextField(
                 controller: _searchController,
                 textInputAction: TextInputAction.search,
+                onChanged: _scheduleLiveSearch,
                 onSubmitted: (_) => _search(),
                 decoration: InputDecoration(
-                  labelText: 'جستجوی دارو یا کالا',
-                  hintText: 'نام، ژنریک، برند یا کد آرسن',
+                  labelText: 'جستجوی هوشمند دارو یا کالا',
+                  hintText: 'نام ژنریک، برند یا بخشی از نام',
                   prefixIcon: const Icon(Icons.search),
                   suffixIcon: _query.isEmpty
                       ? IconButton(
@@ -302,7 +338,8 @@ class _CatalogCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final secondary = _secondaryName(item);
+    final title = _catalogTitle(item);
+    final secondary = _catalogSecondary(item);
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 5),
@@ -319,7 +356,7 @@ class _CatalogCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      item.displayName,
+                      title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -610,24 +647,84 @@ class _CatalogErrorView extends StatelessWidget {
   }
 }
 
-String? _secondaryName(ManagerCatalogSummary item) {
-  final candidates = <String?>[
-    item.genericName,
-    item.persianBrandName,
-    item.brandName,
-  ];
+String _catalogTitle(ManagerCatalogSummary item) {
+  final generic = _cleanLabel(item.genericName);
+  final primary = generic ?? item.displayName.trim();
+
+  final brandCandidates = <String?>[item.persianBrandName, item.brandName];
+
+  for (final rawBrand in brandCandidates) {
+    final brand = _cleanLabel(rawBrand);
+
+    if (brand == null) {
+      continue;
+    }
+
+    if (_sameCatalogLabel(brand, primary)) {
+      continue;
+    }
+
+    return '$primary ($brand)';
+  }
+
+  return primary;
+}
+
+String? _catalogSecondary(ManagerCatalogSummary item) {
+  final generic = _cleanLabel(item.genericName);
+  final persianBrand = _cleanLabel(item.persianBrandName);
+  final brand = _cleanLabel(item.brandName);
+
+  final candidates = <String?>[item.persianName, item.displayName];
 
   for (final value in candidates) {
-    final normalized = value?.trim();
+    final normalized = _cleanLabel(value);
 
-    if (normalized != null &&
-        normalized.isNotEmpty &&
-        normalized != item.displayName) {
-      return normalized;
+    if (normalized == null) {
+      continue;
     }
+
+    if (generic != null && _sameCatalogLabel(normalized, generic)) {
+      continue;
+    }
+
+    if (persianBrand != null && _sameCatalogLabel(normalized, persianBrand)) {
+      continue;
+    }
+
+    if (brand != null && _sameCatalogLabel(normalized, brand)) {
+      continue;
+    }
+
+    return normalized;
   }
 
   return null;
+}
+
+String? _cleanLabel(String? value) {
+  final normalized = value?.trim();
+
+  if (normalized == null || normalized.isEmpty) {
+    return null;
+  }
+
+  return normalized;
+}
+
+bool _sameCatalogLabel(String left, String right) {
+  return _normalizeCatalogLabel(left) == _normalizeCatalogLabel(right);
+}
+
+String _normalizeCatalogLabel(String value) {
+  return value
+      .replaceAll('ي', 'ی')
+      .replaceAll('ى', 'ی')
+      .replaceAll('ك', 'ک')
+      .replaceAll('\u200c', ' ')
+      .toLowerCase()
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 }
 
 String _formatAmount(String? raw) {
