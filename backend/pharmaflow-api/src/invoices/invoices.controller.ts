@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -12,6 +13,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { UpdateInvoicePaymentStatusDto } from './dto/update-invoice-payment-status.dto';
+import { CreateInvoiceSettlementDto } from './dto/create-invoice-settlement.dto';
 import { InvoicesService } from './invoices.service';
 
 @Roles('MANAGER')
@@ -37,6 +39,16 @@ export class InvoicesController {
       page,
       pageSize,
     });
+  }
+
+  @Get('settlement/prepare')
+  prepareSettlement(@Query('invoiceIds') invoiceIds?: string) {
+    return this.invoices.prepareSettlement(invoiceIds ?? '');
+  }
+
+  @Post('settlement')
+  createSettlement(@Body() dto: CreateInvoiceSettlementDto) {
+    return this.invoices.createSettlement(dto);
   }
 
   @Patch(':id/payment-status')

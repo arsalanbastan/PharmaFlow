@@ -30,6 +30,77 @@ describe('ArsenSyncService', () => {
     };
   }
 
+  it('creates and maps a new Arsen company before invoice ingestion', async () => {
+    const tx = {
+      arsenCompanyMapping: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'mapping-id' }),
+      },
+      company: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({
+          id: 'company-id',
+          deletedAt: null,
+        }),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      $transaction: jest.fn().mockImplementation(
+        async (callback: (arg: typeof tx) => unknown) => callback(tx),
+      ),
+    };
+    const auditLog = { record: jest.fn().mockResolvedValue({}) };
+    const service = new ArsenSyncService(prisma as never, auditLog as never);
+
+    const result = await service.ingestCompanies([
+      { arsenBusinessPartnerId: 999, arsenName: 'شرکت جدید' },
+    ]);
+
+    expect(result).toMatchObject({ processed: 1, created: 1 });
+    expect(tx.company.create).toHaveBeenCalledWith({
+      data: { name: 'شرکت جدید' },
+      select: { id: true, deletedAt: true },
+    });
+    expect(tx.arsenCompanyMapping.create).toHaveBeenCalledWith({
+      data: {
+        arsenBusinessPartnerId: 999,
+        arsenName: 'شرکت جدید',
+        companyId: 'company-id',
+      },
+      select: { id: true },
+    });
+  });
+
+  it('keeps an existing active company mapping unchanged', async () => {
+    const tx = {
+      arsenCompanyMapping: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'mapping-id',
+          arsenName: 'هجرت',
+          companyId: 'company-id',
+          company: { deletedAt: null },
+        }),
+        update: jest.fn(),
+      },
+    };
+    const prisma = {
+      $transaction: jest
+        .fn()
+        .mockImplementation(async (callback: (arg: typeof tx) => unknown) =>
+          callback(tx),
+        ),
+    };
+    const service = new ArsenSyncService(prisma as never, {} as never);
+
+    const result = await service.ingestCompanies([
+      { arsenBusinessPartnerId: 526, arsenName: 'هجرت' },
+    ]);
+
+    expect(result).toMatchObject({ processed: 1, unchanged: 1 });
+    expect(tx.arsenCompanyMapping.update).not.toHaveBeenCalled();
+  });
+
   it('rejects an unmapped supplier before writing', async () => {
     const prisma = {
       arsenCompanyMapping: { findUnique: jest.fn().mockResolvedValue(null) },

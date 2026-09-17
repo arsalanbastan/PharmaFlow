@@ -162,6 +162,49 @@ class ApiClient {
     }
   }
 
+  Future<dynamic> put(
+    String endpoint, {
+    Map<String, String>? headers,
+    Map<String, String>? queryParameters,
+    Object? body,
+  }) async {
+    final uri = _buildUri(endpoint, queryParameters: queryParameters);
+    final requestHeaders = await _buildHeaders(
+      headers: {HttpHeaders.contentTypeHeader: 'application/json', ...?headers},
+      includeActor: true,
+    );
+
+    try {
+      final response = await _httpClient
+          .put(
+            uri,
+            headers: requestHeaders,
+            body: body == null ? null : jsonEncode(body),
+          )
+          .timeout(_timeout);
+      return _handleResponse(response);
+    } on TimeoutException catch (error) {
+      throw ApiTimeoutException(
+        'Request timed out after ${_timeout.inSeconds} seconds.',
+        error,
+      );
+    } on SocketException catch (error) {
+      throw ApiNetworkException(
+        'No network connection or server is unreachable.',
+        error,
+      );
+    } on FormatException catch (error) {
+      throw ApiDecodingException('Response was not valid JSON.', error);
+    } on ApiException {
+      rethrow;
+    } catch (error) {
+      throw ApiUnknownException(
+        'Unexpected error while sending request.',
+        error,
+      );
+    }
+  }
+
   Future<dynamic> delete(
     String endpoint, {
     Map<String, String>? headers,

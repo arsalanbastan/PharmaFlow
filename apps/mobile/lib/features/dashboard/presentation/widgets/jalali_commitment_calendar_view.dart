@@ -40,6 +40,7 @@ class _JalaliCommitmentCalendarViewState
     extends ConsumerState<JalaliCommitmentCalendarView> {
   DateTime? _selectedDate;
   bool _handledInitialOnChanged = false;
+  double _horizontalDragDistance = 0;
 
   @override
   void initState() {
@@ -143,51 +144,81 @@ class _JalaliCommitmentCalendarViewState
                   ],
                 ),
                 const SizedBox(height: 12),
-                DrumPicker(
-                  initialDate: selectedDate ?? DateTime.now(),
-                  currentDate: DateTime.now(),
-                  firstDate: firstDate,
-                  lastDate: lastDate,
-                  initialMode: DrumPickerMode.calendar,
-                  showModeToggle: false,
-                  showHeader: false,
-                  showQuickSelects: false,
-                  showActions: false,
-                  calendar: DrumCalendarType.jalali,
-                  textDirection: TextDirection.rtl,
-                  onChanged: (date) {
-                    final normalized = _dateOnly(date);
+                GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragStart: (_) {
+                    _horizontalDragDistance = 0;
+                  },
+                  onHorizontalDragUpdate: (details) {
+                    _horizontalDragDistance += details.primaryDelta ?? 0;
+                  },
+                  onHorizontalDragCancel: () {
+                    _horizontalDragDistance = 0;
+                  },
+                  onHorizontalDragEnd: (details) {
+                    final velocity = details.primaryVelocity ?? 0;
+                    final distance = _horizontalDragDistance;
+                    _horizontalDragDistance = 0;
 
-                    if (!_handledInitialOnChanged &&
-                        normalized == _selectedDate) {
-                      _handledInitialOnChanged = true;
+                    if (distance.abs() < 40 && velocity.abs() < 80) {
                       return;
                     }
 
-                    _handledInitialOnChanged = true;
-                    setState(() {
-                      _selectedDate = normalized;
-                    });
-                    if (!widget.requireExplicitSelection) {
-                      widget.onDateSelected?.call(normalized);
-                    }
+                    _moveMonth(
+                      distance == 0
+                          ? (velocity < 0 ? 1 : -1)
+                          : (distance < 0 ? 1 : -1),
+                      firstDate: firstDate,
+                      lastDate: lastDate,
+                    );
                   },
-                  eventLoader: (day) {
-                    final summary = daysByDate[_dateOnly(day)];
-                    if (summary == null || summary.commitmentCount == 0) {
-                      return const <DrumEventMarker>[];
-                    }
+                  child: DrumPicker(
+                    key: ValueKey<String>(_calendarMonthKey(selectedDate)),
+                    initialDate: selectedDate ?? DateTime.now(),
+                    currentDate: DateTime.now(),
+                    firstDate: firstDate,
+                    lastDate: lastDate,
+                    initialMode: DrumPickerMode.calendar,
+                    showModeToggle: false,
+                    showHeader: false,
+                    showQuickSelects: false,
+                    showActions: false,
+                    calendar: DrumCalendarType.jalali,
+                    textDirection: TextDirection.rtl,
+                    onChanged: (date) {
+                      final normalized = _dateOnly(date);
 
-                    final markerColor = dashboardAmountColor(
-                      summary.totalAmount,
-                      thresholds: thresholds,
-                    );
-                    return List<DrumEventMarker>.generate(
-                      summary.commitmentCount,
-                      (_) => DrumEventMarker(color: markerColor),
-                    );
-                  },
-                  locale: const Locale('fa'),
+                      if (!_handledInitialOnChanged &&
+                          normalized == _selectedDate) {
+                        _handledInitialOnChanged = true;
+                        return;
+                      }
+
+                      _handledInitialOnChanged = true;
+                      setState(() {
+                        _selectedDate = normalized;
+                      });
+                      if (!widget.requireExplicitSelection) {
+                        widget.onDateSelected?.call(normalized);
+                      }
+                    },
+                    eventLoader: (day) {
+                      final summary = daysByDate[_dateOnly(day)];
+                      if (summary == null || summary.commitmentCount == 0) {
+                        return const <DrumEventMarker>[];
+                      }
+
+                      final markerColor = dashboardAmountColor(
+                        summary.totalAmount,
+                        thresholds: thresholds,
+                      );
+                      return List<DrumEventMarker>.generate(
+                        summary.commitmentCount,
+                        (_) => DrumEventMarker(color: markerColor),
+                      );
+                    },
+                    locale: const Locale('fa'),
+                  ),
                 ),
               ],
             ),
@@ -217,6 +248,48 @@ class _JalaliCommitmentCalendarViewState
 
   DateTime _dateOnly(DateTime date) =>
       DateTime(date.year, date.month, date.day);
+
+  String _calendarMonthKey(DateTime? date) {
+    final jalali = Jalali.fromDateTime(date ?? DateTime.now());
+    return '${jalali.year}-${jalali.month}';
+  }
+
+  void _moveMonth(
+    int delta, {
+    required DateTime firstDate,
+    required DateTime lastDate,
+  }) {
+    final current = Jalali.fromDateTime(_selectedDate ?? DateTime.now());
+    final targetMonth = Jalali(current.year, current.month, 1).addMonths(delta);
+    final targetDay = current.day > targetMonth.monthLength
+        ? targetMonth.monthLength
+        : current.day;
+    var target = Jalali(
+      targetMonth.year,
+      targetMonth.month,
+      targetDay,
+    ).toDateTime();
+
+    if (target.isBefore(firstDate)) {
+      target = firstDate;
+    } else if (target.isAfter(lastDate)) {
+      target = lastDate;
+    }
+
+    final normalized = _dateOnly(target);
+    if (normalized == _selectedDate) {
+      return;
+    }
+
+    _handledInitialOnChanged = false;
+    setState(() {
+      _selectedDate = normalized;
+    });
+
+    if (!widget.requireExplicitSelection) {
+      widget.onDateSelected?.call(normalized);
+    }
+  }
 }
 
 class _IntroCard extends StatelessWidget {

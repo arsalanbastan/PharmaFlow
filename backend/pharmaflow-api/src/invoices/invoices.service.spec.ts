@@ -8,15 +8,15 @@ describe('InvoicesService', () => {
       count: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
-      update: jest.fn(),
     },
   };
+  const auditLog = { record: jest.fn() };
 
   let service: InvoicesService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new InvoicesService(prisma as never);
+    service = new InvoicesService(prisma as never, auditLog as never);
   });
 
   it('returns newest invoices with pagination metadata', async () => {
@@ -34,6 +34,9 @@ describe('InvoicesService', () => {
         paymentDays: 65,
         itemCount: 4,
         isDeletedInArsen: false,
+        chequeAllocations: [{ amount: '2500000' }],
+        cashPaymentAllocations: [{ amount: '1000000' }],
+        discountAllocations: [{ amount: '500000' }],
         company: {
           id: '22222222-2222-4222-8222-222222222222',
           name: 'شرکت تست',
@@ -54,6 +57,12 @@ describe('InvoicesService', () => {
           invoiceNumber: 'INV-1200',
           factorPayablePrice: '12500000',
           itemCount: 4,
+          paidAmount: '3500000',
+          discountAmount: '500000',
+          settledAmount: '4000000',
+          remainingAmount: '8500000',
+          paymentStatus: 'PARTIAL',
+          isPaid: false,
         }),
       ],
       page: 1,
@@ -98,6 +107,9 @@ describe('InvoicesService', () => {
       itemCount: 1,
       isDeletedInArsen: false,
       isLockedInArsen: false,
+      chequeAllocations: [{ amount: '60' }],
+      cashPaymentAllocations: [{ amount: '44' }],
+      discountAllocations: [],
       company: {
         id: '22222222-2222-4222-8222-222222222222',
         name: 'شرکت تست',
@@ -133,39 +145,26 @@ describe('InvoicesService', () => {
         drugName: 'داروی تست',
       }),
     );
+    expect(result).toEqual(
+      expect.objectContaining({
+        paidAmount: '104',
+        remainingAmount: '0',
+        paymentStatus: 'PAID',
+        isPaid: true,
+      }),
+    );
   });
 
-  it('updates PharmaFlow payment state without touching Arsen source fields', async () => {
+  it('rejects direct payment toggles because status comes from allocations', async () => {
     const invoiceId = '11111111-1111-4111-8111-111111111111';
 
     prisma.arsenInvoice.findUnique.mockResolvedValue({
       id: invoiceId,
     });
 
-    prisma.arsenInvoice.update.mockResolvedValue({
-      id: invoiceId,
-      isPaidInPharmaFlow: true,
-    });
-
     await expect(
       service.updatePaymentStatus(invoiceId, true),
-    ).resolves.toEqual({
-      id: invoiceId,
-      isPaid: true,
-    });
-
-    expect(prisma.arsenInvoice.update).toHaveBeenCalledWith({
-      where: {
-        id: invoiceId,
-      },
-      data: {
-        isPaidInPharmaFlow: true,
-      },
-      select: {
-        id: true,
-        isPaidInPharmaFlow: true,
-      },
-    });
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects malformed invoice identifiers before querying Prisma', async () => {

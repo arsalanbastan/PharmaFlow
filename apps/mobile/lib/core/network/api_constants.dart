@@ -31,4 +31,5 @@ abstract final class ApiConstants {
   static const String ordersEndpoint = '/orders';
   static const String invoicesEndpoint = '/invoices';
   static const String catalogEndpoint = '/catalog';
+  static const String salesInvoicesEndpoint = '/sales-invoices';
 }

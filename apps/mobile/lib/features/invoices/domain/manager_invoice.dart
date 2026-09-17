@@ -19,12 +19,18 @@ class ManagerInvoiceSummary {
     required this.invoiceNumber,
     required this.invoiceDate,
     required this.settlementDate,
+    required this.factorDocType,
     required this.factorDocTypeName,
     required this.factorPayablePrice,
     required this.paymentDays,
     required this.itemCount,
     required this.isDeletedInArsen,
     required this.isPaid,
+    required this.paidAmount,
+    required this.discountAmount,
+    required this.settledAmount,
+    required this.remainingAmount,
+    required this.paymentStatus,
     required this.company,
   });
 
@@ -33,27 +39,46 @@ class ManagerInvoiceSummary {
   final String? invoiceNumber;
   final String? invoiceDate;
   final String? settlementDate;
+  final int factorDocType;
   final String? factorDocTypeName;
   final String? factorPayablePrice;
   final int? paymentDays;
   final int itemCount;
   final bool isDeletedInArsen;
   final bool isPaid;
+  final String paidAmount;
+  final String discountAmount;
+  final String settledAmount;
+  final String remainingAmount;
+  final String paymentStatus;
   final ManagerInvoiceCompany company;
 
-  ManagerInvoiceSummary copyWith({bool? isPaid}) {
+  ManagerInvoiceSummary copyWith({
+    bool? isPaid,
+    String? paidAmount,
+    String? discountAmount,
+    String? settledAmount,
+    String? remainingAmount,
+    String? paymentStatus,
+  }) {
     return ManagerInvoiceSummary(
       id: id,
       arsenFactorId: arsenFactorId,
       invoiceNumber: invoiceNumber,
       invoiceDate: invoiceDate,
       settlementDate: settlementDate,
+      factorDocType: factorDocType,
       factorDocTypeName: factorDocTypeName,
       factorPayablePrice: factorPayablePrice,
       paymentDays: paymentDays,
       itemCount: itemCount,
       isDeletedInArsen: isDeletedInArsen,
       isPaid: isPaid ?? this.isPaid,
+      paidAmount: paidAmount ?? this.paidAmount,
+      discountAmount: discountAmount ?? this.discountAmount,
+      settledAmount: settledAmount ?? this.settledAmount,
+      remainingAmount: remainingAmount ?? this.remainingAmount,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
       company: company,
     );
   }
@@ -71,12 +96,21 @@ class ManagerInvoiceSummary {
       invoiceNumber: _optionalString(json['invoiceNumber']),
       invoiceDate: _optionalString(json['invoiceDate']),
       settlementDate: _optionalString(json['settlementDate']),
+      factorDocType: _requiredInt(json['factorDocType'], 'factorDocType'),
       factorDocTypeName: _optionalString(json['factorDocTypeName']),
       factorPayablePrice: _decimalString(json['factorPayablePrice']),
       paymentDays: _optionalInt(json['paymentDays']),
       itemCount: _optionalInt(json['itemCount']) ?? 0,
       isDeletedInArsen: json['isDeletedInArsen'] == true,
       isPaid: json['isPaid'] == true,
+      paidAmount: _decimalString(json['paidAmount']) ?? '0',
+      discountAmount: _decimalString(json['discountAmount']) ?? '0',
+      settledAmount: _decimalString(json['settledAmount']) ?? '0',
+      remainingAmount:
+          _decimalString(json['remainingAmount']) ??
+          _decimalString(json['factorPayablePrice']) ??
+          '0',
+      paymentStatus: _optionalString(json['paymentStatus']) ?? 'UNPAID',
       company: ManagerInvoiceCompany.fromJson(rawCompany),
     );
   }
@@ -190,6 +224,11 @@ class ManagerInvoiceDetails {
     required this.itemCount,
     required this.isDeletedInArsen,
     required this.isPaid,
+    required this.paidAmount,
+    required this.discountAmount,
+    required this.settledAmount,
+    required this.remainingAmount,
+    required this.paymentStatus,
     required this.company,
     required this.items,
   });
@@ -213,6 +252,11 @@ class ManagerInvoiceDetails {
   final int itemCount;
   final bool isDeletedInArsen;
   final bool isPaid;
+  final String paidAmount;
+  final String discountAmount;
+  final String settledAmount;
+  final String remainingAmount;
+  final String paymentStatus;
   final ManagerInvoiceCompany company;
   final List<ManagerInvoiceItem> items;
 
@@ -250,6 +294,14 @@ class ManagerInvoiceDetails {
       itemCount: _optionalInt(json['itemCount']) ?? 0,
       isDeletedInArsen: json['isDeletedInArsen'] == true,
       isPaid: json['isPaid'] == true,
+      paidAmount: _decimalString(json['paidAmount']) ?? '0',
+      discountAmount: _decimalString(json['discountAmount']) ?? '0',
+      settledAmount: _decimalString(json['settledAmount']) ?? '0',
+      remainingAmount:
+          _decimalString(json['remainingAmount']) ??
+          _decimalString(json['factorPayablePrice']) ??
+          '0',
+      paymentStatus: _optionalString(json['paymentStatus']) ?? 'UNPAID',
       company: ManagerInvoiceCompany.fromJson(rawCompany),
       items: rawItems
           .map((raw) {

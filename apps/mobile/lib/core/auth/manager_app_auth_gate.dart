@@ -147,12 +147,12 @@ class _ManagerAppAuthGateState extends ConsumerState<ManagerAppAuthGate> {
     }
   }
 
-  Future<void> _login({
+  Future<bool> _login({
     required String username,
     required String password,
   }) async {
     if (_working) {
-      return;
+      return false;
     }
 
     setState(() {
@@ -170,19 +170,21 @@ class _ManagerAppAuthGateState extends ConsumerState<ManagerAppAuthGate> {
       unawaited(ref.read(syncServiceProvider).syncNow());
 
       if (!mounted) {
-        return;
+        return false;
       }
 
       setState(() {
         _user = user;
         _phase = _ManagerAppAuthPhase.authenticated;
       });
+      return true;
     } on ManagerOrdersAuthException catch (error) {
       if (mounted) {
         setState(() {
           _error = error.message;
         });
       }
+      return false;
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -190,6 +192,7 @@ class _ManagerAppAuthGateState extends ConsumerState<ManagerAppAuthGate> {
               'ورود انجام نشد. نام کاربری، رمز و اتصال اینترنت را بررسی کنید.';
         });
       }
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -227,7 +230,7 @@ class _ManagerAppLoginView extends StatefulWidget {
 
   final bool working;
   final String? error;
-  final Future<void> Function({
+  final Future<bool> Function({
     required String username,
     required String password,
   })
@@ -240,11 +243,18 @@ class _ManagerAppLoginView extends StatefulWidget {
 class _ManagerAppLoginViewState extends State<_ManagerAppLoginView> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _usernameFocusNode = FocusNode();
+  final _passwordFocusNode = FocusNode();
+  final _passwordFieldKey = GlobalKey();
+
+  bool _passwordVisible = false;
 
   @override
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _usernameFocusNode.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -256,18 +266,57 @@ class _ManagerAppLoginViewState extends State<_ManagerAppLoginView> {
       return;
     }
 
-    await widget.onLogin(username: username, password: password);
+    FocusScope.of(context).unfocus();
+    final succeeded = await widget.onLogin(
+      username: username,
+      password: password,
+    );
+
+    if (!mounted || succeeded) {
+      return;
+    }
+
+    // Some Android keyboards keep the old composing region after a failed
+    // secure-field submission. Replacing the complete editing value prevents
+    // the previous password from being appended as hidden characters.
+    _passwordController.value = TextEditingValue.empty;
+    _passwordFocusNode.requestFocus();
+    _ensurePasswordFieldVisible();
+  }
+
+  void _ensurePasswordFieldVisible() {
+    final fieldContext = _passwordFieldKey.currentContext;
+    if (fieldContext == null) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_passwordFocusNode.hasFocus) {
+        return;
+      }
+
+      Scrollable.ensureVisible(
+        fieldContext,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+        alignment: 0.45,
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      child: Directionality(
+    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
+
+    return Scaffold(
+      resizeToAvoidBottomInset: true,
+      body: Directionality(
         textDirection: TextDirection.rtl,
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + keyboardHeight),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: Card(
@@ -285,8 +334,14 @@ class _ManagerAppLoginViewState extends State<_ManagerAppLoginView> {
                         const SizedBox(height: 20),
                         TextField(
                           controller: _usernameController,
+                          focusNode: _usernameFocusNode,
                           enabled: !widget.working,
                           textInputAction: TextInputAction.next,
+                          autofillHints: const <String>[AutofillHints.username],
+                          onSubmitted: (_) {
+                            _passwordFocusNode.requestFocus();
+                            _ensurePasswordFieldVisible();
+                          },
                           decoration: const InputDecoration(
                             labelText: 'نام کاربری',
                             border: OutlineInputBorder(),
@@ -294,13 +349,35 @@ class _ManagerAppLoginViewState extends State<_ManagerAppLoginView> {
                         ),
                         const SizedBox(height: 12),
                         TextField(
+                          key: _passwordFieldKey,
                           controller: _passwordController,
+                          focusNode: _passwordFocusNode,
                           enabled: !widget.working,
-                          obscureText: true,
+                          obscureText: !_passwordVisible,
+                          enableSuggestions: false,
+                          autocorrect: false,
+                          textInputAction: TextInputAction.done,
+                          autofillHints: const <String>[AutofillHints.password],
+                          onTap: _ensurePasswordFieldVisible,
                           onSubmitted: (_) => _submit(),
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'رمز عبور',
-                            border: OutlineInputBorder(),
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              tooltip: _passwordVisible
+                                  ? 'مخفی کردن رمز'
+                                  : 'نمایش رمز',
+                              onPressed: () {
+                                setState(() {
+                                  _passwordVisible = !_passwordVisible;
+                                });
+                              },
+                              icon: Icon(
+                                _passwordVisible
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                              ),
+                            ),
                           ),
                         ),
                         if (widget.error != null) ...[

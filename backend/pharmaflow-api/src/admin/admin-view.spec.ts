@@ -10,7 +10,7 @@ describe('full admin dashboard view', () => {
     const html = layout('test', '<main>ok</main>', 'dashboard');
 
     expect(ADMIN_DASHBOARD_RELEASE).toBe(
-      'manager-web-excel-pdf-export-v8-20260901',
+      'invoice-multi-settlement-v9-20260917',
     );
     expect(html).toContain('/admin/invoices');
     expect(html).toContain('/admin/catalog');

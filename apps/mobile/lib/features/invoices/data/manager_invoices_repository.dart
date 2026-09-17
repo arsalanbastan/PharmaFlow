@@ -1,6 +1,7 @@
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_constants.dart';
 import '../domain/manager_invoice.dart';
+import '../domain/manager_invoice_settlement.dart';
 
 class ManagerInvoicesRepository {
   const ManagerInvoicesRepository(this._apiClient);
@@ -67,5 +68,41 @@ class ManagerInvoicesRepository {
     }
 
     return ManagerInvoiceDetails.fromJson(payload);
+  }
+
+  Future<InvoiceSettlementPreparation> prepareSettlement(
+    Iterable<String> invoiceIds,
+  ) async {
+    final ids = invoiceIds.map((id) => id.trim()).where((id) => id.isNotEmpty);
+    final joined = ids.join(',');
+    if (joined.isEmpty) {
+      throw ArgumentError('At least one invoice id is required.');
+    }
+
+    final payload = await _apiClient.get(
+      '${ApiConstants.invoicesEndpoint}/settlement/prepare',
+      queryParameters: <String, String>{'invoiceIds': joined},
+    );
+    if (payload is! Map<String, dynamic>) {
+      throw const ApiDecodingException(
+        'Expected a JSON object from the settlement preparation endpoint.',
+      );
+    }
+    return InvoiceSettlementPreparation.fromJson(payload);
+  }
+
+  Future<Map<String, dynamic>> createSettlement(
+    Map<String, dynamic> request,
+  ) async {
+    final payload = await _apiClient.post(
+      '${ApiConstants.invoicesEndpoint}/settlement',
+      body: request,
+    );
+    if (payload is! Map<String, dynamic>) {
+      throw const ApiDecodingException(
+        'Expected a JSON object from the settlement endpoint.',
+      );
+    }
+    return payload;
   }
 }

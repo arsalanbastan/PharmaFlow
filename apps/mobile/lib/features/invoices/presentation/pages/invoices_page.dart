@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../settings/presentation/providers/communication_settings_provider.dart';
 import '../../data/manager_invoices_repository.dart';
 import '../../domain/manager_invoice.dart';
+import 'invoice_settlement_page.dart';
 
 class InvoicesPage extends ConsumerStatefulWidget {
   const InvoicesPage({super.key});
@@ -15,7 +16,7 @@ class InvoicesPage extends ConsumerStatefulWidget {
 class _InvoicesPageState extends ConsumerState<InvoicesPage> {
   final _searchController = TextEditingController();
   final List<ManagerInvoiceSummary> _items = [];
-  final Set<String> _updatingPaymentStatus = <String>{};
+  final Set<String> _selectedInvoiceIds = <String>{};
 
   bool _loading = true;
   bool _loadingMore = false;
@@ -49,6 +50,7 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
           _loading = true;
           _error = null;
           _page = 1;
+          _selectedInvoiceIds.clear();
         });
       }
     } else {
@@ -125,43 +127,69 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
     await _load(reset: true);
   }
 
-  Future<void> _setPaid(ManagerInvoiceSummary invoice, bool isPaid) async {
-    if (_updatingPaymentStatus.contains(invoice.id)) {
+  Iterable<ManagerInvoiceSummary> get _selectedInvoices => _items.where(
+        (invoice) => _selectedInvoiceIds.contains(invoice.id),
+      );
+
+  String? get _selectedCompanyId {
+    for (final invoice in _selectedInvoices) {
+      return invoice.company.id;
+    }
+    return null;
+  }
+
+  double get _selectedTotal => _selectedInvoices.fold<double>(
+        0,
+        (sum, invoice) =>
+            sum + (double.tryParse(invoice.remainingAmount) ?? 0),
+      );
+
+  bool _canSelect(ManagerInvoiceSummary invoice) {
+    return invoice.factorDocType == 1 &&
+        !invoice.isDeletedInArsen &&
+        invoice.paymentStatus != 'PAID' &&
+        (double.tryParse(invoice.remainingAmount) ?? 0) > 0;
+  }
+
+  void _toggleSelection(ManagerInvoiceSummary invoice, bool selected) {
+    if (!selected) {
+      setState(() => _selectedInvoiceIds.remove(invoice.id));
       return;
     }
 
-    setState(() {
-      _updatingPaymentStatus.add(invoice.id);
-    });
+    if (!_canSelect(invoice)) {
+      return;
+    }
 
-    try {
-      await _repository.setPaid(invoiceId: invoice.id, isPaid: isPaid);
-
-      if (!mounted) {
-        return;
-      }
-
-      final index = _items.indexWhere((item) => item.id == invoice.id);
-
-      if (index >= 0) {
-        setState(() {
-          _items[index] = _items[index].copyWith(isPaid: isPaid);
-        });
-      }
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
+    final companyId = _selectedCompanyId;
+    if (companyId != null && companyId != invoice.company.id) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تغییر وضعیت پرداخت فاکتور انجام نشد.')),
+        const SnackBar(
+          content: Text('فاکتورهای انتخابی باید متعلق به یک شرکت باشند.'),
+        ),
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _updatingPaymentStatus.remove(invoice.id);
-        });
-      }
+      return;
+    }
+
+    setState(() => _selectedInvoiceIds.add(invoice.id));
+  }
+
+  Future<void> _openSettlement() async {
+    if (_selectedInvoiceIds.isEmpty) {
+      return;
+    }
+
+    final completed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => InvoiceSettlementPage(
+          invoiceIds: _selectedInvoiceIds.toList(growable: false),
+          repository: _repository,
+        ),
+      ),
+    );
+
+    if (completed == true && mounted) {
+      await _load(reset: true);
     }
   }
 
@@ -221,6 +249,15 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
             Expanded(child: _buildBody()),
           ],
         ),
+        bottomNavigationBar: _selectedInvoiceIds.isEmpty
+            ? null
+            : _InvoiceSelectionBar(
+                count: _selectedInvoiceIds.length,
+                companyName: _selectedInvoices.first.company.name,
+                total: _selectedTotal,
+                onClear: () => setState(_selectedInvoiceIds.clear),
+                onSettle: _openSettlement,
+              ),
       ),
     );
   }
@@ -281,8 +318,13 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
 
           return _InvoiceCard(
             invoice: invoice,
-            paymentStatusUpdating: _updatingPaymentStatus.contains(invoice.id),
-            onPaidChanged: (value) => _setPaid(invoice, value),
+            selected: _selectedInvoiceIds.contains(invoice.id),
+            selectionEnabled:
+                _canSelect(invoice) &&
+                (_selectedCompanyId == null ||
+                    _selectedCompanyId == invoice.company.id),
+            onSelectionChanged: (value) =>
+                _toggleSelection(invoice, value),
             onTap: () async {
               await Navigator.of(context).push<void>(
                 MaterialPageRoute<void>(
@@ -307,14 +349,16 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
 class _InvoiceCard extends StatelessWidget {
   const _InvoiceCard({
     required this.invoice,
-    required this.paymentStatusUpdating,
-    required this.onPaidChanged,
+    required this.selected,
+    required this.selectionEnabled,
+    required this.onSelectionChanged,
     required this.onTap,
   });
 
   final ManagerInvoiceSummary invoice;
-  final bool paymentStatusUpdating;
-  final ValueChanged<bool> onPaidChanged;
+  final bool selected;
+  final bool selectionEnabled;
+  final ValueChanged<bool> onSelectionChanged;
   final VoidCallback onTap;
 
   @override
@@ -322,7 +366,17 @@ class _InvoiceCard extends StatelessWidget {
     final invoiceNumber =
         invoice.invoiceNumber ?? invoice.arsenFactorId.toString();
 
+    final colorScheme = Theme.of(context).colorScheme;
+    final cardColor = selected
+        ? colorScheme.primaryContainer.withValues(alpha: 0.55)
+        : invoice.paymentStatus == 'PAID'
+            ? Colors.green.withValues(alpha: 0.09)
+            : invoice.paymentStatus == 'PARTIAL'
+                ? Colors.orange.withValues(alpha: 0.10)
+                : null;
+
     return Card(
+      color: cardColor,
       margin: const EdgeInsets.symmetric(vertical: 5),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -335,6 +389,12 @@ class _InvoiceCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Checkbox(
+                    value: selected,
+                    onChanged: selectionEnabled
+                        ? (value) => onSelectionChanged(value == true)
+                        : null,
+                  ),
                   Expanded(
                     child: Text(
                       invoice.company.name,
@@ -374,30 +434,39 @@ class _InvoiceCard extends StatelessWidget {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  Checkbox(
-                    value: invoice.isPaid,
-                    onChanged: paymentStatusUpdating
-                        ? null
-                        : (value) {
-                            if (value != null) {
-                              onPaidChanged(value);
-                            }
-                          },
+                  Icon(
+                    invoice.paymentStatus == 'PAID'
+                        ? Icons.check_circle
+                        : invoice.paymentStatus == 'PARTIAL'
+                            ? Icons.timelapse
+                            : Icons.radio_button_unchecked,
+                    color: invoice.paymentStatus == 'PAID'
+                        ? Colors.green
+                        : invoice.paymentStatus == 'PARTIAL'
+                            ? Colors.orange.shade800
+                            : colorScheme.outline,
                   ),
+                  const SizedBox(width: 8),
                   Text(
-                    invoice.isPaid ? 'پرداخت شده' : 'پرداخت نشده',
+                    invoice.paymentStatus == 'PAID'
+                        ? 'پرداخت شده'
+                        : invoice.paymentStatus == 'PARTIAL'
+                            ? 'پرداخت بخشی'
+                            : 'پرداخت نشده',
                     style: TextStyle(
-                      fontWeight: invoice.isPaid
+                      fontWeight: invoice.paymentStatus != 'UNPAID'
                           ? FontWeight.w700
                           : FontWeight.w400,
                     ),
                   ),
-                  if (paymentStatusUpdating) ...[
-                    const SizedBox(width: 8),
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                  if (invoice.paymentStatus == 'PARTIAL') ...[
+                    const Spacer(),
+                    Text(
+                      '${_formatAmount(invoice.remainingAmount)} ریال مانده',
+                      style: TextStyle(
+                        color: Colors.orange.shade900,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ],
@@ -407,17 +476,89 @@ class _InvoiceCard extends StatelessWidget {
                 children: [
                   const Icon(Icons.payments_outlined, size: 19),
                   const SizedBox(width: 6),
-                  const Text('مبلغ قابل پرداخت:'),
+                  Text(
+                    invoice.paymentStatus == 'UNPAID'
+                        ? 'مبلغ قابل پرداخت:'
+                        : 'مانده فاکتور:',
+                  ),
                   const SizedBox(width: 5),
                   Expanded(
                     child: Text(
-                      _formatAmount(invoice.factorPayablePrice),
+                      _formatAmount(invoice.remainingAmount),
                       textAlign: TextAlign.left,
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
                   const SizedBox(width: 6),
                   const Icon(Icons.chevron_left),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InvoiceSelectionBar extends StatelessWidget {
+  const _InvoiceSelectionBar({
+    required this.count,
+    required this.companyName,
+    required this.total,
+    required this.onClear,
+    required this.onSettle,
+  });
+
+  final int count;
+  final String companyName;
+  final double total;
+  final VoidCallback onClear;
+  final VoidCallback onSettle;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Material(
+        elevation: 12,
+        color: Theme.of(context).colorScheme.surface,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$count فاکتور از $companyName',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  TextButton(onPressed: onClear, child: const Text('لغو انتخاب')),
+                ],
+              ),
+              Row(
+                children: [
+                  const Text('جمع مانده:'),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '${_formatAmount(total.toString())} ریال',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: onSettle,
+                    icon: const Icon(Icons.account_balance_wallet_outlined),
+                    label: const Text('ثبت پرداخت'),
+                  ),
                 ],
               ),
             ],
@@ -525,8 +666,12 @@ class _InvoiceDetailsBody extends StatelessWidget {
                 const SizedBox(height: 14),
                 _DetailRow(
                   label: 'وضعیت پرداخت',
-                  value: invoice.isPaid ? 'پرداخت شده' : 'پرداخت نشده',
-                  emphasize: invoice.isPaid,
+                  value: invoice.paymentStatus == 'PAID'
+                      ? 'پرداخت شده'
+                      : invoice.paymentStatus == 'PARTIAL'
+                          ? 'پرداخت بخشی'
+                          : 'پرداخت نشده',
+                  emphasize: invoice.paymentStatus != 'UNPAID',
                 ),
                 _DetailRow(label: 'شماره فاکتور', value: invoiceNumber),
                 _DetailRow(
@@ -561,6 +706,20 @@ class _InvoiceDetailsBody extends StatelessWidget {
                 _DetailRow(
                   label: 'مبلغ قابل پرداخت',
                   value: _formatAmount(invoice.factorPayablePrice),
+                  emphasize: true,
+                ),
+                _DetailRow(
+                  label: 'مبلغ پرداخت‌شده',
+                  value: _formatAmount(invoice.paidAmount),
+                ),
+                if ((double.tryParse(invoice.discountAmount) ?? 0) > 0)
+                  _DetailRow(
+                    label: 'تخفیف نقدی',
+                    value: _formatAmount(invoice.discountAmount),
+                  ),
+                _DetailRow(
+                  label: 'مانده',
+                  value: _formatAmount(invoice.remainingAmount),
                   emphasize: true,
                 ),
                 if (invoice.barbariPrice != null)

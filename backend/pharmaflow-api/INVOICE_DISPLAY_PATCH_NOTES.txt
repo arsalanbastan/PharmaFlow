@@ -1,0 +1,12 @@
+PharmaFlow invoice display/source patch - 2026-08-27
+
+Changes:
+- Add settlementDate and description to Arsen invoice source fields.
+- Invoice list shows settlement date instead of payment-day count.
+- Invoice detail keeps payment days and adds settlement date.
+- Invoice gross is calculated from item quantity * purchasePrice; raw Arsen FactorTotalPrice is not used for display.
+- Displayed payable is gross - header discount + header tax.
+- Header tax remains the direct Arsen FactorTax amount; no tax-rate formula is used.
+- Item tax column is labelled "مشمول مالیات" because Arsen detail only exposes HasMaliat.
+- PacketQuantity label is "تعداد در بسته".
+- Invoice description is rendered only when present.

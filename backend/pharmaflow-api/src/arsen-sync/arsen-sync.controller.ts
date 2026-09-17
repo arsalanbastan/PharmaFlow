@@ -3,6 +3,7 @@ import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { ArsenSyncGuard } from './arsen-sync.guard';
 import { ArsenSyncService } from './arsen-sync.service';
 import { ArsenCatalogItemBatchDto } from './dto/arsen-catalog-item-batch.dto';
+import { ArsenCompanyBatchDto } from './dto/arsen-company-batch.dto';
 import { ArsenInvoiceBatchDto } from './dto/arsen-invoice-batch.dto';
 
 @Controller('api/v1/integrations/arsen')
@@ -18,6 +19,11 @@ export class ArsenSyncController {
   @Post('invoices/batch')
   ingest(@Body() body: ArsenInvoiceBatchDto) {
     return this.arsenSyncService.ingest(body.invoices);
+  }
+
+  @Post('companies/batch')
+  ingestCompanies(@Body() body: ArsenCompanyBatchDto) {
+    return this.arsenSyncService.ingestCompanies(body.companies);
   }
 
   @Post('items/batch')

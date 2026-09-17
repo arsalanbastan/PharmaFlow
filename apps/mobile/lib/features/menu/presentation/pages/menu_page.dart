@@ -7,6 +7,7 @@ import '../../../cash_payments/presentation/pages/cash_payment_list_page.dart';
 import '../../../company/presentation/pages/company_list_page.dart';
 import '../../../invoices/presentation/pages/invoices_page.dart';
 import '../../../catalog/presentation/pages/catalog_page.dart';
+import '../../../sales_invoices/presentation/pages/sales_invoices_page.dart';
 import '../../../settings/presentation/pages/settings_page.dart';
 import '../../../../shared/app_shell/app_bottom_navigation.dart';
 import '../../../../shared/app_shell/app_scaffold.dart';
@@ -58,6 +59,15 @@ class MenuPage extends StatelessWidget {
               leading: const Icon(Icons.inventory_2_outlined),
               title: const Text('دارو / کالاها', textAlign: TextAlign.right),
               onTap: () => _open(context, const CatalogPage()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.point_of_sale_outlined),
+              title: const Text('فاکتور فروش', textAlign: TextAlign.right),
+              subtitle: const Text(
+                'صدور، ذخیره و اشتراک‌گذاری فاکتور',
+                textAlign: TextAlign.right,
+              ),
+              onTap: () => _open(context, const SalesInvoicesPage()),
             ),
             ListTile(
               leading: const Icon(Icons.settings_outlined),

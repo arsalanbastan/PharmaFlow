@@ -86,9 +86,8 @@ model ArsenInvoice {
   barbariPrice       Decimal? @db.Decimal(20, 4)
   paymentDays         Int?
 
-  isDeletedInArsen     Boolean  @default(false)
-  isLockedInArsen      Boolean?
-  isPaidInPharmaFlow   Boolean  @default(false)
+  isDeletedInArsen Boolean  @default(false)
+  isLockedInArsen  Boolean?
   arsenSaveDateTime DateTime?
 
   itemCount Int @default(0)
@@ -102,6 +101,9 @@ model ArsenInvoice {
 
   company Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
   items   ArsenInvoiceItem[]
+  chequeAllocations      ChequeInvoiceAllocation[]
+  cashPaymentAllocations CashPaymentInvoiceAllocation[]
+  discountAllocations    InvoiceDiscountAllocation[]
 
   @@index([companyId, ingestSequence(sort: Desc)])
   @@index([factorDocType, ingestSequence(sort: Desc)])
@@ -179,6 +181,76 @@ model ArsenCatalogItem {
   @@map("arsen_catalog_items")
 }
 
+model SalesInvoiceProfile {
+  id String @id @default("default")
+  sellerName String @default("داروخانه دکتر خسروانی")
+  legalName String?
+  nationalId String?
+  economicCode String?
+  phone String?
+  address String?
+  logoData String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sales_invoice_profiles")
+}
+
+model SalesInvoice {
+  id String @id @default(uuid()) @db.Uuid
+  sequence BigInt @unique @default(autoincrement())
+  invoiceNumber String? @unique
+  issueDate DateTime
+
+  buyerName String
+  buyerNationalId String?
+  buyerPhone String?
+  buyerAddress String?
+
+  sellerName String
+  sellerLegalName String?
+  sellerNationalId String?
+  sellerEconomicCode String?
+  sellerPhone String?
+  sellerAddress String?
+  sellerLogoData String?
+
+  subtotal Decimal @db.Decimal(20, 4)
+  discount Decimal @default(0) @db.Decimal(20, 4)
+  payableAmount Decimal @db.Decimal(20, 4)
+  notes String?
+  status String @default("ISSUED")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  items SalesInvoiceItem[]
+
+  @@index([issueDate(sort: Desc), sequence(sort: Desc)])
+  @@index([buyerName])
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceItem {
+  id String @id @default(uuid()) @db.Uuid
+  invoiceId String @db.Uuid
+  catalogItemId String? @db.Uuid
+  arsenDrugId BigInt?
+  itemName String
+  barcode String?
+  unit String?
+  quantity Decimal @db.Decimal(20, 4)
+  unitPrice Decimal @db.Decimal(20, 4)
+  lineDiscount Decimal @default(0) @db.Decimal(20, 4)
+  lineTotal Decimal @db.Decimal(20, 4)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  invoice SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([catalogItemId])
+  @@map("sales_invoice_items")
+}
+
 model BankAccount {
   id String @id @default(uuid()) @db.Uuid
 
@@ -229,6 +301,7 @@ model Cheque {
   company     Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
   bankAccount BankAccount        @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
   attachments ChequeAttachment[]
+  invoiceAllocations ChequeInvoiceAllocation[]
 
   @@index([bankAccountId, chequeNumber, deletedAt], map: "cheques_bankAccountId_chequeNumber_deletedAt_idx")
   @@map("cheques")
@@ -285,6 +358,7 @@ model CashPayment {
   bankAccount BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
 
   attachments CashPaymentAttachment[]
+  invoiceAllocations CashPaymentInvoiceAllocation[]
 
   @@index([companyId, paymentDate])
   @@index([bankAccountId, paymentDate])
@@ -317,6 +391,46 @@ model CashPaymentAttachment {
   @@index([cashPaymentId, kind, deletedAt])
   @@index([updatedAt, id])
   @@map("cash_payment_attachments")
+}
+
+model ChequeInvoiceAllocation {
+  id String @id @default(uuid()) @db.Uuid
+  invoiceId String @db.Uuid
+  chequeId String @db.Uuid
+  amount Decimal @db.Decimal(20, 4)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  invoice ArsenInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  cheque Cheque @relation(fields: [chequeId], references: [id], onDelete: Cascade)
+  @@unique([invoiceId, chequeId])
+  @@index([chequeId])
+  @@map("cheque_invoice_allocations")
+}
+
+model CashPaymentInvoiceAllocation {
+  id String @id @default(uuid()) @db.Uuid
+  invoiceId String @db.Uuid
+  cashPaymentId String @db.Uuid
+  amount Decimal @db.Decimal(20, 4)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  invoice ArsenInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  cashPayment CashPayment @relation(fields: [cashPaymentId], references: [id], onDelete: Cascade)
+  @@unique([invoiceId, cashPaymentId])
+  @@index([cashPaymentId])
+  @@map("cash_payment_invoice_allocations")
+}
+
+model InvoiceDiscountAllocation {
+  id String @id @default(uuid()) @db.Uuid
+  invoiceId String @db.Uuid
+  amount Decimal @db.Decimal(20, 4)
+  description String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  invoice ArsenInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  @@index([invoiceId])
+  @@map("invoice_discount_allocations")
 }
 
 model OrderRequest {

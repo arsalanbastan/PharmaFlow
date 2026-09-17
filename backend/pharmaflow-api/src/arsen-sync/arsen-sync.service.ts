@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { AuditLogService } from '../audit/audit-log.service';
 import { PrismaService } from '../database/prisma/prisma.service';
 import { ArsenCatalogItemDto } from './dto/arsen-catalog-item.dto';
+import { ArsenCompanyDto } from './dto/arsen-company.dto';
 import { ArsenInvoiceDto } from './dto/arsen-invoice.dto';
 
 function canonicalize(value: unknown): unknown {
@@ -217,6 +218,164 @@ export class ArsenSyncService {
     return {
       processed: results.length,
       created: results.filter((item) => item.status === 'CREATED').length,
+      updated: results.filter((item) => item.status === 'UPDATED').length,
+      unchanged: results.filter((item) => item.status === 'UNCHANGED').length,
+      results,
+    };
+  }
+
+  async ingestCompanies(companies: ArsenCompanyDto[]) {
+    const partnerIds = companies.map(
+      (company) => company.arsenBusinessPartnerId,
+    );
+
+    if (new Set(partnerIds).size !== partnerIds.length) {
+      throw new BadRequestException(
+        'Arsen company batch contains duplicate arsenBusinessPartnerId values.',
+      );
+    }
+
+    const results: Array<{
+      arsenBusinessPartnerId: number;
+      status: 'CREATED' | 'MAPPED' | 'UPDATED' | 'UNCHANGED';
+      companyId: string;
+    }> = [];
+
+    for (const source of companies) {
+      const arsenName = source.arsenName.trim();
+
+      if (!arsenName) {
+        throw new BadRequestException(
+          `Arsen BusinessPartnerID ${source.arsenBusinessPartnerId} has an empty name.`,
+        );
+      }
+
+      results.push(
+        await this.prisma.$transaction(async (tx) => {
+          const existingMapping = await tx.arsenCompanyMapping.findUnique({
+            where: {
+              arsenBusinessPartnerId: source.arsenBusinessPartnerId,
+            },
+            select: {
+              id: true,
+              arsenName: true,
+              companyId: true,
+              company: {
+                select: {
+                  deletedAt: true,
+                },
+              },
+            },
+          });
+
+          if (existingMapping) {
+            if (existingMapping.company.deletedAt) {
+              throw new BadRequestException(
+                `Arsen BusinessPartnerID ${source.arsenBusinessPartnerId} is mapped to a deleted PharmaFlow company.`,
+              );
+            }
+
+            if (existingMapping.arsenName === arsenName) {
+              return {
+                arsenBusinessPartnerId: source.arsenBusinessPartnerId,
+                status: 'UNCHANGED' as const,
+                companyId: existingMapping.companyId,
+              };
+            }
+
+            await tx.arsenCompanyMapping.update({
+              where: { id: existingMapping.id },
+              data: { arsenName },
+            });
+
+            await this.auditLog.record(
+              {
+                action: 'ARSEN_COMPANY_SYNC_UPDATE',
+                entityType: 'ARSEN_COMPANY_MAPPING',
+                entityId: existingMapping.id,
+                before: {
+                  arsenName: existingMapping.arsenName,
+                  companyId: existingMapping.companyId,
+                },
+                after: {
+                  arsenBusinessPartnerId: source.arsenBusinessPartnerId,
+                  arsenName,
+                  companyId: existingMapping.companyId,
+                },
+              },
+              tx,
+            );
+
+            return {
+              arsenBusinessPartnerId: source.arsenBusinessPartnerId,
+              status: 'UPDATED' as const,
+              companyId: existingMapping.companyId,
+            };
+          }
+
+          const existingCompany = await tx.company.findUnique({
+            where: { name: arsenName },
+            select: {
+              id: true,
+              deletedAt: true,
+            },
+          });
+
+          if (existingCompany?.deletedAt) {
+            throw new BadRequestException(
+              `Arsen company ${arsenName} matches a deleted PharmaFlow company.`,
+            );
+          }
+
+          const company =
+            existingCompany ??
+            (await tx.company.create({
+              data: { name: arsenName },
+              select: { id: true, deletedAt: true },
+            }));
+
+          const mapping = await tx.arsenCompanyMapping.create({
+            data: {
+              arsenBusinessPartnerId: source.arsenBusinessPartnerId,
+              arsenName,
+              companyId: company.id,
+            },
+            select: { id: true },
+          });
+
+          await this.auditLog.record(
+            {
+              action: existingCompany
+                ? 'ARSEN_COMPANY_SYNC_MAP'
+                : 'ARSEN_COMPANY_SYNC_CREATE',
+              entityType: 'ARSEN_COMPANY_MAPPING',
+              entityId: mapping.id,
+              before: null,
+              after: {
+                arsenBusinessPartnerId: source.arsenBusinessPartnerId,
+                arsenName,
+                companyId: company.id,
+                companyCreated: existingCompany == null,
+              },
+            },
+            tx,
+          );
+
+          return {
+            arsenBusinessPartnerId: source.arsenBusinessPartnerId,
+            status: existingCompany
+              ? ('MAPPED' as const)
+              : ('CREATED' as const),
+            companyId: company.id,
+          };
+        }),
+      );
+    }
+
+    return {
+      processed: results.length,
+      created: results.filter((item) => item.status === 'CREATED').length,
+      mapped: results.filter((item) => item.status === 'MAPPED').length,
       updated: results.filter((item) => item.status === 'UPDATED').length,
       unchanged: results.filter((item) => item.status === 'UNCHANGED').length,
       results,
