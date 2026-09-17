@@ -524,6 +524,7 @@ export class AdminController {
     @Query('dateTo') dateTo = '',
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '50',
+    @Query('notice') noticeText?: string,
   ) {
     const data = await this.adminService.invoices({
       invoiceNumber,
