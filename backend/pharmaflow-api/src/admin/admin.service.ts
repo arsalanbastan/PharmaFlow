@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import {
   BadRequestException,
   ConflictException,
@@ -10,6 +10,7 @@ import { AuditLogService } from '../audit/audit-log.service';
 import { hashPassword } from '../auth/auth-password';
 import { PrismaService } from '../database/prisma/prisma.service';
 import { normalizeOrderSearchText } from '../orders/order-similarity';
+import { enqueueCashPaymentCreatedPush, enqueueChequeCreatedPush } from '../push/push-outbox.service';
 
 type FormBody = Record<string, string | undefined>;
 
@@ -258,6 +259,8 @@ export class AdminService {
         isDeletedInArsen: true,
         importedAt: true,
         company: { select: { id: true, name: true } },
+        chequeAllocations: { where: { cheque: { deletedAt: null } }, select: { amount: true } },
+        cashPaymentAllocations: { where: { cashPayment: { deletedAt: null } }, select: { amount: true } },
       },
       orderBy: { ingestSequence: 'desc' },
       skip,
@@ -265,13 +268,66 @@ export class AdminService {
     });
 
     return {
-      items,
+      items: items.map((item) => {
+        const paidAmount = [...item.chequeAllocations, ...item.cashPaymentAllocations].reduce((sum, row) => sum + Number(row.amount), 0);
+        const payableAmount = Number(item.factorPayablePrice ?? 0);
+        return { ...item, paidAmount, remainingAmount: Math.max(0, payableAmount - paidAmount), paymentStatus: paidAmount <= 0 ? 'UNPAID' : paidAmount >= payableAmount ? 'PAID' : 'PARTIAL' };
+      }),
       companies,
       page,
       pageSize,
       totalCount,
       totalPages,
     };
+  }
+
+  async invoiceSettlementForm(invoiceIdsText: string) {
+    const invoiceIds = this.invoiceIds(invoiceIdsText);
+    const [invoices, bankAccounts] = await Promise.all([
+      this.prisma.arsenInvoice.findMany({ where: { id: { in: invoiceIds } }, select: {
+        id: true, invoiceNumber: true, invoiceDate: true, factorDocType: true, factorPayablePrice: true, isDeletedInArsen: true,
+        company: { select: { id: true, name: true } },
+        chequeAllocations: { where: { cheque: { deletedAt: null } }, select: { amount: true } },
+        cashPaymentAllocations: { where: { cashPayment: { deletedAt: null } }, select: { amount: true } },
+      } }),
+      this.prisma.bankAccount.findMany({ where: { deletedAt: null }, select: { id: true, bankName: true, accountTitle: true }, orderBy: { bankName: 'asc' } }),
+    ]);
+    if (invoices.length !== invoiceIds.length) throw new NotFoundException('One or more invoices were not found.');
+    const companyId = invoices[0]?.company.id;
+    if (!companyId || invoices.some((item) => item.company.id !== companyId)) throw new BadRequestException('All selected invoices must belong to one company.');
+    if (invoices.some((item) => item.factorDocType !== 1 || item.isDeletedInArsen)) throw new BadRequestException('Only active purchase invoices can be settled.');
+    const items = invoices.map((item) => {
+      const paidAmount = [...item.chequeAllocations, ...item.cashPaymentAllocations].reduce((sum, row) => sum + Number(row.amount), 0);
+      return { ...item, paidAmount, remainingAmount: Math.max(0, Number(item.factorPayablePrice ?? 0) - paidAmount) };
+    });
+    if (items.some((item) => item.remainingAmount <= 0)) throw new BadRequestException('A selected invoice is already fully paid.');
+    return { invoiceIds: invoiceIds.join(','), company: items[0].company, invoices: items, total: items.reduce((sum, item) => sum + item.remainingAmount, 0), bankAccounts };
+  }
+
+  async settleInvoices(kind: 'CHEQUE' | 'CASH', body: FormBody) {
+    const prepared = await this.invoiceSettlementForm(this.required(body.invoiceIds));
+    if (prepared.bankAccounts.every((account) => account.id !== body.bankAccountId)) throw new BadRequestException('bankAccountId is invalid.');
+    const amount = new Prisma.Decimal(prepared.total);
+    return this.prisma.$transaction(async (tx) => {
+      const lockedIds = prepared.invoices.map((invoice) => invoice.id);
+      await tx.$queryRaw`SELECT "id" FROM "arsen_invoices" WHERE "id"::text IN (${Prisma.join(lockedIds)}) FOR UPDATE`;
+      const current = await tx.arsenInvoice.findMany({ where: { id: { in: lockedIds } }, select: { id: true, chequeAllocations: { where: { cheque: { deletedAt: null } }, select: { amount: true } }, cashPaymentAllocations: { where: { cashPayment: { deletedAt: null } }, select: { amount: true } } } });
+      const changed = prepared.invoices.some((invoice) => { const row = current.find((item) => item.id === invoice.id); const paid = row ? [...row.chequeAllocations, ...row.cashPaymentAllocations].reduce((sum, allocation) => sum + Number(allocation.amount), 0) : Number.NaN; return Math.abs(paid - invoice.paidAmount) > 0.0001; });
+      if (changed) throw new ConflictException('Invoice payment status changed. Refresh and try again.');
+      if (kind === 'CHEQUE') {
+        const payment = await tx.cheque.create({ data: { chequeNumber: this.required(body.chequeNumber), amount, chequeDate: this.requiredDate(body.paymentDate, 'chequeDate'), dueDate: this.nullableDate(body.dueDate, 'dueDate'), companyId: prepared.company.id, bankAccountId: this.required(body.bankAccountId), status: 'ISSUED', isRegisteredInSayad: false, description: this.nullable(body.description) } });
+        await tx.chequeInvoiceAllocation.createMany({ data: prepared.invoices.map((invoice) => ({ invoiceId: invoice.id, chequeId: payment.id, amount: new Prisma.Decimal(invoice.remainingAmount) })) });
+        await this.auditLog.record({ action: 'ADMIN_CREATE_INVOICE_SETTLEMENT', entityType: 'CHEQUE', entityId: payment.id, after: { payment, invoiceIds: lockedIds } }, tx);
+        await enqueueChequeCreatedPush(payment.id, tx);
+        return payment;
+      }
+      const paymentMethod = this.oneOf(body.paymentMethod, ['BANK_DEPOSIT', 'POS_PAYMENT'], 'paymentMethod');
+      const payment = await tx.cashPayment.create({ data: { amount, paymentDate: this.requiredDate(body.paymentDate, 'paymentDate'), companyId: prepared.company.id, bankAccountId: this.required(body.bankAccountId), paymentMethod, trackingNumber: this.nullable(body.trackingNumber), description: this.nullable(body.description) } });
+      await tx.cashPaymentInvoiceAllocation.createMany({ data: prepared.invoices.map((invoice) => ({ invoiceId: invoice.id, cashPaymentId: payment.id, amount: new Prisma.Decimal(invoice.remainingAmount) })) });
+      await this.auditLog.record({ action: 'ADMIN_CREATE_INVOICE_SETTLEMENT', entityType: 'CASH_PAYMENT', entityId: payment.id, after: { payment, invoiceIds: lockedIds } }, tx);
+      await enqueueCashPaymentCreatedPush(payment.id, tx);
+      return payment;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async invoicesExport(filters: InvoiceListFilters = {}) {
@@ -1365,6 +1421,12 @@ export class AdminService {
     }
 
     return where;
+  }
+
+  private invoiceIds(value: string): string[] {
+    const ids = [...new Set(String(value ?? '').split(',').map((id) => id.trim()).filter(Boolean))];
+    if (ids.length === 0 || ids.length > 200 || ids.some((id) => !UUID_PATTERN.test(id))) throw new BadRequestException('invoiceIds is invalid.');
+    return ids;
   }
 
   private catalogPageSize(value: string | undefined): number {

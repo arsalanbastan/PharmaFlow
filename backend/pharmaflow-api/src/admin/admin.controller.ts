@@ -97,6 +97,7 @@ export class AdminController {
     @Query('sort') sort = 'SYNC_DESC',
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '50',
+    @Query('notice') noticeText?: string,
   ) {
     const data = await this.adminService.catalog({
       q,
@@ -553,7 +554,8 @@ export class AdminController {
 
     const rows = data.items
       .map(
-        (item) => `<tr>
+        (item) => `<tr class="invoice-row payment-${item.paymentStatus.toLowerCase()}" data-company-id="${escapeHtml(item.company.id)}" data-company-name="${escapeHtml(item.company.name)}" data-remaining="${item.remainingAmount}" data-selectable="${item.factorDocType === 1 && !item.isDeletedInArsen && item.paymentStatus !== 'PAID' ? '1' : '0'}">
+          <td><input class="invoice-select" type="checkbox" value="${escapeHtml(item.id)}" ${item.factorDocType !== 1 || item.isDeletedInArsen || item.paymentStatus === 'PAID' ? 'disabled' : ''}></td>
           <td>${escapeHtml(item.invoiceDate || '—')}</td>
           <td><strong>${escapeHtml(item.invoiceNumber || '—')}</strong></td>
           <td>${escapeHtml(item.company.name)}</td>
@@ -563,6 +565,7 @@ export class AdminController {
           <td>${formatAmount(item.itemCount)}</td>
           <td>${formatDate(item.importedAt)}</td>
           <td>${item.isDeletedInArsen ? statusBadge('DELETED') : statusBadge('ACTIVE')}</td>
+          <td>${item.paymentStatus === 'PAID' ? '<span class="badge ok">✓ پرداخت‌شده</span>' : item.paymentStatus === 'PARTIAL' ? `<span class="badge warn">پرداخت بخشی — ${formatAmount(item.remainingAmount)} ریال مانده</span>` : '<span class="badge">پرداخت‌نشده</span>'}</td>
           <td><a class="button secondary" href="/admin/invoices/${item.id}">جزئیات</a></td>
         </tr>`,
       )
@@ -633,7 +636,7 @@ export class AdminController {
 
     return layout(
       'فاکتورها',
-      `<div class="page-title"><h1>فاکتورها</h1></div>
+      `${notice(noticeText)}<div class="page-title"><h1>فاکتورها</h1></div>
        <form class="filters invoice-filters" method="get" action="/admin/invoices" id="invoice-filter-form">
          <div class="field"><label>شماره فاکتور</label><input name="invoiceNumber" id="invoice-live-search" value="${escapeHtml(invoiceNumber)}" placeholder="بخشی از شماره فاکتور" autocomplete="off"><span class="muted catalog-live-status" id="invoice-live-status" aria-live="polite"></span></div>
          <div class="field company"><label>شرکت</label><select name="companyId">${companyOptions}</select></div>
@@ -647,13 +650,14 @@ export class AdminController {
          <a id="invoice-clear-link" class="button secondary" href="/admin/invoices"${listStateActive ? '' : ' hidden'}>پاک کردن</a>
        </form>
        <div id="invoice-results">
+         <div class="invoice-selection-bar" id="invoice-selection-bar" hidden><strong><span id="invoice-selection-count">۰</span> فاکتور از <span id="invoice-selection-company"></span></strong><span>جمع مانده انتخاب‌شده: <strong id="invoice-selection-total">۰</strong> ریال</span><button type="button" id="invoice-cheque-action">صدور چک</button><button type="button" class="button secondary" id="invoice-cash-action">پرداخت نقدی</button></div>
          <div class="table-meta">
            <span class="muted">نمایش ${formatAmount(data.pageSize)} فاکتور در هر صفحه — مجموع ${formatAmount(data.totalCount)} فاکتور — مرتب‌شده بر اساس آخرین ورود به PharmaFlow</span>
          </div>
          <div class="table-wrap"><table><thead><tr>
-           ${['تاریخ فاکتور', 'شماره فاکتور', 'شرکت', 'نوع', 'مبلغ قابل پرداخت', 'تاریخ تسویه', 'اقلام', 'ورود به PharmaFlow', 'وضعیت منبع', 'عملیات'].map((header) => `<th>${escapeHtml(header)}</th>`).join('')}
+           ${['انتخاب', 'تاریخ فاکتور', 'شماره فاکتور', 'شرکت', 'نوع', 'مبلغ قابل پرداخت', 'تاریخ تسویه', 'اقلام', 'ورود به PharmaFlow', 'وضعیت منبع', 'وضعیت پرداخت', 'عملیات'].map((header) => `<th>${escapeHtml(header)}</th>`).join('')}
          </tr></thead><tbody>
-           ${rows || '<tr><td colspan="10">فاکتوری با این فیلترها یافت نشد.</td></tr>'}
+           ${rows || '<tr><td colspan="12">فاکتوری با این فیلترها یافت نشد.</td></tr>'}
          </tbody></table></div>
          ${pagination}
          <div class="pagination-summary"><span class="muted">صفحه ${formatAmount(data.page)} از ${formatAmount(data.totalPages)}</span></div>
@@ -667,6 +671,17 @@ export class AdminController {
          const clearLink = document.getElementById('invoice-clear-link');
          if (!form || !input || !results) return;
          let timer = 0, requestController = null, requestSerial = 0;
+         const refreshSelection = () => {
+           const selected = Array.from(results.querySelectorAll('.invoice-select:checked')), bar = document.getElementById('invoice-selection-bar'); if (!bar) return;
+           if (!selected.length) { bar.hidden = true; results.querySelectorAll('.invoice-select').forEach((box) => { box.disabled = box.closest('tr').dataset.selectable !== '1'; }); return; }
+           const companyId = selected[0].closest('tr').dataset.companyId;
+           results.querySelectorAll('.invoice-select:not(:checked)').forEach((box) => { box.disabled = box.closest('tr').dataset.companyId !== companyId || box.closest('tr').dataset.selectable !== '1'; });
+           const total = selected.reduce((sum, box) => sum + Number(box.closest('tr').dataset.remaining || 0), 0);
+           document.getElementById('invoice-selection-count').textContent = new Intl.NumberFormat('fa-IR').format(selected.length); document.getElementById('invoice-selection-company').textContent = selected[0].closest('tr').dataset.companyName; document.getElementById('invoice-selection-total').textContent = new Intl.NumberFormat('fa-IR').format(total); bar.hidden = false;
+         };
+         const openSettlement = (kind) => { const ids = Array.from(results.querySelectorAll('.invoice-select:checked')).map((box) => box.value); if (ids.length) location.href = '/admin/invoices/settlement/new?kind=' + kind + '&invoiceIds=' + encodeURIComponent(ids.join(',')); };
+         results.addEventListener('change', (event) => { if (event.target.classList.contains('invoice-select')) refreshSelection(); });
+         results.addEventListener('click', (event) => { if (event.target.id === 'invoice-cheque-action') openSettlement('CHEQUE'); if (event.target.id === 'invoice-cash-action') openSettlement('CASH'); });
 
          const hasActiveFilter = () => {
            const data = new FormData(form);
@@ -708,6 +723,7 @@ export class AdminController {
              const nextResults = doc.getElementById('invoice-results');
              if (!nextResults) throw new Error('Invoice results were not found.');
              results.innerHTML = nextResults.innerHTML;
+             refreshSelection();
              history.replaceState(null, '', url);
              if (status) status.textContent = '';
            } catch (error) {
@@ -727,6 +743,28 @@ export class AdminController {
        </script>`,
       'invoices',
     );
+  }
+
+  @Get('invoices/settlement/new')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async newInvoiceSettlement(@Query('kind') kind = '', @Query('invoiceIds') invoiceIds = '') {
+    if (kind !== 'CHEQUE' && kind !== 'CASH') throw new ForbiddenException('Invalid settlement type.');
+    const data = await this.adminService.invoiceSettlementForm(invoiceIds);
+    const accountOptions = data.bankAccounts.map((account) => this.option(account.id, account.accountTitle || account.bankName, '')).join('');
+    const rows = data.invoices.map((invoice) => `<tr><td>${escapeHtml(invoice.invoiceNumber || '—')}</td><td>${escapeHtml(invoice.invoiceDate || '—')}</td><td>${formatAmount(invoice.remainingAmount)} ریال</td></tr>`).join('');
+    const today = new Date().toISOString().slice(0, 10);
+    const methods = this.option('BANK_DEPOSIT', 'واریز بانکی', 'BANK_DEPOSIT') + this.option('POS_PAYMENT', 'پرداخت کارتخوان', 'BANK_DEPOSIT');
+    const specific = kind === 'CHEQUE' ? `${this.field('شماره چک', 'chequeNumber', '')}${this.field('تاریخ سررسید', 'dueDate', '', 'date')}` : `${this.selectField('روش پرداخت', 'paymentMethod', methods)}${this.field('شماره پیگیری', 'trackingNumber', '')}`;
+    return layout(kind === 'CHEQUE' ? 'صدور چک برای فاکتورها' : 'پرداخت نقدی فاکتورها', `<div class="page-title"><h1>${kind === 'CHEQUE' ? 'صدور چک' : 'پرداخت نقدی'} برای ${escapeHtml(data.company.name)}</h1></div><div class="settlement-summary"><strong>مبلغ کل: ${formatAmount(data.total)} ریال</strong><div class="table-wrap"><table><thead><tr><th>فاکتور</th><th>تاریخ</th><th>مانده</th></tr></thead><tbody>${rows}</tbody></table></div></div><form class="form-card" method="post" action="/admin/invoices/settlement">${this.csrfInput()}<input type="hidden" name="kind" value="${kind}"><input type="hidden" name="invoiceIds" value="${escapeHtml(data.invoiceIds)}"><div class="grid">${this.field('مبلغ (ریال)', 'displayAmount', data.total, 'number').replace('<input ', '<input readonly ')}${this.field(kind === 'CHEQUE' ? 'تاریخ صدور' : 'تاریخ پرداخت', 'paymentDate', today, 'date')}${this.selectField('حساب بانکی', 'bankAccountId', accountOptions)}${specific}${this.textarea('توضیحات', 'description', '')}</div><div class="actions"><button type="submit">ثبت و پرداخت فاکتورها</button><a class="button secondary" href="/admin/invoices">انصراف</a></div></form>`, 'invoices');
+  }
+
+  @Post('invoices/settlement')
+  async createInvoiceSettlement(@Body() body: FormBody, @Res() response: Response) {
+    this.verifyCsrf(body._csrf);
+    const kind = body.kind === 'CHEQUE' ? 'CHEQUE' : body.kind === 'CASH' ? 'CASH' : null;
+    if (!kind) throw new ForbiddenException('Invalid settlement type.');
+    await this.adminService.settleInvoices(kind, body);
+    return response.redirect(303, this.withNotice('/admin/invoices', 'پرداخت ثبت شد و وضعیت فاکتورها به‌روزرسانی شد.'));
   }
 
   @Get('invoices/export')

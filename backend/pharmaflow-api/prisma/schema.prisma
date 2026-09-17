@@ -101,6 +101,8 @@ model ArsenInvoice {
 
   company Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
   items   ArsenInvoiceItem[]
+  chequeAllocations      ChequeInvoiceAllocation[]
+  cashPaymentAllocations CashPaymentInvoiceAllocation[]
 
   @@index([companyId, ingestSequence(sort: Desc)])
   @@index([factorDocType, ingestSequence(sort: Desc)])
@@ -228,6 +230,7 @@ model Cheque {
   company     Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
   bankAccount BankAccount        @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
   attachments ChequeAttachment[]
+  invoiceAllocations ChequeInvoiceAllocation[]
 
   @@index([bankAccountId, chequeNumber, deletedAt], map: "cheques_bankAccountId_chequeNumber_deletedAt_idx")
   @@map("cheques")
@@ -284,6 +287,7 @@ model CashPayment {
   bankAccount BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
 
   attachments CashPaymentAttachment[]
+  invoiceAllocations CashPaymentInvoiceAllocation[]
 
   @@index([companyId, paymentDate])
   @@index([bankAccountId, paymentDate])
@@ -316,6 +320,34 @@ model CashPaymentAttachment {
   @@index([cashPaymentId, kind, deletedAt])
   @@index([updatedAt, id])
   @@map("cash_payment_attachments")
+}
+
+model ChequeInvoiceAllocation {
+  id String @id @default(uuid()) @db.Uuid
+  invoiceId String @db.Uuid
+  chequeId String @db.Uuid
+  amount Decimal @db.Decimal(20, 4)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  invoice ArsenInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  cheque Cheque @relation(fields: [chequeId], references: [id], onDelete: Cascade)
+  @@unique([invoiceId, chequeId])
+  @@index([chequeId])
+  @@map("cheque_invoice_allocations")
+}
+
+model CashPaymentInvoiceAllocation {
+  id String @id @default(uuid()) @db.Uuid
+  invoiceId String @db.Uuid
+  cashPaymentId String @db.Uuid
+  amount Decimal @db.Decimal(20, 4)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  invoice ArsenInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  cashPayment CashPayment @relation(fields: [cashPaymentId], references: [id], onDelete: Cascade)
+  @@unique([invoiceId, cashPaymentId])
+  @@index([cashPaymentId])
+  @@map("cash_payment_invoice_allocations")
 }
 
 model OrderRequest {
