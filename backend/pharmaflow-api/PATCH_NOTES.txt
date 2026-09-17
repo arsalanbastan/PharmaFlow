@@ -1,0 +1,23 @@
+PharmaFlow Invoice Pagination Patch
+Date: 2026-08-31
+Release marker: manager-web-invoice-pagination-v3-20260831
+
+Changes:
+- Replaces invoice cursor-only paging with page/pageSize paging.
+- Page sizes: 25, 50, 100, 200. Default: 50.
+- Shows filtered total invoice count and total page count.
+- Shows at most 10 numbered page links.
+- Shows leading/trailing ellipsis when page numbers are hidden.
+- Adds <<, <, >, >> navigation for first/previous/next/last.
+- Preserves invoice filters and page size while navigating.
+- Applying filters resets the page to page 1.
+- Invalid/too-large page numbers clamp to the last page.
+- No Prisma schema or database migration is required.
+- Adds pagination tests.
+
+Files:
+src/admin/admin.controller.ts
+src/admin/admin.service.ts
+src/admin/admin-view.ts
+src/admin/admin-view.spec.ts
+src/admin/admin-invoice-pagination.spec.ts

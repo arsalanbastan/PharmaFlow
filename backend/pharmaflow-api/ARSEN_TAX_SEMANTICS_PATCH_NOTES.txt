@@ -1,0 +1,9 @@
+PharmaFlow Arsen invoice tax semantics patch - 2026-08-29
+
+Changes:
+- dr_FactorDetail.HasMaliat is treated as the row tax AMOUNT, not yes/no and not a tax percentage.
+- API validation accepts the full SQL Server INT range for row tax amounts.
+- Invoice item UI shows numeric tax amount under the heading "مالیات".
+- Invoice detail uses Arsen FactorPayablePrice as the canonical displayed payable amount when available.
+- No database migration.
+- No tax percentage is hard-coded or calculated in PharmaFlow.
