@@ -1,0 +1,51 @@
+import { OnModuleInit } from '@nestjs/common';
+import { AuditLogService } from '../audit/audit-log.service';
+import { PrismaService } from '../database/prisma/prisma.service';
+import { CreateAppUserDto } from './dto/create-app-user.dto';
+import { LoginDto } from './dto/login.dto';
+import { ResetAppUserPasswordDto } from './dto/reset-app-user-password.dto';
+import { SetAppUserActiveDto } from './dto/set-app-user-active.dto';
+import { SetAppUserPermissionsDto } from './dto/set-app-user-permissions.dto';
+import { AuthPrincipal, PublicAppUser } from './auth.types';
+export declare class AuthService implements OnModuleInit {
+    private readonly prisma;
+    private readonly auditLog;
+    constructor(prisma: PrismaService, auditLog: AuditLogService);
+    onModuleInit(): Promise<void>;
+    login(dto: LoginDto): Promise<{
+        token: string;
+        expiresAt: string;
+        user: PublicAppUser;
+    }>;
+    authenticateAuthorization(authorization: string | undefined): Promise<AuthPrincipal>;
+    logout(authorization: string | undefined): Promise<void>;
+    listUsers(): Promise<PublicAppUser[]>;
+    createUser(dto: CreateAppUserDto): Promise<PublicAppUser>;
+    resetPassword(userId: string, dto: ResetAppUserPasswordDto): Promise<void>;
+    setActive(userId: string, dto: SetAppUserActiveDto, actorUserId?: string): Promise<PublicAppUser>;
+    setPermissions(userId: string, dto: SetAppUserPermissionsDto): Promise<PublicAppUser>;
+    listUserActivity(userId: string, rawLimit?: string): Promise<{
+        id: string;
+        createdAt: Date;
+        source: string;
+        actorDisplayName: string | null;
+        actorUserId: string | null;
+        actorVerified: boolean;
+        deviceId: string | null;
+        action: string;
+        entityType: string;
+        entityId: string | null;
+        beforeData: import("@prisma/client/runtime/library").JsonValue | null;
+        afterData: import("@prisma/client/runtime/library").JsonValue | null;
+        ipAddress: string | null;
+        requestId: string | null;
+    }[]>;
+    private permissionDataForCreate;
+    private toPermissions;
+    private normalizeUsername;
+    private readBearerToken;
+    private sessionDays;
+    private readRole;
+    private toPublicUser;
+    private bootstrapUserFromEnvironment;
+}
