@@ -51,6 +51,7 @@ void main() {
           'installationId': 'install-12345678',
           'platform': 'android',
           'appPackage': 'com.example.pharmaflow.dev',
+          'notificationAggregationVersion': 1,
         });
       },
     );

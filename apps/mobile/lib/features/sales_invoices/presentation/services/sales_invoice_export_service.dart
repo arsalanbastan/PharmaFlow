@@ -99,7 +99,10 @@ class SalesInvoiceExportService {
               spacing: 18,
               runSpacing: 5,
               children: [
-                pw.Text('خریدار: ${invoice.buyerName}', style: pw.TextStyle(font: bold)),
+                pw.Text(
+                  'خریدار: ${invoice.buyerName}',
+                  style: pw.TextStyle(font: bold),
+                ),
                 if (invoice.buyerNationalId != null)
                   pw.Text('کد/شناسه ملی: ${invoice.buyerNationalId}'),
                 if (invoice.buyerPhone != null)
@@ -120,18 +123,22 @@ class SalesInvoiceExportService {
               'تخفیف',
               'جمع (ریال)',
             ],
-            data: invoice.items.asMap().entries.map((entry) {
-              final item = entry.value;
-              return [
-                '${entry.key + 1}',
-                item.itemName,
-                _quantity(item.quantity),
-                item.unit ?? '-',
-                number.format(double.parse(item.unitPrice)),
-                number.format(double.parse(item.lineDiscount)),
-                number.format(double.parse(item.lineTotal)),
-              ];
-            }).toList(growable: false),
+            data: invoice.items
+                .asMap()
+                .entries
+                .map((entry) {
+                  final item = entry.value;
+                  return [
+                    '${entry.key + 1}',
+                    item.itemName,
+                    _quantity(item.quantity),
+                    item.unit ?? '-',
+                    number.format(double.parse(item.unitPrice)),
+                    number.format(double.parse(item.lineDiscount)),
+                    number.format(double.parse(item.lineTotal)),
+                  ];
+                })
+                .toList(growable: false),
             headerStyle: pw.TextStyle(font: bold, fontSize: 9),
             cellStyle: const pw.TextStyle(fontSize: 9),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
@@ -148,7 +155,13 @@ class SalesInvoiceExportService {
                   _totalRow('جمع اقلام', invoice.subtotal, number, bold),
                   _totalRow('تخفیف', invoice.discount, number, bold),
                   pw.Divider(),
-                  _totalRow('مبلغ قابل پرداخت', invoice.payableAmount, number, bold, emphasized: true),
+                  _totalRow(
+                    'مبلغ قابل پرداخت',
+                    invoice.payableAmount,
+                    number,
+                    bold,
+                    emphasized: true,
+                  ),
                 ],
               ),
             ),
@@ -160,10 +173,7 @@ class SalesInvoiceExportService {
           pw.SizedBox(height: 24),
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
-            children: [
-              pw.Text('مهر و امضای فروشنده'),
-              pw.Text('امضای خریدار'),
-            ],
+            children: [pw.Text('مهر و امضای فروشنده'), pw.Text('امضای خریدار')],
           ),
         ],
       ),
@@ -202,7 +212,9 @@ class SalesInvoiceExportService {
     final encoded = invoice.sellerLogoData;
     if (encoded != null) {
       try {
-        return base64Decode(encoded.contains(',') ? encoded.split(',').last : encoded);
+        return base64Decode(
+          encoded.contains(',') ? encoded.split(',').last : encoded,
+        );
       } catch (_) {
         // Fall back to the bundled pharmacy logo.
       }

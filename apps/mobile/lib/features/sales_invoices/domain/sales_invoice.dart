@@ -85,7 +85,9 @@ class SalesInvoicePage {
     }
     return SalesInvoicePage(
       items: rawItems
-          .map((raw) => SalesInvoiceSummary.fromJson(raw as Map<String, dynamic>))
+          .map(
+            (raw) => SalesInvoiceSummary.fromJson(raw as Map<String, dynamic>),
+          )
           .toList(growable: false),
       page: _int(json['page']),
       totalPages: _int(json['totalPages']),

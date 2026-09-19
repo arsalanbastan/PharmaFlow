@@ -245,8 +245,8 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
                   Text(
                     data.company.name,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text('${data.invoices.length} فاکتور انتخاب شده'),
@@ -254,8 +254,8 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
                   Text(
                     'جمع مانده: ${_formatMoney(remaining)} ریال',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const Divider(height: 22),
                   ...data.invoices.map(
@@ -268,7 +268,9 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
                               'فاکتور ${invoice.invoiceNumber ?? '-'} — ${invoice.invoiceDate ?? '-'}',
                             ),
                           ),
-                          Text('${_formatMoney(double.parse(invoice.remainingAmount))} ریال'),
+                          Text(
+                            '${_formatMoney(double.parse(invoice.remainingAmount))} ریال',
+                          ),
                         ],
                       ),
                     ),
@@ -282,14 +284,18 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
             value: _useCheque,
             title: const Text('صدور چک'),
             secondary: const Icon(Icons.receipt_long_outlined),
-            onChanged: _saving ? null : (value) => setState(() => _useCheque = value),
+            onChanged: _saving
+                ? null
+                : (value) => setState(() => _useCheque = value),
           ),
           if (_useCheque) _chequeFields(data.bankAccounts),
           SwitchListTile(
             value: _useCash,
             title: const Text('پرداخت نقدی / واریز'),
             secondary: const Icon(Icons.payments_outlined),
-            onChanged: _saving ? null : (value) => setState(() => _useCash = value),
+            onChanged: _saving
+                ? null
+                : (value) => setState(() => _useCash = value),
           ),
           if (_useCash) _cashFields(data.bankAccounts),
           const SizedBox(height: 8),
@@ -330,21 +336,23 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
             color: afterSettlement < 0
                 ? Theme.of(context).colorScheme.errorContainer
                 : afterSettlement == 0
-                    ? Colors.green.withValues(alpha: 0.12)
-                    : Theme.of(context).colorScheme.primaryContainer,
+                ? Colors.green.withValues(alpha: 0.12)
+                : Theme.of(context).colorScheme.primaryContainer,
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('جمع پرداخت و تخفیف: ${_formatMoney(_enteredTotal)} ریال'),
+                  Text(
+                    'جمع پرداخت و تخفیف: ${_formatMoney(_enteredTotal)} ریال',
+                  ),
                   const SizedBox(height: 5),
                   Text(
                     afterSettlement < 0
                         ? 'مبلغ ${_formatMoney(-afterSettlement)} ریال بیشتر از مانده است'
                         : afterSettlement == 0
-                            ? 'فاکتورهای انتخابی به‌طور کامل تسویه می‌شوند'
-                            : 'پس از ثبت ${_formatMoney(afterSettlement)} ریال مانده باقی می‌ماند',
+                        ? 'فاکتورهای انتخابی به‌طور کامل تسویه می‌شوند'
+                        : 'پس از ثبت ${_formatMoney(afterSettlement)} ریال مانده باقی می‌ماند',
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ],
@@ -399,7 +407,8 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
               accounts: accounts,
               value: _chequeBankAccountId,
               label: 'حساب صادرکننده چک',
-              onChanged: (value) => setState(() => _chequeBankAccountId = value),
+              onChanged: (value) =>
+                  setState(() => _chequeBankAccountId = value),
             ),
             const SizedBox(height: 8),
             Row(
@@ -453,7 +462,10 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
                 border: OutlineInputBorder(),
               ),
               items: const [
-                DropdownMenuItem(value: 'BANK_DEPOSIT', child: Text('واریز بانکی / نقدی')),
+                DropdownMenuItem(
+                  value: 'BANK_DEPOSIT',
+                  child: Text('واریز بانکی / نقدی'),
+                ),
                 DropdownMenuItem(value: 'POS_PAYMENT', child: Text('کارتخوان')),
               ],
               onChanged: (value) {
@@ -491,7 +503,10 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
       controller: controller,
       keyboardType: TextInputType.number,
       inputFormatters: const <TextInputFormatter>[ChequeAmountFormatter()],
-      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
       validator: (value) {
         final amount = _amount(controller);
         if (isRequired && amount <= 0) {
@@ -511,15 +526,21 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
     return DropdownButtonFormField<String>(
       initialValue: value,
       isExpanded: true,
-      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
       items: accounts
-          .map((account) => DropdownMenuItem(
-                value: account.id,
-                child: Text(account.displayName, overflow: TextOverflow.ellipsis),
-              ))
+          .map(
+            (account) => DropdownMenuItem(
+              value: account.id,
+              child: Text(account.displayName, overflow: TextOverflow.ellipsis),
+            ),
+          )
           .toList(growable: false),
       onChanged: onChanged,
-      validator: (selected) => selected == null ? 'حساب بانکی را انتخاب کنید' : null,
+      validator: (selected) =>
+          selected == null ? 'حساب بانکی را انتخاب کنید' : null,
     );
   }
 

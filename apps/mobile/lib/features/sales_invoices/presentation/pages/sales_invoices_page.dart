@@ -110,15 +110,13 @@ class _SalesInvoicesPageState extends ConsumerState<SalesInvoicesPage> {
     if (!mounted) return;
     final changed = await showDialog<bool>(
       context: context,
-      builder: (_) => _SalesProfileDialog(
-        repository: _repository,
-        profile: profile,
-      ),
+      builder: (_) =>
+          _SalesProfileDialog(repository: _repository, profile: profile),
     );
     if (changed == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('مشخصات فروشنده ذخیره شد.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('مشخصات فروشنده ذخیره شد.')));
     }
   }
 
@@ -266,7 +264,8 @@ class SalesInvoiceFormPage extends ConsumerStatefulWidget {
   final SalesInvoicesRepository repository;
 
   @override
-  ConsumerState<SalesInvoiceFormPage> createState() => _SalesInvoiceFormPageState();
+  ConsumerState<SalesInvoiceFormPage> createState() =>
+      _SalesInvoiceFormPageState();
 }
 
 class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
@@ -329,7 +328,8 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
       setState(() => _searching = true);
       try {
         final result = await _catalog.getPage(query: query, active: 'ACTIVE');
-        if (mounted) setState(() => _suggestions = result.items.take(12).toList());
+        if (mounted)
+          setState(() => _suggestions = result.items.take(12).toList());
       } catch (_) {
         if (mounted) setState(() => _suggestions = const []);
       } finally {
@@ -405,18 +405,21 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
         'buyerName': _buyerName.text.trim(),
         if (_buyerNationalId.text.trim().isNotEmpty)
           'buyerNationalId': _buyerNationalId.text.trim(),
-        if (_buyerPhone.text.trim().isNotEmpty) 'buyerPhone': _buyerPhone.text.trim(),
+        if (_buyerPhone.text.trim().isNotEmpty)
+          'buyerPhone': _buyerPhone.text.trim(),
         if (_buyerAddress.text.trim().isNotEmpty)
           'buyerAddress': _buyerAddress.text.trim(),
         'discount': _discount,
         if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
         'items': _lines
-            .map((line) => {
-                  'catalogItemId': line.item.id,
-                  'quantity': line.quantity,
-                  'unitPrice': line.unitPrice,
-                  'lineDiscount': line.discount,
-                })
+            .map(
+              (line) => {
+                'catalogItemId': line.item.id,
+                'quantity': line.quantity,
+                'unitPrice': line.unitPrice,
+                'lineDiscount': line.discount,
+              },
+            )
             .toList(growable: false),
       });
       if (!mounted) return;
@@ -521,15 +524,17 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
                 Card(
                   child: Column(
                     children: _suggestions
-                        .map((item) => ListTile(
-                              dense: true,
-                              title: Text(item.displayName),
-                              subtitle: Text(
-                                '${item.category == 'DRUG' ? 'دارو' : 'کالا'} • قیمت فروش: ${_money(item.salesPrice ?? '0')} ریال',
-                              ),
-                              trailing: const Icon(Icons.add_circle_outline),
-                              onTap: () => _addItem(item),
-                            ))
+                        .map(
+                          (item) => ListTile(
+                            dense: true,
+                            title: Text(item.displayName),
+                            subtitle: Text(
+                              '${item.category == 'DRUG' ? 'دارو' : 'کالا'} • قیمت فروش: ${_money(item.salesPrice ?? '0')} ریال',
+                            ),
+                            trailing: const Icon(Icons.add_circle_outline),
+                            onTap: () => _addItem(item),
+                          ),
+                        )
                         .toList(growable: false),
                   ),
                 ),
@@ -537,7 +542,9 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
               if (_lines.isEmpty)
                 const Padding(
                   padding: EdgeInsets.all(20),
-                  child: Center(child: Text('هنوز قلمی به فاکتور اضافه نشده است.')),
+                  child: Center(
+                    child: Text('هنوز قلمی به فاکتور اضافه نشده است.'),
+                  ),
                 )
               else
                 ..._lines.asMap().entries.map((entry) {
@@ -550,7 +557,8 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
                       ),
                       onTap: () => _editLine(entry.key),
                       trailing: IconButton(
-                        onPressed: () => setState(() => _lines.removeAt(entry.key)),
+                        onPressed: () =>
+                            setState(() => _lines.removeAt(entry.key)),
                         icon: const Icon(Icons.delete_outline),
                       ),
                     ),
@@ -560,7 +568,9 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
               TextFormField(
                 controller: _invoiceDiscount,
                 keyboardType: TextInputType.number,
-                inputFormatters: const <TextInputFormatter>[ChequeAmountFormatter()],
+                inputFormatters: const <TextInputFormatter>[
+                  ChequeAmountFormatter(),
+                ],
                 decoration: const InputDecoration(
                   labelText: 'تخفیف کل فاکتور (ریال)',
                   border: OutlineInputBorder(),
@@ -588,9 +598,8 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
                       const Divider(),
                       Text(
                         'مبلغ قابل پرداخت: ${_money(_payable.toString())} ریال',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w900,
-                            ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w900),
                       ),
                     ],
                   ),
@@ -681,26 +690,37 @@ class _SalesLineDialogState extends State<_SalesLineDialog> {
           children: [
             TextField(
               controller: _quantityController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(labelText: 'تعداد'),
             ),
             TextField(
               controller: _priceController,
               keyboardType: TextInputType.number,
-              inputFormatters: const <TextInputFormatter>[ChequeAmountFormatter()],
-              decoration: const InputDecoration(labelText: 'قیمت واحد (قابل ویرایش)'),
+              inputFormatters: const <TextInputFormatter>[
+                ChequeAmountFormatter(),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'قیمت واحد (قابل ویرایش)',
+              ),
             ),
             TextField(
               controller: _discountController,
               keyboardType: TextInputType.number,
-              inputFormatters: const <TextInputFormatter>[ChequeAmountFormatter()],
+              inputFormatters: const <TextInputFormatter>[
+                ChequeAmountFormatter(),
+              ],
               decoration: const InputDecoration(labelText: 'تخفیف این ردیف'),
             ),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('انصراف'),
+        ),
         FilledButton(
           onPressed: () {
             final quantity = double.tryParse(_quantityController.text) ?? 0;
@@ -708,7 +728,9 @@ class _SalesLineDialogState extends State<_SalesLineDialog> {
             final discount = _parseAmount(_discountController.text);
             if (quantity <= 0 || price < 0 || discount > quantity * price) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('تعداد، قیمت یا تخفیف معتبر نیست.')),
+                const SnackBar(
+                  content: Text('تعداد، قیمت یا تخفیف معتبر نیست.'),
+                ),
               );
               return;
             }
@@ -742,7 +764,8 @@ class SalesInvoiceDetailsPage extends StatefulWidget {
   final SalesInvoicesRepository repository;
 
   @override
-  State<SalesInvoiceDetailsPage> createState() => _SalesInvoiceDetailsPageState();
+  State<SalesInvoiceDetailsPage> createState() =>
+      _SalesInvoiceDetailsPageState();
 }
 
 class _SalesInvoiceDetailsPageState extends State<SalesInvoiceDetailsPage> {
@@ -760,7 +783,9 @@ class _SalesInvoiceDetailsPageState extends State<SalesInvoiceDetailsPage> {
   }
 
   Future<Uint8List> _capture() async {
-    final boundary = _captureKey.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+    final boundary =
+        _captureKey.currentContext!.findRenderObject()!
+            as RenderRepaintBoundary;
     final image = await boundary.toImage(pixelRatio: 2);
     final data = await image.toByteData(format: ui.ImageByteFormat.png);
     if (data == null) throw StateError('Unable to render invoice image.');
@@ -815,7 +840,8 @@ class _SalesInvoiceDetailsPageState extends State<SalesInvoiceDetailsPage> {
               return const Center(child: CircularProgressIndicator());
             }
             final invoice = snapshot.data;
-            if (invoice == null) return const Center(child: Text('فاکتور دریافت نشد.'));
+            if (invoice == null)
+              return const Center(child: Text('فاکتور دریافت نشد.'));
             return ListView(
               padding: const EdgeInsets.all(12),
               children: [
@@ -830,12 +856,16 @@ class _SalesInvoiceDetailsPageState extends State<SalesInvoiceDetailsPage> {
                   alignment: WrapAlignment.center,
                   children: [
                     FilledButton.icon(
-                      onPressed: _working ? null : () => _exporter.sharePdf(invoice),
+                      onPressed: _working
+                          ? null
+                          : () => _exporter.sharePdf(invoice),
                       icon: const Icon(Icons.picture_as_pdf_outlined),
                       label: const Text('اشتراک PDF'),
                     ),
                     OutlinedButton.icon(
-                      onPressed: _working ? null : () => _exporter.savePdf(invoice),
+                      onPressed: _working
+                          ? null
+                          : () => _exporter.savePdf(invoice),
                       icon: const Icon(Icons.download_outlined),
                       label: const Text('ذخیره PDF'),
                     ),
@@ -887,16 +917,27 @@ class _SalesInvoiceDocument extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(invoice.sellerName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-                      if (invoice.sellerPhone != null) Text('تلفن: ${invoice.sellerPhone}'),
-                      if (invoice.sellerAddress != null) Text('نشانی: ${invoice.sellerAddress}'),
+                      Text(
+                        invoice.sellerName,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (invoice.sellerPhone != null)
+                        Text('تلفن: ${invoice.sellerPhone}'),
+                      if (invoice.sellerAddress != null)
+                        Text('نشانی: ${invoice.sellerAddress}'),
                     ],
                   ),
                 ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    const Text('فاکتور فروش', style: TextStyle(fontWeight: FontWeight.w900)),
+                    const Text(
+                      'فاکتور فروش',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
                     Text(invoice.invoiceNumber ?? '-'),
                     Text(_jalali(invoice.issueDate)),
                   ],
@@ -904,22 +945,33 @@ class _SalesInvoiceDocument extends StatelessWidget {
               ],
             ),
             const Divider(height: 24),
-            Text('خریدار: ${invoice.buyerName}', style: const TextStyle(fontWeight: FontWeight.w700)),
-            if (invoice.buyerNationalId != null) Text('کد/شناسه ملی: ${invoice.buyerNationalId}'),
+            Text(
+              'خریدار: ${invoice.buyerName}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            if (invoice.buyerNationalId != null)
+              Text('کد/شناسه ملی: ${invoice.buyerNationalId}'),
             if (invoice.buyerPhone != null) Text('تلفن: ${invoice.buyerPhone}'),
-            if (invoice.buyerAddress != null) Text('نشانی: ${invoice.buyerAddress}'),
+            if (invoice.buyerAddress != null)
+              Text('نشانی: ${invoice.buyerAddress}'),
             const SizedBox(height: 12),
             Table(
               border: TableBorder.all(color: Colors.black26),
-              columnWidths: const {0: FixedColumnWidth(34), 2: FixedColumnWidth(55), 3: FixedColumnWidth(88)},
+              columnWidths: const {
+                0: FixedColumnWidth(34),
+                2: FixedColumnWidth(55),
+                3: FixedColumnWidth(88),
+              },
               children: [
                 _tableRow(['#', 'شرح', 'تعداد', 'جمع (ریال)'], header: true),
-                ...invoice.items.asMap().entries.map((entry) => _tableRow([
-                      '${entry.key + 1}',
-                      entry.value.itemName,
-                      _quantity(double.parse(entry.value.quantity)),
-                      _money(entry.value.lineTotal),
-                    ])),
+                ...invoice.items.asMap().entries.map(
+                  (entry) => _tableRow([
+                    '${entry.key + 1}',
+                    entry.value.itemName,
+                    _quantity(double.parse(entry.value.quantity)),
+                    _money(entry.value.lineTotal),
+                  ]),
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -932,7 +984,11 @@ class _SalesInvoiceDocument extends StatelessWidget {
                     _totalLine('جمع اقلام', invoice.subtotal),
                     _totalLine('تخفیف', invoice.discount),
                     const Divider(),
-                    _totalLine('قابل پرداخت', invoice.payableAmount, bold: true),
+                    _totalLine(
+                      'قابل پرداخت',
+                      invoice.payableAmount,
+                      bold: true,
+                    ),
                   ],
                 ),
               ),
@@ -956,10 +1012,18 @@ class _SalesInvoiceDocument extends StatelessWidget {
     return TableRow(
       decoration: header ? const BoxDecoration(color: Color(0xFFECEFF1)) : null,
       children: values
-          .map((value) => Padding(
-                padding: const EdgeInsets.all(6),
-                child: Text(value, style: TextStyle(fontSize: 11, fontWeight: header ? FontWeight.w800 : null)),
-              ))
+          .map(
+            (value) => Padding(
+              padding: const EdgeInsets.all(6),
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: header ? FontWeight.w800 : null,
+                ),
+              ),
+            ),
+          )
           .toList(growable: false),
     );
   }
@@ -970,8 +1034,14 @@ class _SalesInvoiceDocument extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(fontWeight: bold ? FontWeight.w900 : null)),
-          Text('${_money(amount)} ریال', style: TextStyle(fontWeight: bold ? FontWeight.w900 : null)),
+          Text(
+            label,
+            style: TextStyle(fontWeight: bold ? FontWeight.w900 : null),
+          ),
+          Text(
+            '${_money(amount)} ریال',
+            style: TextStyle(fontWeight: bold ? FontWeight.w900 : null),
+          ),
         ],
       ),
     );
@@ -1009,7 +1079,14 @@ class _SalesProfileDialogState extends State<_SalesProfileDialog> {
 
   @override
   void dispose() {
-    for (final controller in [_name, _legalName, _nationalId, _economicCode, _phone, _address]) {
+    for (final controller in [
+      _name,
+      _legalName,
+      _nationalId,
+      _economicCode,
+      _phone,
+      _address,
+    ]) {
       controller.dispose();
     }
     super.dispose();
@@ -1033,7 +1110,10 @@ class _SalesProfileDialogState extends State<_SalesProfileDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('انصراف')),
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('انصراف'),
+        ),
         FilledButton(
           onPressed: _saving
               ? null
@@ -1060,13 +1140,20 @@ class _SalesProfileDialogState extends State<_SalesProfileDialog> {
     );
   }
 
-  Widget _field(TextEditingController controller, String label, {int maxLines = 1}) {
+  Widget _field(
+    TextEditingController controller,
+    String label, {
+    int maxLines = 1,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
       child: TextField(
         controller: controller,
         maxLines: maxLines,
-        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+        ),
       ),
     );
   }
@@ -1088,10 +1175,12 @@ String _money(String raw) {
 
 String _plainAmount(double value) => value.round().toString();
 
-String _quantity(double value) =>
-    value == value.roundToDouble() ? value.toInt().toString() : value.toString();
+String _quantity(double value) => value == value.roundToDouble()
+    ? value.toInt().toString()
+    : value.toString();
 
-String _jalali(DateTime date) => _formatJalali(Jalali.fromDateTime(date.toLocal()));
+String _jalali(DateTime date) =>
+    _formatJalali(Jalali.fromDateTime(date.toLocal()));
 
 String _formatJalali(Jalali date) =>
     '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}';

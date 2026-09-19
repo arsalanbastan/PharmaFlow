@@ -96,18 +96,21 @@ class InvoiceSettlementPreparation {
     return InvoiceSettlementPreparation(
       company: ManagerInvoiceCompany.fromJson(rawCompany),
       invoices: rawInvoices
-          .map((raw) => InvoiceSettlementItem.fromJson(
-                raw as Map<String, dynamic>,
-              ))
+          .map(
+            (raw) =>
+                InvoiceSettlementItem.fromJson(raw as Map<String, dynamic>),
+          )
           .toList(growable: false),
       totalRemainingAmount: _requiredDecimal(
         json['totalRemainingAmount'],
         'totalRemainingAmount',
       ),
       bankAccounts: rawBankAccounts
-          .map((raw) => InvoiceSettlementBankAccount.fromJson(
-                raw as Map<String, dynamic>,
-              ))
+          .map(
+            (raw) => InvoiceSettlementBankAccount.fromJson(
+              raw as Map<String, dynamic>,
+            ),
+          )
           .toList(growable: false),
     );
   }
