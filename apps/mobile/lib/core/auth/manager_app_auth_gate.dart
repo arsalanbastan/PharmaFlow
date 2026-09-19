@@ -208,7 +208,7 @@ class _ManagerAppAuthGateState extends ConsumerState<ManagerAppAuthGate> {
       _ManagerAppAuthPhase.loading => const Material(
         child: Center(child: CircularProgressIndicator()),
       ),
-      _ManagerAppAuthPhase.unauthenticated => _ManagerAppLoginView(
+      _ManagerAppAuthPhase.unauthenticated => ManagerLoginOverlayHost(
         working: _working,
         error: _error,
         onLogin: _login,
@@ -218,6 +218,42 @@ class _ManagerAppAuthGateState extends ConsumerState<ManagerAppAuthGate> {
         child: widget.childBuilder(context, _user!),
       ),
     };
+  }
+}
+
+/// Keeps the login page below a Navigator/Overlay even though the auth gate is
+/// mounted from MaterialApp.builder, which sits above the router Navigator.
+class ManagerLoginOverlayHost extends StatelessWidget {
+  const ManagerLoginOverlayHost({
+    required this.working,
+    required this.error,
+    required this.onLogin,
+    super.key,
+  });
+
+  final bool working;
+  final String? error;
+  final Future<bool> Function({
+    required String username,
+    required String password,
+  })
+  onLogin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Navigator(
+      pages: <Page<void>>[
+        MaterialPage<void>(
+          key: const ValueKey<String>('manager-login-page'),
+          child: _ManagerAppLoginView(
+            working: working,
+            error: error,
+            onLogin: onLogin,
+          ),
+        ),
+      ],
+      onPopPage: (route, result) => false,
+    );
   }
 }
 
