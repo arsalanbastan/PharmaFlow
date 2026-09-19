@@ -1,4 +1,5 @@
 import {
+  buildCreatedMessage,
   buildOrderCreatedMessage,
   classifyFirebaseMessagingError,
 } from './firebase-push-sender.service';
@@ -26,6 +27,35 @@ describe('FirebasePushSenderService helpers', () => {
 
     expect(message.data).not.toHaveProperty('itemText');
     expect(message.data).not.toHaveProperty('requestedByName');
+  });
+
+  it('builds one stable aggregated notification per event type', () => {
+    const message = buildCreatedMessage(
+      'ORDER_CREATED',
+      'registration-token-1234567890',
+      '22222222-2222-4222-8222-222222222222',
+      'AUDIBLE',
+      {
+        deliveryId: '33333333-3333-4333-8333-333333333333',
+        count: 3,
+      },
+    );
+
+    expect(message.notification).toEqual({
+      title: 'سفارش جدید',
+      body: 'شما 3 سفارش جدید دارید',
+    });
+
+    expect(message.data).toEqual({
+      type: 'ORDER_CREATED',
+      orderId: '22222222-2222-4222-8222-222222222222',
+      notificationDeliveryId:
+        '33333333-3333-4333-8333-333333333333',
+      notificationCount: '3',
+    });
+
+    expect(message.android?.collapseKey).toBe('order');
+    expect(message.android?.notification?.tag).toBe('order');
   });
 
   it('classifies an unregistered token as a permanent device failure', () => {

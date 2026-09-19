@@ -103,6 +103,7 @@ model ArsenInvoice {
   items   ArsenInvoiceItem[]
   chequeAllocations      ChequeInvoiceAllocation[]
   cashPaymentAllocations CashPaymentInvoiceAllocation[]
+  discountAllocations    InvoiceDiscountAllocation[]
 
   @@index([companyId, ingestSequence(sort: Desc)])
   @@index([factorDocType, ingestSequence(sort: Desc)])
@@ -178,6 +179,76 @@ model ArsenCatalogItem {
   @@index([category, isActive, ingestSequence(sort: Desc)])
   @@index([isActive, ingestSequence(sort: Desc)])
   @@map("arsen_catalog_items")
+}
+
+model SalesInvoiceProfile {
+  id String @id @default("default")
+  sellerName String @default("داروخانه دکتر خسروانی")
+  legalName String?
+  nationalId String?
+  economicCode String?
+  phone String?
+  address String?
+  logoData String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sales_invoice_profiles")
+}
+
+model SalesInvoice {
+  id String @id @default(uuid()) @db.Uuid
+  sequence BigInt @unique @default(autoincrement())
+  invoiceNumber String? @unique
+  issueDate DateTime
+
+  buyerName String
+  buyerNationalId String?
+  buyerPhone String?
+  buyerAddress String?
+
+  sellerName String
+  sellerLegalName String?
+  sellerNationalId String?
+  sellerEconomicCode String?
+  sellerPhone String?
+  sellerAddress String?
+  sellerLogoData String?
+
+  subtotal Decimal @db.Decimal(20, 4)
+  discount Decimal @default(0) @db.Decimal(20, 4)
+  payableAmount Decimal @db.Decimal(20, 4)
+  notes String?
+  status String @default("ISSUED")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  items SalesInvoiceItem[]
+
+  @@index([issueDate(sort: Desc), sequence(sort: Desc)])
+  @@index([buyerName])
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceItem {
+  id String @id @default(uuid()) @db.Uuid
+  invoiceId String @db.Uuid
+  catalogItemId String? @db.Uuid
+  arsenDrugId BigInt?
+  itemName String
+  barcode String?
+  unit String?
+  quantity Decimal @db.Decimal(20, 4)
+  unitPrice Decimal @db.Decimal(20, 4)
+  lineDiscount Decimal @default(0) @db.Decimal(20, 4)
+  lineTotal Decimal @db.Decimal(20, 4)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  invoice SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([catalogItemId])
+  @@map("sales_invoice_items")
 }
 
 model BankAccount {
@@ -350,6 +421,18 @@ model CashPaymentInvoiceAllocation {
   @@map("cash_payment_invoice_allocations")
 }
 
+model InvoiceDiscountAllocation {
+  id String @id @default(uuid()) @db.Uuid
+  invoiceId String @db.Uuid
+  amount Decimal @db.Decimal(20, 4)
+  description String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  invoice ArsenInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  @@index([invoiceId])
+  @@map("invoice_discount_allocations")
+}
+
 model OrderRequest {
   id String @id @default(uuid()) @db.Uuid
 
@@ -461,6 +544,8 @@ model PushDevice {
   chequeNotificationMode      String  @default("AUDIBLE")
   cashPaymentNotificationMode String  @default("AUDIBLE")
 
+  notificationAggregationVersion Int @default(0)
+
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   lastSeenAt DateTime  @default(now())
@@ -506,6 +591,8 @@ model PushOutbox {
 model PushDelivery {
   id String @id @default(uuid()) @db.Uuid
 
+  deliverySequence BigInt @unique @default(autoincrement())
+
   outboxId String  @db.Uuid
   deviceId String? @db.Uuid
 
@@ -514,8 +601,9 @@ model PushDelivery {
   status        String    @default("PENDING")
   attempts      Int       @default(0)
   nextAttemptAt DateTime  @default(now())
-  sentAt        DateTime?
-  lastError     String?
+  sentAt         DateTime?
+  lastError      String?
+  acknowledgedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -526,6 +614,7 @@ model PushDelivery {
   @@unique([outboxId, targetKey])
   @@index([outboxId, status, nextAttemptAt])
   @@index([deviceId])
+  @@index([deviceId, acknowledgedAt, deliverySequence])
   @@map("push_deliveries")
 }
 

@@ -34,6 +34,7 @@ export type SupportedPushEventType =
 type PushEventDescriptor = {
   title: string;
   body: string;
+  aggregateBody: (count: number) => string;
   idKey: 'orderId' | 'chequeId' | 'cashPaymentId';
   collapsePrefix: 'order' | 'cheque' | 'cash-payment';
 };
@@ -46,6 +47,7 @@ function pushEventDescriptor(
       return {
         title: 'سفارش جدید',
         body: 'یک سفارش جدید ثبت شد.',
+        aggregateBody: (count) => `شما ${count} سفارش جدید دارید`,
         idKey: 'orderId',
         collapsePrefix: 'order',
       };
@@ -53,6 +55,7 @@ function pushEventDescriptor(
       return {
         title: 'چک جدید ثبت شد',
         body: 'یک چک جدید ثبت شد.',
+        aggregateBody: (count) => `شما ${count} چک جدید دارید`,
         idKey: 'chequeId',
         collapsePrefix: 'cheque',
       };
@@ -60,6 +63,7 @@ function pushEventDescriptor(
       return {
         title: 'واریزی جدید ثبت شد',
         body: 'یک واریزی جدید ثبت شد.',
+        aggregateBody: (count) => `شما ${count} واریزی جدید دارید`,
         idKey: 'cashPaymentId',
         collapsePrefix: 'cash-payment',
       };
@@ -71,30 +75,54 @@ export function buildCreatedMessage(
   token: string,
   aggregateId: string,
   mode: PushNotificationMode = 'AUDIBLE',
+  notificationAggregation?: {
+    deliveryId: string;
+    count: number;
+  },
 ): Message {
   const descriptor = pushEventDescriptor(eventType);
+
+  const aggregationEnabled = notificationAggregation != null;
+
+  const notificationCount = Math.max(
+    1,
+    Math.trunc(notificationAggregation?.count ?? 1),
+  );
+
+  const notificationTag = aggregationEnabled
+    ? descriptor.collapsePrefix
+    : `${descriptor.collapsePrefix}-${aggregateId}`;
 
   return {
     token,
     notification: {
       title: descriptor.title,
-      body: descriptor.body,
+      body: aggregationEnabled
+        ? descriptor.aggregateBody(notificationCount)
+        : descriptor.body,
     },
     data: {
       type: eventType,
       [descriptor.idKey]: aggregateId,
+      ...(notificationAggregation == null
+        ? {}
+        : {
+            notificationDeliveryId:
+              notificationAggregation.deliveryId.trim(),
+            notificationCount: String(notificationCount),
+          }),
     },
     android: {
       priority: 'high',
-      collapseKey: `${descriptor.collapsePrefix}-${aggregateId}`,
+      collapseKey: notificationTag,
       notification:
         mode === 'SILENT'
           ? {
-              tag: `${descriptor.collapsePrefix}-${aggregateId}`,
+              tag: notificationTag,
               channelId: 'pharmaflow_silent',
             }
           : {
-              tag: `${descriptor.collapsePrefix}-${aggregateId}`,
+              tag: notificationTag,
             },
     },
   };
@@ -146,12 +174,22 @@ export class FirebasePushSenderService implements OnModuleDestroy {
     token: string,
     aggregateId: string,
     mode: PushNotificationMode = 'AUDIBLE',
+    notificationAggregation?: {
+      deliveryId: string;
+      count: number;
+    },
   ): Promise<PushSendResult> {
     try {
       const messaging = getMessaging(this.getOrCreateApp());
 
       await messaging.send(
-        buildCreatedMessage(eventType, token.trim(), aggregateId, mode),
+        buildCreatedMessage(
+          eventType,
+          token.trim(),
+          aggregateId,
+          mode,
+          notificationAggregation,
+        ),
       );
 
       return {

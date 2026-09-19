@@ -12,6 +12,9 @@ import { AuditModule } from './audit/audit.module';
 import { AppUpdateModule } from './app-update/app-update.module';
 
 import { OrdersModule } from './orders/orders.module';
+import { InvoicesModule } from './invoices/invoices.module';
+import { CatalogModule } from './catalog/catalog.module';
+import { SalesInvoicesModule } from './sales-invoices/sales-invoices.module';
 
 import { StaffAppUpdateModule } from './staff-app-update/staff-app-update.module';
 import { AuthModule } from './auth/auth.module';
@@ -29,6 +32,9 @@ import { ArsenSyncModule } from './arsen-sync/arsen-sync.module';
     AuditModule,
     AppUpdateModule,
     OrdersModule,
+    InvoicesModule,
+    CatalogModule,
+    SalesInvoicesModule,
     StaffAppUpdateModule,
     AuthModule,
     ArsenSyncModule,

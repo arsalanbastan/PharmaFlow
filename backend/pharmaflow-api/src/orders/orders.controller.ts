@@ -139,6 +139,12 @@ export class OrdersController {
     return this.ordersService.cancel(id);
   }
 
+  @Post(':id/restore')
+  @Roles('MANAGER')
+  restoreCanceled(@Param('id') id: string) {
+    return this.ordersService.restoreCanceled(id);
+  }
+
   @Delete(':id')
   @Roles('STAFF', 'MANAGER')
   @Permissions('canCreateOrders')

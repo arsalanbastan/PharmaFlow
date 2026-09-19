@@ -4,6 +4,8 @@
 /// هیچ متن فارسی مستقیمی داخل Widgetها نوشته نمی‌شود.
 /// =======================================================
 
+library;
+
 abstract final class AppStrings {
   AppStrings._();
 
@@ -65,8 +67,7 @@ abstract final class AppStrings {
   // Bottom Navigation
   // =========================
 
-  static const home = 'خانه';
-
+  static const home = 'مالی';
   static const cheques = 'چک‌ها';
 
   static const accounts = 'حساب‌ها';

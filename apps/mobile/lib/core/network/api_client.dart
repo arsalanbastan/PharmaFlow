@@ -1,0 +1,418 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
+
+import '../auth/auth_token_storage.dart';
+import '../config/app_config.dart';
+import 'api_constants.dart';
+import 'models/health_response.dart';
+
+class ApiClient {
+  ApiClient({
+    AppConfig? appConfig,
+    http.Client? httpClient,
+    Duration? timeout,
+    AuthTokenStorage? authTokenStorage,
+    this._actorDisplayNameProvider,
+  }) : _httpClient = httpClient ?? http.Client(),
+       _appConfig = appConfig ?? AppConfig.defaults(),
+       _timeoutOverride = timeout,
+       _authTokenStorage = authTokenStorage ?? AuthTokenStorage();
+
+  final http.Client _httpClient;
+  final AppConfig _appConfig;
+  final Duration? _timeoutOverride;
+  final AuthTokenStorage _authTokenStorage;
+  final Future<String?> Function()? _actorDisplayNameProvider;
+
+  Duration get _timeout {
+    final override = _timeoutOverride;
+    if (override != null) {
+      return override;
+    }
+
+    final milliseconds = _appConfig.connectTimeout + _appConfig.receiveTimeout;
+
+    return Duration(milliseconds: milliseconds);
+  }
+
+  Future<dynamic> get(
+    String endpoint, {
+    Map<String, String>? headers,
+    Map<String, String>? queryParameters,
+  }) async {
+    final uri = _buildUri(endpoint, queryParameters: queryParameters);
+    final requestHeaders = await _buildHeaders(headers: headers);
+
+    try {
+      final response = await _httpClient
+          .get(uri, headers: requestHeaders)
+          .timeout(_timeout);
+
+      return _handleResponse(response);
+    } on TimeoutException catch (error) {
+      throw ApiTimeoutException(
+        'Request timed out after ${_timeout.inSeconds} seconds.',
+        error,
+      );
+    } on SocketException catch (error) {
+      throw ApiNetworkException(
+        'No network connection or server is unreachable.',
+        error,
+      );
+    } on FormatException catch (error) {
+      throw ApiDecodingException('Response was not valid JSON.', error);
+    } on ApiException {
+      rethrow;
+    } catch (error) {
+      throw ApiUnknownException(
+        'Unexpected error while sending request.',
+        error,
+      );
+    }
+  }
+
+  Future<dynamic> post(
+    String endpoint, {
+    Map<String, String>? headers,
+    Map<String, String>? queryParameters,
+    Object? body,
+  }) async {
+    final uri = _buildUri(endpoint, queryParameters: queryParameters);
+    final requestHeaders = await _buildHeaders(
+      headers: {HttpHeaders.contentTypeHeader: 'application/json', ...?headers},
+      includeActor: true,
+    );
+
+    try {
+      final response = await _httpClient
+          .post(
+            uri,
+            headers: requestHeaders,
+            body: body == null ? null : jsonEncode(body),
+          )
+          .timeout(_timeout);
+
+      return _handleResponse(response);
+    } on TimeoutException catch (error) {
+      throw ApiTimeoutException(
+        'Request timed out after ${_timeout.inSeconds} seconds.',
+        error,
+      );
+    } on SocketException catch (error) {
+      throw ApiNetworkException(
+        'No network connection or server is unreachable.',
+        error,
+      );
+    } on FormatException catch (error) {
+      throw ApiDecodingException('Response was not valid JSON.', error);
+    } on ApiException {
+      rethrow;
+    } catch (error) {
+      throw ApiUnknownException(
+        'Unexpected error while sending request.',
+        error,
+      );
+    }
+  }
+
+  Future<dynamic> patch(
+    String endpoint, {
+    Map<String, String>? headers,
+    Map<String, String>? queryParameters,
+    Object? body,
+  }) async {
+    final uri = _buildUri(endpoint, queryParameters: queryParameters);
+    final requestHeaders = await _buildHeaders(
+      headers: {HttpHeaders.contentTypeHeader: 'application/json', ...?headers},
+      includeActor: true,
+    );
+
+    try {
+      final response = await _httpClient
+          .patch(
+            uri,
+            headers: requestHeaders,
+            body: body == null ? null : jsonEncode(body),
+          )
+          .timeout(_timeout);
+
+      return _handleResponse(response);
+    } on TimeoutException catch (error) {
+      throw ApiTimeoutException(
+        'Request timed out after ${_timeout.inSeconds} seconds.',
+        error,
+      );
+    } on SocketException catch (error) {
+      throw ApiNetworkException(
+        'No network connection or server is unreachable.',
+        error,
+      );
+    } on FormatException catch (error) {
+      throw ApiDecodingException('Response was not valid JSON.', error);
+    } on ApiException {
+      rethrow;
+    } catch (error) {
+      throw ApiUnknownException(
+        'Unexpected error while sending request.',
+        error,
+      );
+    }
+  }
+
+  Future<dynamic> put(
+    String endpoint, {
+    Map<String, String>? headers,
+    Map<String, String>? queryParameters,
+    Object? body,
+  }) async {
+    final uri = _buildUri(endpoint, queryParameters: queryParameters);
+    final requestHeaders = await _buildHeaders(
+      headers: {HttpHeaders.contentTypeHeader: 'application/json', ...?headers},
+      includeActor: true,
+    );
+
+    try {
+      final response = await _httpClient
+          .put(
+            uri,
+            headers: requestHeaders,
+            body: body == null ? null : jsonEncode(body),
+          )
+          .timeout(_timeout);
+      return _handleResponse(response);
+    } on TimeoutException catch (error) {
+      throw ApiTimeoutException(
+        'Request timed out after ${_timeout.inSeconds} seconds.',
+        error,
+      );
+    } on SocketException catch (error) {
+      throw ApiNetworkException(
+        'No network connection or server is unreachable.',
+        error,
+      );
+    } on FormatException catch (error) {
+      throw ApiDecodingException('Response was not valid JSON.', error);
+    } on ApiException {
+      rethrow;
+    } catch (error) {
+      throw ApiUnknownException(
+        'Unexpected error while sending request.',
+        error,
+      );
+    }
+  }
+
+  Future<dynamic> delete(
+    String endpoint, {
+    Map<String, String>? headers,
+    Map<String, String>? queryParameters,
+  }) async {
+    final uri = _buildUri(endpoint, queryParameters: queryParameters);
+    final requestHeaders = await _buildHeaders(
+      headers: headers,
+      includeActor: true,
+    );
+
+    try {
+      final response = await _httpClient
+          .delete(uri, headers: requestHeaders)
+          .timeout(_timeout);
+
+      if (response.body.isEmpty) {
+        return null;
+      }
+
+      return _handleResponse(response);
+    } on TimeoutException catch (error) {
+      throw ApiTimeoutException(
+        'Request timed out after ${_timeout.inSeconds} seconds.',
+        error,
+      );
+    } on SocketException catch (error) {
+      throw ApiNetworkException(
+        'No network connection or server is unreachable.',
+        error,
+      );
+    } on FormatException catch (error) {
+      throw ApiDecodingException('Response was not valid JSON.', error);
+    } on ApiException {
+      rethrow;
+    } catch (error) {
+      throw ApiUnknownException(
+        'Unexpected error while sending request.',
+        error,
+      );
+    }
+  }
+
+  Future<List<dynamic>> verifyCompaniesListEndpoint() async {
+    final payload = await get(ApiConstants.companiesEndpoint);
+
+    if (payload is List<dynamic>) {
+      return payload;
+    }
+
+    throw ApiDecodingException(
+      'Expected a JSON list from GET ${ApiConstants.companiesEndpoint}.',
+    );
+  }
+
+  Future<HealthResponse> checkHealth() async {
+    final stopwatch = Stopwatch()..start();
+    final payload = await get(ApiConstants.healthEndpoint);
+    stopwatch.stop();
+
+    if (payload is! Map<String, dynamic>) {
+      throw const ApiDecodingException(
+        'Expected a JSON object from GET /health.',
+      );
+    }
+
+    return HealthResponse.fromJson(
+      payload,
+    ).copyWith(responseDuration: stopwatch.elapsed);
+  }
+
+  Uri _buildUri(String endpoint, {Map<String, String>? queryParameters}) {
+    final normalizedEndpoint = endpoint.startsWith('/')
+        ? endpoint.substring(1)
+        : endpoint;
+
+    final baseUri = Uri.parse('${_appConfig.baseUrl}/');
+
+    return baseUri
+        .resolve(normalizedEndpoint)
+        .replace(queryParameters: queryParameters);
+  }
+
+  Uri resolveUriForDebug(
+    String endpoint, {
+    Map<String, String>? queryParameters,
+  }) {
+    return _buildUri(endpoint, queryParameters: queryParameters);
+  }
+
+  Future<Map<String, String>> _buildHeaders({
+    Map<String, String>? headers,
+    bool includeActor = false,
+  }) async {
+    final requestHeaders = <String, String>{
+      HttpHeaders.acceptHeader: 'application/json',
+      ...?headers,
+    };
+
+    if (includeActor) {
+      final actorDisplayNameProvider = _actorDisplayNameProvider;
+
+      if (actorDisplayNameProvider != null) {
+        try {
+          final rawActorDisplayName = await actorDisplayNameProvider();
+
+          final actorDisplayName = rawActorDisplayName?.trim();
+
+          if (actorDisplayName != null && actorDisplayName.isNotEmpty) {
+            final encodedActorDisplayName = base64Encode(
+              utf8.encode(actorDisplayName),
+            );
+
+            requestHeaders['x-pharmaflow-actor-name'] =
+                'utf8b64:$encodedActorDisplayName';
+          }
+        } catch (_) {
+          // Audit metadata must never block the real mutation.
+        }
+      }
+    }
+
+    final token = await _authTokenStorage.getToken();
+    if (token != null && token.trim().isNotEmpty) {
+      requestHeaders[HttpHeaders.authorizationHeader] =
+          'Bearer ${token.trim()}';
+    }
+
+    return requestHeaders;
+  }
+
+  dynamic _handleResponse(http.Response response) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiHttpException(
+        statusCode: response.statusCode,
+        message: _extractErrorMessage(response.body),
+        body: response.body,
+      );
+    }
+
+    if (response.body.isEmpty) {
+      throw const ApiDecodingException('Response body was empty.');
+    }
+
+    return jsonDecode(response.body);
+  }
+
+  String _extractErrorMessage(String body) {
+    if (body.isEmpty) {
+      return 'Server returned an error response.';
+    }
+
+    try {
+      final decoded = jsonDecode(body);
+
+      if (decoded is Map<String, dynamic>) {
+        final message = decoded['message'];
+        if (message is String && message.trim().isNotEmpty) {
+          return message;
+        }
+      }
+    } on FormatException {
+      // Keep a fallback message when body is not JSON.
+    }
+
+    return 'Server returned an error response.';
+  }
+}
+
+abstract class ApiException implements Exception {
+  const ApiException(this.message, [this.cause]);
+
+  final String message;
+  final Object? cause;
+
+  @override
+  String toString() => 'ApiException: $message';
+}
+
+class ApiHttpException extends ApiException {
+  const ApiHttpException({
+    required this.statusCode,
+    required String message,
+    this.body,
+    Object? cause,
+  }) : super(message, cause);
+
+  final int statusCode;
+  final String? body;
+
+  @override
+  String toString() {
+    return 'ApiHttpException(statusCode: $statusCode, message: $message)';
+  }
+}
+
+class ApiNetworkException extends ApiException {
+  const ApiNetworkException(super.message, [super.cause]);
+}
+
+class ApiTimeoutException extends ApiException {
+  const ApiTimeoutException(super.message, [super.cause]);
+}
+
+class ApiDecodingException extends ApiException {
+  const ApiDecodingException(super.message, [super.cause]);
+}
+
+class ApiUnknownException extends ApiException {
+  const ApiUnknownException(super.message, [super.cause]);
+}

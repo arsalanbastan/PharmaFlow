@@ -261,6 +261,7 @@ export class AdminService {
         company: { select: { id: true, name: true } },
         chequeAllocations: { where: { cheque: { deletedAt: null } }, select: { amount: true } },
         cashPaymentAllocations: { where: { cashPayment: { deletedAt: null } }, select: { amount: true } },
+        discountAllocations: { select: { amount: true } },
       },
       orderBy: { ingestSequence: 'desc' },
       skip,
@@ -269,7 +270,7 @@ export class AdminService {
 
     return {
       items: items.map((item) => {
-        const paidAmount = [...item.chequeAllocations, ...item.cashPaymentAllocations].reduce((sum, row) => sum + Number(row.amount), 0);
+        const paidAmount = [...item.chequeAllocations, ...item.cashPaymentAllocations, ...item.discountAllocations].reduce((sum, row) => sum + Number(row.amount), 0);
         const payableAmount = Number(item.factorPayablePrice ?? 0);
         return { ...item, paidAmount, remainingAmount: Math.max(0, payableAmount - paidAmount), paymentStatus: paidAmount <= 0 ? 'UNPAID' : paidAmount >= payableAmount ? 'PAID' : 'PARTIAL' };
       }),
@@ -289,6 +290,7 @@ export class AdminService {
         company: { select: { id: true, name: true } },
         chequeAllocations: { where: { cheque: { deletedAt: null } }, select: { amount: true } },
         cashPaymentAllocations: { where: { cashPayment: { deletedAt: null } }, select: { amount: true } },
+        discountAllocations: { select: { amount: true } },
       } }),
       this.prisma.bankAccount.findMany({ where: { deletedAt: null }, select: { id: true, bankName: true, accountTitle: true }, orderBy: { bankName: 'asc' } }),
     ]);
@@ -297,7 +299,7 @@ export class AdminService {
     if (!companyId || invoices.some((item) => item.company.id !== companyId)) throw new BadRequestException('All selected invoices must belong to one company.');
     if (invoices.some((item) => item.factorDocType !== 1 || item.isDeletedInArsen)) throw new BadRequestException('Only active purchase invoices can be settled.');
     const items = invoices.map((item) => {
-      const paidAmount = [...item.chequeAllocations, ...item.cashPaymentAllocations].reduce((sum, row) => sum + Number(row.amount), 0);
+      const paidAmount = [...item.chequeAllocations, ...item.cashPaymentAllocations, ...item.discountAllocations].reduce((sum, row) => sum + Number(row.amount), 0);
       return { ...item, paidAmount, remainingAmount: Math.max(0, Number(item.factorPayablePrice ?? 0) - paidAmount) };
     });
     if (items.some((item) => item.remainingAmount <= 0)) throw new BadRequestException('A selected invoice is already fully paid.');
@@ -311,8 +313,8 @@ export class AdminService {
     return this.prisma.$transaction(async (tx) => {
       const lockedIds = prepared.invoices.map((invoice) => invoice.id);
       await tx.$queryRaw`SELECT "id" FROM "arsen_invoices" WHERE "id"::text IN (${Prisma.join(lockedIds)}) FOR UPDATE`;
-      const current = await tx.arsenInvoice.findMany({ where: { id: { in: lockedIds } }, select: { id: true, chequeAllocations: { where: { cheque: { deletedAt: null } }, select: { amount: true } }, cashPaymentAllocations: { where: { cashPayment: { deletedAt: null } }, select: { amount: true } } } });
-      const changed = prepared.invoices.some((invoice) => { const row = current.find((item) => item.id === invoice.id); const paid = row ? [...row.chequeAllocations, ...row.cashPaymentAllocations].reduce((sum, allocation) => sum + Number(allocation.amount), 0) : Number.NaN; return Math.abs(paid - invoice.paidAmount) > 0.0001; });
+      const current = await tx.arsenInvoice.findMany({ where: { id: { in: lockedIds } }, select: { id: true, chequeAllocations: { where: { cheque: { deletedAt: null } }, select: { amount: true } }, cashPaymentAllocations: { where: { cashPayment: { deletedAt: null } }, select: { amount: true } }, discountAllocations: { select: { amount: true } } } });
+      const changed = prepared.invoices.some((invoice) => { const row = current.find((item) => item.id === invoice.id); const paid = row ? [...row.chequeAllocations, ...row.cashPaymentAllocations, ...row.discountAllocations].reduce((sum, allocation) => sum + Number(allocation.amount), 0) : Number.NaN; return Math.abs(paid - invoice.paidAmount) > 0.0001; });
       if (changed) throw new ConflictException('Invoice payment status changed. Refresh and try again.');
       if (kind === 'CHEQUE') {
         const payment = await tx.cheque.create({ data: { chequeNumber: this.required(body.chequeNumber), amount, chequeDate: this.requiredDate(body.paymentDate, 'chequeDate'), dueDate: this.nullableDate(body.dueDate, 'dueDate'), companyId: prepared.company.id, bankAccountId: this.required(body.bankAccountId), status: 'ISSUED', isRegisteredInSayad: false, description: this.nullable(body.description) } });

@@ -5,13 +5,25 @@ class CompanyQueries {
 CREATE TABLE companies (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
 
+  server_uuid TEXT,
+
   name TEXT NOT NULL UNIQUE,
 
   national_id TEXT,
 
   economic_code TEXT,
 
+  bank_name TEXT,
+  account_number TEXT,
+  card_number TEXT,
+  sheba_number TEXT,
+
   notes TEXT,
+
+  visitor_name TEXT,
+  visitor_phone TEXT,
+  accountant_name TEXT,
+  accountant_phone TEXT,
 
   archived_at INTEGER,
 

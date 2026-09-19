@@ -1,17 +1,81 @@
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../features/company/presentation/pages/company_list_page.dart';
+import '../auth/manager_app_auth_gate.dart';
+
+import '../../features/dashboard/domain/models/commitment_period.dart';
+import '../../features/dashboard/presentation/pages/commitment_period_detail_page.dart';
+import '../../features/dashboard/presentation/pages/jalali_commitment_calendar_page.dart';
+import '../../features/dashboard/presentation/pages/dashboard_page.dart';
+import '../../features/dashboard/presentation/pages/dashboard_test_page.dart';
+import '../../features/dashboard/presentation/pages/sync_failures_page.dart';
+import '../../features/menu/presentation/pages/menu_page.dart';
+import '../../features/orders/presentation/pages/orders_dashboard_page.dart';
+import '../../features/reports/presentation/pages/reports_page.dart';
 
 class AppRouter {
   AppRouter._();
 
+  static final GlobalKey<NavigatorState> rootNavigatorKey =
+      GlobalKey<NavigatorState>();
   static final GoRouter router = GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/',
+
     routes: [
       GoRoute(
         path: '/',
-        name: 'companies',
-        builder: (context, state) => const CompanyListPage(),
+        name: 'dashboard',
+        builder: (context, state) => const DashboardPage(),
+      ),
+
+      GoRoute(
+        path: '/dashboard-test',
+        name: 'dashboard-test',
+        builder: (context, state) => const DashboardTestPage(),
+      ),
+
+      GoRoute(
+        path: '/orders',
+        name: 'orders',
+        builder: (context, state) => const OrdersDashboardPage(),
+      ),
+      GoRoute(
+        path: '/reports',
+        name: 'reports',
+        builder: (context, state) => const ManagerPermissionGate(
+          permission: ManagerAppPermission.financialReports,
+          child: ReportsPage(),
+        ),
+      ),
+
+      GoRoute(
+        path: '/jalali-calendar',
+        name: 'jalali-calendar',
+        builder: (context, state) => const JalaliCommitmentCalendarPage(),
+      ),
+
+      GoRoute(
+        path: '/sync-failures',
+        name: 'sync-failures',
+        builder: (context, state) => const SyncFailuresPage(),
+      ),
+
+      GoRoute(
+        path: '/menu',
+        name: 'menu',
+        builder: (context, state) => const MenuPage(),
+      ),
+
+      GoRoute(
+        path: '/commitment-period-detail',
+        name: 'commitment-period-detail',
+
+        builder: (context, state) {
+          final period = state.extra as CommitmentPeriod;
+
+          return CommitmentPeriodDetailPage(period: period);
+        },
       ),
     ],
   );

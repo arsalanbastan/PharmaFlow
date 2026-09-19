@@ -230,4 +230,3 @@ bootstrap().catch((error: unknown) => {
   console.error(`[Startup] Bootstrap failed: ${message}`);
   process.exitCode = 1;
 });
-

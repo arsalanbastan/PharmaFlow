@@ -5,6 +5,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import type { AuthPrincipal } from '../auth/auth.types';
+import { AcknowledgePushNotificationDto } from './dto/acknowledge-push-notification.dto';
 import { ReadPushDevicePreferencesDto } from './dto/read-push-device-preferences.dto';
 import { RegisterPushDeviceDto } from './dto/register-push-device.dto';
 import { UnregisterPushDeviceDto } from './dto/unregister-push-device.dto';
@@ -40,6 +41,22 @@ export class PushController {
   ) {
     return this.pushDevices.updatePreferences(user, dto);
   }
+  @Post('notifications/acknowledge')
+  acknowledgeNotification(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() dto: AcknowledgePushNotificationDto,
+  ) {
+    return this.pushDevices.acknowledgeNotification(user, dto);
+  }
+
+  @Post('notifications/acknowledge-all')
+  acknowledgeAllNotifications(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() dto: ReadPushDevicePreferencesDto,
+  ) {
+    return this.pushDevices.acknowledgeAllNotifications(user, dto);
+  }
+
   @Post('devices/unregister')
   unregister(
     @CurrentUser() user: AuthPrincipal,
