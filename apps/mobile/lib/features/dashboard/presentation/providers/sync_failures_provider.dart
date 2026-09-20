@@ -9,8 +9,10 @@ import '../../../../data/models/cheque.dart';
 import '../../../../data/models/company.dart';
 import '../../../../data/models/cash_payment.dart';
 import '../../../../data/models/cash_payment_attachment.dart';
+import '../../../../data/models/cheque_attachment.dart';
 import '../../../../data/repositories/local/local_bank_account_repository.dart';
 import '../../../../data/repositories/local/local_cheque_repository.dart';
+import '../../../../data/repositories/local/local_cheque_attachment_repository.dart';
 import '../../../../data/repositories/local/local_company_repository.dart';
 import '../../../../data/repositories/local/local_cash_payment_repository.dart';
 import '../../../../data/repositories/local/local_cash_payment_attachment_repository.dart';
@@ -32,6 +34,7 @@ class SyncFailureEntry {
     required this.updatedAt,
     required this.entityTitle,
     required this.serverUuid,
+    required this.resolutionHint,
   });
 
   final int queueId;
@@ -45,6 +48,7 @@ class SyncFailureEntry {
   final DateTime? updatedAt;
   final String entityTitle;
   final String? serverUuid;
+  final String resolutionHint;
 }
 
 class SyncFailureActions {
@@ -96,15 +100,18 @@ final syncFailuresProvider =
       final bankRepository = _refBank(ref);
       final cashPaymentRepository = _refCashPayment(ref);
       final attachmentRepository = _refCashPaymentAttachment(ref);
+      final chequeAttachmentRepository = _refChequeAttachment(ref);
 
       final allItems = await queueRepository.getAllItems();
-      final failedItems = allItems.where((item) => switch (filter) {
-        SyncFailuresFilter.failed => item.status == SyncStatus.failed,
-        SyncFailuresFilter.pending =>
-          item.status == SyncStatus.pending ||
-              item.status == SyncStatus.processing,
-        SyncFailuresFilter.completed => item.status == SyncStatus.synced,
-      });
+      final failedItems = allItems.where(
+        (item) => switch (filter) {
+          SyncFailuresFilter.failed => item.status == SyncStatus.failed,
+          SyncFailuresFilter.pending =>
+            item.status == SyncStatus.pending ||
+                item.status == SyncStatus.processing,
+          SyncFailuresFilter.completed => item.status == SyncStatus.synced,
+        },
+      );
       final entries = <SyncFailureEntry>[];
 
       for (final item in failedItems) {
@@ -120,6 +127,7 @@ final syncFailuresProvider =
           bankRepository: bankRepository,
           cashPaymentRepository: cashPaymentRepository,
           attachmentRepository: attachmentRepository,
+          chequeAttachmentRepository: chequeAttachmentRepository,
         );
 
         entries.add(
@@ -135,6 +143,7 @@ final syncFailuresProvider =
             updatedAt: item.lastAttemptAt,
             entityTitle: details.title,
             serverUuid: details.serverUuid,
+            resolutionHint: details.resolutionHint,
           ),
         );
       }
@@ -143,10 +152,15 @@ final syncFailuresProvider =
     });
 
 class _EntityDetails {
-  const _EntityDetails({required this.title, required this.serverUuid});
+  const _EntityDetails({
+    required this.title,
+    required this.serverUuid,
+    required this.resolutionHint,
+  });
 
   final String title;
   final String? serverUuid;
+  final String resolutionHint;
 }
 
 SyncQueueRepository _refQueue(Ref ref) {
@@ -171,6 +185,9 @@ LocalCashPaymentRepository _refCashPayment(Ref ref) =>
 LocalCashPaymentAttachmentRepository _refCashPaymentAttachment(Ref ref) =>
     LocalCashPaymentAttachmentRepository(DatabaseService.instance);
 
+LocalChequeAttachmentRepository _refChequeAttachment(Ref ref) =>
+    LocalChequeAttachmentRepository(DatabaseService.instance);
+
 Future<_EntityDetails> _resolveEntityDetails({
   required SyncQueueItem item,
   required LocalChequeRepository chequeRepository,
@@ -178,6 +195,7 @@ Future<_EntityDetails> _resolveEntityDetails({
   required LocalBankAccountRepository bankRepository,
   required LocalCashPaymentRepository cashPaymentRepository,
   required LocalCashPaymentAttachmentRepository attachmentRepository,
+  required LocalChequeAttachmentRepository chequeAttachmentRepository,
 }) async {
   final entityType = item.entityType.trim().toUpperCase();
 
@@ -188,6 +206,7 @@ Future<_EntityDetails> _resolveEntityDetails({
         return _EntityDetails(
           title: 'Cheque #${item.entityId} (not found)',
           serverUuid: null,
+          resolutionHint: 'رکورد محلی چک پیدا نشد؛ جزئیات فنی را بررسی کنید.',
         );
       }
 
@@ -198,12 +217,14 @@ Future<_EntityDetails> _resolveEntityDetails({
       return _EntityDetails(
         title: 'Cheque ${cheque.chequeNumber} - $companyName',
         serverUuid: cheque.serverUuid,
+        resolutionHint: 'پس از بررسی مشخصات چک، تلاش مجدد همین رکورد را بزنید.',
       );
     case syncEntityTypeCompany:
       final Company? company = await companyRepository.findById(item.entityId);
       return _EntityDetails(
         title: company?.name ?? 'Company #${item.entityId} (not found)',
         serverUuid: company?.serverUuid,
+        resolutionHint: 'پس از بررسی شرکت، تلاش مجدد همین رکورد را بزنید.',
       );
     case syncEntityTypeBankAccount:
       final BankAccount? account = await bankRepository.findById(item.entityId);
@@ -211,11 +232,13 @@ Future<_EntityDetails> _resolveEntityDetails({
         return _EntityDetails(
           title: 'Bank Account #${item.entityId} (not found)',
           serverUuid: null,
+          resolutionHint: 'حساب بانکی محلی پیدا نشد؛ جزئیات فنی را بررسی کنید.',
         );
       }
       return _EntityDetails(
         title: '${account.bankName} - ${account.accountTitle}',
         serverUuid: account.serverUuid,
+        resolutionHint: 'پس از بررسی حساب، تلاش مجدد همین رکورد را بزنید.',
       );
     case syncEntityTypeCashPayment:
       final CashPayment? payment = await cashPaymentRepository.findById(
@@ -225,6 +248,8 @@ Future<_EntityDetails> _resolveEntityDetails({
         return _EntityDetails(
           title: 'واریز نقدی #${item.entityId} (رکورد محلی یافت نشد)',
           serverUuid: null,
+          resolutionHint:
+              'رکورد واریز محلی پیدا نشد؛ جزئیات فنی را بررسی کنید.',
         );
       }
       final company = await companyRepository.findById(payment.companyId);
@@ -233,14 +258,41 @@ Future<_EntityDetails> _resolveEntityDetails({
             'واریز ${_formatRial(payment.amountRial)} ریال — ${company?.name ?? 'شرکت نامشخص'}'
             '${payment.trackingNumber == null ? '' : ' — پیگیری ${payment.trackingNumber}'}',
         serverUuid: payment.serverUuid,
+        resolutionHint: 'پس از بررسی واریز، تلاش مجدد همین رکورد را بزنید.',
+      );
+    case syncEntityTypeChequeAttachment:
+      final ChequeAttachment? attachment = await chequeAttachmentRepository
+          .findById(item.entityId);
+      if (attachment == null) {
+        return _EntityDetails(
+          title: 'ضمیمه چک #${item.entityId} (رکورد محلی یافت نشد)',
+          serverUuid: null,
+          resolutionHint:
+              'رکورد ضمیمه محلی وجود ندارد؛ جزئیات فنی این رکورد را ارسال کنید.',
+        );
+      }
+      final cheque = await chequeRepository.findById(attachment.chequeId);
+      final company = cheque == null
+          ? null
+          : await companyRepository.findById(cheque.companyId);
+      return _EntityDetails(
+        title:
+            '${attachment.fileName} — چک ${cheque?.chequeNumber ?? attachment.chequeId}'
+            ' — ${company?.name ?? 'شرکت نامشخص'}'
+            '${cheque == null ? '' : ' — ${_formatRial(cheque.amountRial)} ریال'}',
+        serverUuid: attachment.serverUuid,
+        resolutionHint: item.operation == SyncOperation.delete
+            ? 'این عملیات فقط ضمیمه همین چک را حذف می‌کند، نه خود چک را. «تلاش مجدد همین رکورد» را بزنید.'
+            : 'فایل ضمیمه و چک والد را بررسی و سپس تلاش مجدد را بزنید.',
       );
     case syncEntityTypeCashPaymentAttachment:
-      final CashPaymentAttachment? attachment =
-          await attachmentRepository.findById(item.entityId);
+      final CashPaymentAttachment? attachment = await attachmentRepository
+          .findById(item.entityId);
       if (attachment == null) {
         return _EntityDetails(
           title: 'ضمیمه واریز #${item.entityId} (فایل محلی یافت نشد)',
           serverUuid: null,
+          resolutionHint: 'فایل محلی پیدا نشد؛ جزئیات فنی را بررسی کنید.',
         );
       }
       final payment = await cashPaymentRepository.findById(
@@ -254,11 +306,13 @@ Future<_EntityDetails> _resolveEntityDetails({
             '${attachment.fileName} — ${company?.name ?? 'شرکت نامشخص'}'
             '${payment == null ? '' : ' — ${_formatRial(payment.amountRial)} ریال'}',
         serverUuid: attachment.serverUuid,
+        resolutionHint: 'پس از بررسی فایل، تلاش مجدد همین رکورد را بزنید.',
       );
     default:
       return _EntityDetails(
         title: '$entityType #${item.entityId}',
         serverUuid: null,
+        resolutionHint: 'جزئیات فنی رکورد را بررسی و ارسال کنید.',
       );
   }
 }

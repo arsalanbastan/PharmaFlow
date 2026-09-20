@@ -148,18 +148,6 @@ class DashboardHeader extends ConsumerWidget {
                                       return;
                                     }
 
-                                    if (failedCount > 0 || pendingCount > 0) {
-                                      context.pushNamed(
-                                        'sync-failures',
-                                        queryParameters: {
-                                          'filter': failedCount > 0
-                                              ? 'failed'
-                                              : 'pending',
-                                        },
-                                      );
-                                      return;
-                                    }
-
                                     final engine = ref.read(
                                       syncServiceProvider,
                                     );
@@ -210,6 +198,12 @@ class DashboardHeader extends ConsumerWidget {
                                             label: 'Pending: $pendingCount',
                                             background: const Color(0x1A4CAF50),
                                             textColor: DashboardThemeColors.ink,
+                                            onTap: () => context.pushNamed(
+                                              'sync-failures',
+                                              queryParameters: const {
+                                                'filter': 'pending',
+                                              },
+                                            ),
                                           ),
                                           _statusBadge(
                                             label: 'Failed: $failedCount',
@@ -222,6 +216,12 @@ class DashboardHeader extends ConsumerWidget {
                                             textColor: failedCount > 0
                                                 ? Colors.redAccent
                                                 : DashboardThemeColors.ink,
+                                            onTap: () => context.pushNamed(
+                                              'sync-failures',
+                                              queryParameters: const {
+                                                'filter': 'failed',
+                                              },
+                                            ),
                                           ),
                                           if (connectionFailures > 0)
                                             _statusBadge(

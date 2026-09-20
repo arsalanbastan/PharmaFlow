@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/sync_failures_provider.dart';
+import '../../../settings/presentation/providers/communication_settings_provider.dart';
 
 class SyncFailuresPage extends ConsumerStatefulWidget {
   const SyncFailuresPage({
@@ -118,6 +119,7 @@ class _SyncFailuresPageState extends ConsumerState<SyncFailuresPage> {
   @override
   Widget build(BuildContext context) {
     final failuresAsync = ref.watch(syncFailuresProvider(_filter));
+    final syncState = ref.watch(syncStateProvider).valueOrNull;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -135,6 +137,11 @@ class _SyncFailuresPageState extends ConsumerState<SyncFailuresPage> {
               },
             ),
             const SizedBox(height: 8),
+            if (syncState?.lastUserSafeErrorMessage != null)
+              _SyncCycleErrorCard(
+                message: syncState!.lastUserSafeErrorMessage!,
+                technicalDetails: syncState.lastError,
+              ),
             Expanded(
               child: failuresAsync.when(
                 data: (items) {
@@ -287,6 +294,20 @@ class _FailureCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(item.entityTitle, textAlign: TextAlign.right),
             const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.blue.shade100),
+              ),
+              child: Text(
+                item.resolutionHint,
+                textAlign: TextAlign.right,
+                style: TextStyle(color: Colors.blue.shade900, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 6),
             Text(
               item.lastError ?? '-',
               textAlign: TextAlign.right,
@@ -364,7 +385,9 @@ class _FailureCard extends StatelessWidget {
   String _entityTypeLabel(String raw) {
     switch (raw.trim().toUpperCase()) {
       case 'CHEQUE':
-        return 'Cheque';
+        return 'چک';
+      case 'CHEQUE_ATTACHMENT':
+        return 'ضمیمه چک';
       case 'COMPANY':
         return 'Company';
       case 'BANK_ACCOUNT':
@@ -390,5 +413,46 @@ class _FailureCard extends StatelessWidget {
     final minute = local.minute.toString().padLeft(2, '0');
 
     return '${local.year}/$month/$day $hour:$minute';
+  }
+}
+
+class _SyncCycleErrorCard extends StatelessWidget {
+  const _SyncCycleErrorCard({
+    required this.message,
+    required this.technicalDetails,
+  });
+
+  final String message;
+  final String? technicalDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      color: Colors.red.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'خطای آخر چرخه همگام‌سازی',
+              textAlign: TextAlign.right,
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Text(message, textAlign: TextAlign.right),
+            if (technicalDetails != null && technicalDetails!.trim().isNotEmpty)
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('جزئیات فنی خطای چرخه'),
+                children: [
+                  SelectableText(technicalDetails!, textAlign: TextAlign.left),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
