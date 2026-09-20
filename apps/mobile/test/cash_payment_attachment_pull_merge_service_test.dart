@@ -97,6 +97,53 @@ void main() {
     DatabaseService.instance.close();
   });
 
+  test('soft-deleted parent remains valid for attachment history', () async {
+    final deletedAt = DateTime.utc(2026, 8, 16, 7);
+
+    db.execute(
+      'UPDATE cash_payments SET deleted_at = ? WHERE id = ?',
+      <Object?>[deletedAt.millisecondsSinceEpoch, 1],
+    );
+
+    final attachment = _record(
+      id: '77777777-7777-4777-8777-777777777777',
+      updatedAt: DateTime.utc(2026, 8, 16, 8),
+      storageKey: 'cash-payments/deleted-parent/receipt.jpg',
+    );
+
+    final remote = _FakeRemoteAttachmentRepository(
+      <RemoteCashPaymentAttachmentChangesPage>[
+        RemoteCashPaymentAttachmentChangesPage(
+          items: <RemoteCashPaymentAttachmentRecord>[attachment],
+          hasMore: false,
+          nextCursor: _cursorFor(attachment),
+        ),
+      ],
+    );
+
+    final service = CashPaymentAttachmentPullMergeService(
+      databaseService: DatabaseService.instance,
+      remoteRepository: remote,
+      cursorRepository: cursorRepository,
+    );
+
+    final result = await service.pullAndMerge();
+
+    expect(result.inserted, 1);
+
+    final row = db
+        .select(
+          '''
+SELECT cash_payment_id
+FROM cash_payment_attachments
+WHERE server_uuid = ?
+''',
+          <Object?>[attachment.id],
+        )
+        .single;
+
+    expect(row['cash_payment_id'], 1);
+  });
   test('paged pull inserts active attachment ignores absent tombstone '
       'and saves final cursor', () async {
     final first = _record(

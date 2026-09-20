@@ -459,7 +459,6 @@ LIMIT 1
 SELECT id
 FROM cash_payments
 WHERE server_uuid = ?
-  AND deleted_at IS NULL
 LIMIT 2
 ''',
       [cashPaymentUuid.trim()],
