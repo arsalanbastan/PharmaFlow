@@ -485,11 +485,17 @@ class SyncService {
       ' failed=${chequePhase.failed}',
     );
 
-    if (chequePhase.failed > 0) {
+    final chequeWorkStillActive = (await _syncQueueRepository.getProcessable())
+        .any(
+          (item) =>
+              item.entityType.trim().toUpperCase() == syncEntityTypeCheque,
+        );
+
+    if (chequePhase.failed > 0 || chequeWorkStillActive) {
       _logger.warning(
-        'CHEQUE pull/merge and CASH_PAYMENT '
-        '(${cashPaymentItems.length}) skipped because CHEQUE push had '
-        '${chequePhase.failed} failure(s).',
+        'CHEQUE pull/merge skipped because local CHEQUE work remains. '
+        'failedThisRun=${chequePhase.failed}. Independent queue phases '
+        'will continue.',
       );
     } else {
       // --- Phase 3B: CHEQUE PULL + MERGE ---
@@ -554,72 +560,260 @@ class SyncService {
       }
     }
 
-    if (chequePhase.failed == 0) {
-      // --- Phase 3C: CHEQUE_ATTACHMENT PUSH ---
+    // A bad cheque must not stop later independent queue items. Each later
+    // phase still protects its own pull when its corresponding push fails.
+    // --- Phase 3C: CHEQUE_ATTACHMENT PUSH ---
+    _logger.info(
+      'CHEQUE_ATTACHMENT push start: '
+      'ready=${chequeAttachmentItems.length}',
+    );
+
+    late final ({int processed, int succeeded, int failed})
+    chequeAttachmentPhase;
+
+    try {
+      chequeAttachmentPhase = await _processPhase(chequeAttachmentItems);
+    } on SyncConnectivityFailureException catch (error) {
+      return SyncServiceResult(
+        totalPending: pendingCount + failedCount,
+        processed: totalProcessed + error.processed,
+        succeeded: totalSucceeded + error.succeeded,
+        failed: totalFailed + error.failed,
+        stoppedAtPhase: syncEntityTypeChequeAttachment,
+        serverUnavailable: true,
+        failureDetails: error.details,
+        performedServerCheck: true,
+      );
+    }
+
+    totalProcessed += chequeAttachmentPhase.processed;
+    totalSucceeded += chequeAttachmentPhase.succeeded;
+    totalFailed += chequeAttachmentPhase.failed;
+
+    _logger.info(
+      'CHEQUE_ATTACHMENT push done: '
+      'succeeded=${chequeAttachmentPhase.succeeded} '
+      'failed=${chequeAttachmentPhase.failed}',
+    );
+
+    if (chequeAttachmentPhase.failed > 0) {
+      _logger.warning(
+        'CHEQUE_ATTACHMENT pull/merge skipped because attachment push had '
+        '${chequeAttachmentPhase.failed} failure(s).',
+      );
+    } else {
+      final attachmentPullMergeService = _chequeAttachmentPullMergeService;
+
+      if (attachmentPullMergeService != null) {
+        performedServerCheck = true;
+        _logger.info('CHEQUE_ATTACHMENT pull/merge start');
+
+        try {
+          final pullResult = await attachmentPullMergeService.pullAndMerge();
+
+          _logger.info(
+            'CHEQUE_ATTACHMENT pull/merge done: '
+            'pages=${pullResult.pagesFetched} '
+            'received=${pullResult.changesReceived} '
+            'unique=${pullResult.uniqueChanges} '
+            'inserted=${pullResult.inserted} '
+            'updated=${pullResult.updated} '
+            'tombstonesApplied=${pullResult.tombstonesApplied} '
+            'tombstonesIgnored=${pullResult.tombstonesIgnored}',
+          );
+        } catch (error, stackTrace) {
+          final details = _classifyFailure(error);
+          totalFailed += 1;
+
+          _logger.error(
+            'CHEQUE_ATTACHMENT pull/merge failed.',
+            error: error,
+            stackTrace: stackTrace,
+          );
+
+          return SyncServiceResult(
+            totalPending: pendingCount + failedCount,
+            processed: totalProcessed,
+            succeeded: totalSucceeded,
+            failed: totalFailed,
+            stoppedAtPhase: syncEntityTypeChequeAttachment,
+            serverUnavailable:
+                details.type == SyncFailureType.serverConnectivity,
+            failureDetails: details,
+            performedServerCheck: true,
+          );
+        }
+      }
+    }
+
+    // --- Phase 4A: CASH_PAYMENT PUSH ---
+    _logger.info('CASH_PAYMENT push start: ready=${cashPaymentItems.length}');
+
+    late final ({int processed, int succeeded, int failed}) cashPaymentPhase;
+
+    try {
+      cashPaymentPhase = await _processPhase(cashPaymentItems);
+    } on SyncConnectivityFailureException catch (error) {
+      return SyncServiceResult(
+        totalPending: pendingCount + failedCount,
+        processed: totalProcessed + error.processed,
+        succeeded: totalSucceeded + error.succeeded,
+        failed: totalFailed + error.failed,
+        stoppedAtPhase: syncEntityTypeCashPayment,
+        serverUnavailable: true,
+        failureDetails: error.details,
+        performedServerCheck: true,
+      );
+    }
+
+    totalProcessed += cashPaymentPhase.processed;
+    totalSucceeded += cashPaymentPhase.succeeded;
+    totalFailed += cashPaymentPhase.failed;
+
+    _logger.info(
+      'CASH_PAYMENT push done: '
+      'succeeded=${cashPaymentPhase.succeeded} '
+      'failed=${cashPaymentPhase.failed}',
+    );
+
+    if (cashPaymentPhase.failed > 0) {
+      _logger.warning(
+        'CASH_PAYMENT pull/merge skipped because CASH_PAYMENT push had '
+        '${cashPaymentPhase.failed} failure(s).',
+      );
+    } else {
+      // --- Phase 4B: CASH_PAYMENT PULL + MERGE ---
+      final cashPaymentPullMergeService = _cashPaymentPullMergeService;
+
+      if (cashPaymentPullMergeService != null) {
+        performedServerCheck = true;
+        _logger.info('CASH_PAYMENT pull/merge start');
+
+        try {
+          final pullResult = await cashPaymentPullMergeService.pullAndMerge();
+
+          _logger.info(
+            'CASH_PAYMENT pull/merge done: '
+            'pages=${pullResult.pagesFetched} '
+            'received=${pullResult.changesReceived} '
+            'unique=${pullResult.uniqueChanges} '
+            'inserted=${pullResult.inserted} '
+            'updated=${pullResult.updated} '
+            'tombstonesApplied=${pullResult.tombstonesApplied} '
+            'tombstonesIgnored=${pullResult.tombstonesIgnored}',
+          );
+
+          final refreshCallback = onCashPaymentPullMerged;
+
+          if (refreshCallback != null && pullResult.changedLocalData) {
+            _logger.info('CASH_PAYMENT refresh start');
+            await refreshCallback(pullResult);
+            _logger.info('CASH_PAYMENT refresh done');
+          }
+        } catch (error, stackTrace) {
+          final details = _classifyFailure(error);
+          totalFailed += 1;
+
+          _logger.error(
+            'CASH_PAYMENT pull/merge failed.',
+            error: error,
+            stackTrace: stackTrace,
+          );
+
+          return SyncServiceResult(
+            totalPending: pendingCount + failedCount,
+            processed: totalProcessed,
+            succeeded: totalSucceeded,
+            failed: totalFailed,
+            stoppedAtPhase: syncEntityTypeCashPayment,
+            serverUnavailable:
+                details.type == SyncFailureType.serverConnectivity,
+            failureDetails: details,
+            performedServerCheck: true,
+          );
+        }
+      } else {
+        _logger.debug(
+          'CASH_PAYMENT pull/merge skipped because no pull service '
+          'is configured.',
+        );
+      }
+    }
+
+    if (cashPaymentPhase.failed == 0) {
+      // --- Phase 5A: CASH_PAYMENT_ATTACHMENT PUSH ---
       _logger.info(
-        'CHEQUE_ATTACHMENT push start: '
-        'ready=${chequeAttachmentItems.length}',
+        'CASH_PAYMENT_ATTACHMENT push start: '
+        'ready=${cashPaymentAttachmentItems.length}',
       );
 
       late final ({int processed, int succeeded, int failed})
-      chequeAttachmentPhase;
+      cashPaymentAttachmentPhase;
 
       try {
-        chequeAttachmentPhase = await _processPhase(chequeAttachmentItems);
+        cashPaymentAttachmentPhase = await _processPhase(
+          cashPaymentAttachmentItems,
+        );
       } on SyncConnectivityFailureException catch (error) {
         return SyncServiceResult(
           totalPending: pendingCount + failedCount,
           processed: totalProcessed + error.processed,
           succeeded: totalSucceeded + error.succeeded,
           failed: totalFailed + error.failed,
-          stoppedAtPhase: syncEntityTypeChequeAttachment,
+          stoppedAtPhase: syncEntityTypeCashPaymentAttachment,
           serverUnavailable: true,
           failureDetails: error.details,
           performedServerCheck: true,
         );
       }
 
-      totalProcessed += chequeAttachmentPhase.processed;
-      totalSucceeded += chequeAttachmentPhase.succeeded;
-      totalFailed += chequeAttachmentPhase.failed;
+      totalProcessed += cashPaymentAttachmentPhase.processed;
+      totalSucceeded += cashPaymentAttachmentPhase.succeeded;
+      totalFailed += cashPaymentAttachmentPhase.failed;
 
       _logger.info(
-        'CHEQUE_ATTACHMENT push done: '
-        'succeeded=${chequeAttachmentPhase.succeeded} '
-        'failed=${chequeAttachmentPhase.failed}',
+        'CASH_PAYMENT_ATTACHMENT push done: '
+        'succeeded=${cashPaymentAttachmentPhase.succeeded} '
+        'failed=${cashPaymentAttachmentPhase.failed}',
       );
 
-      if (chequeAttachmentPhase.failed > 0) {
+      if (cashPaymentAttachmentPhase.failed > 0) {
         _logger.warning(
-          'CHEQUE_ATTACHMENT pull/merge skipped because attachment push had '
-          '${chequeAttachmentPhase.failed} failure(s).',
+          'CASH_PAYMENT_ATTACHMENT pull/merge skipped because '
+          'attachment push had '
+          '${cashPaymentAttachmentPhase.failed} failure(s).',
         );
       } else {
-        final attachmentPullMergeService = _chequeAttachmentPullMergeService;
+        // --- Phase 5B: CASH_PAYMENT_ATTACHMENT PULL + MERGE ---
+        final attachmentPullMergeService =
+            _cashPaymentAttachmentPullMergeService;
 
         if (attachmentPullMergeService != null) {
           performedServerCheck = true;
-          _logger.info('CHEQUE_ATTACHMENT pull/merge start');
+
+          _logger.info('CASH_PAYMENT_ATTACHMENT pull/merge start');
 
           try {
             final pullResult = await attachmentPullMergeService.pullAndMerge();
 
             _logger.info(
-              'CHEQUE_ATTACHMENT pull/merge done: '
+              'CASH_PAYMENT_ATTACHMENT pull/merge done: '
               'pages=${pullResult.pagesFetched} '
               'received=${pullResult.changesReceived} '
               'unique=${pullResult.uniqueChanges} '
               'inserted=${pullResult.inserted} '
               'updated=${pullResult.updated} '
               'tombstonesApplied=${pullResult.tombstonesApplied} '
-              'tombstonesIgnored=${pullResult.tombstonesIgnored}',
+              'tombstonesIgnored=${pullResult.tombstonesIgnored} '
+              'localChangesProtected=${pullResult.localChangesProtected}',
             );
           } catch (error, stackTrace) {
             final details = _classifyFailure(error);
+
             totalFailed += 1;
 
             _logger.error(
-              'CHEQUE_ATTACHMENT pull/merge failed.',
+              'CASH_PAYMENT_ATTACHMENT pull/merge failed.',
               error: error,
               stackTrace: stackTrace,
             );
@@ -629,96 +823,7 @@ class SyncService {
               processed: totalProcessed,
               succeeded: totalSucceeded,
               failed: totalFailed,
-              stoppedAtPhase: syncEntityTypeChequeAttachment,
-              serverUnavailable:
-                  details.type == SyncFailureType.serverConnectivity,
-              failureDetails: details,
-              performedServerCheck: true,
-            );
-          }
-        }
-      }
-
-      // --- Phase 4A: CASH_PAYMENT PUSH ---
-      _logger.info('CASH_PAYMENT push start: ready=${cashPaymentItems.length}');
-
-      late final ({int processed, int succeeded, int failed}) cashPaymentPhase;
-
-      try {
-        cashPaymentPhase = await _processPhase(cashPaymentItems);
-      } on SyncConnectivityFailureException catch (error) {
-        return SyncServiceResult(
-          totalPending: pendingCount + failedCount,
-          processed: totalProcessed + error.processed,
-          succeeded: totalSucceeded + error.succeeded,
-          failed: totalFailed + error.failed,
-          stoppedAtPhase: syncEntityTypeCashPayment,
-          serverUnavailable: true,
-          failureDetails: error.details,
-          performedServerCheck: true,
-        );
-      }
-
-      totalProcessed += cashPaymentPhase.processed;
-      totalSucceeded += cashPaymentPhase.succeeded;
-      totalFailed += cashPaymentPhase.failed;
-
-      _logger.info(
-        'CASH_PAYMENT push done: '
-        'succeeded=${cashPaymentPhase.succeeded} '
-        'failed=${cashPaymentPhase.failed}',
-      );
-
-      if (cashPaymentPhase.failed > 0) {
-        _logger.warning(
-          'CASH_PAYMENT pull/merge skipped because CASH_PAYMENT push had '
-          '${cashPaymentPhase.failed} failure(s).',
-        );
-      } else {
-        // --- Phase 4B: CASH_PAYMENT PULL + MERGE ---
-        final cashPaymentPullMergeService = _cashPaymentPullMergeService;
-
-        if (cashPaymentPullMergeService != null) {
-          performedServerCheck = true;
-          _logger.info('CASH_PAYMENT pull/merge start');
-
-          try {
-            final pullResult = await cashPaymentPullMergeService.pullAndMerge();
-
-            _logger.info(
-              'CASH_PAYMENT pull/merge done: '
-              'pages=${pullResult.pagesFetched} '
-              'received=${pullResult.changesReceived} '
-              'unique=${pullResult.uniqueChanges} '
-              'inserted=${pullResult.inserted} '
-              'updated=${pullResult.updated} '
-              'tombstonesApplied=${pullResult.tombstonesApplied} '
-              'tombstonesIgnored=${pullResult.tombstonesIgnored}',
-            );
-
-            final refreshCallback = onCashPaymentPullMerged;
-
-            if (refreshCallback != null && pullResult.changedLocalData) {
-              _logger.info('CASH_PAYMENT refresh start');
-              await refreshCallback(pullResult);
-              _logger.info('CASH_PAYMENT refresh done');
-            }
-          } catch (error, stackTrace) {
-            final details = _classifyFailure(error);
-            totalFailed += 1;
-
-            _logger.error(
-              'CASH_PAYMENT pull/merge failed.',
-              error: error,
-              stackTrace: stackTrace,
-            );
-
-            return SyncServiceResult(
-              totalPending: pendingCount + failedCount,
-              processed: totalProcessed,
-              succeeded: totalSucceeded,
-              failed: totalFailed,
-              stoppedAtPhase: syncEntityTypeCashPayment,
+              stoppedAtPhase: syncEntityTypeCashPaymentAttachment,
               serverUnavailable:
                   details.type == SyncFailureType.serverConnectivity,
               failureDetails: details,
@@ -727,109 +832,9 @@ class SyncService {
           }
         } else {
           _logger.debug(
-            'CASH_PAYMENT pull/merge skipped because no pull service '
-            'is configured.',
-          );
-        }
-      }
-
-      if (cashPaymentPhase.failed == 0) {
-        // --- Phase 5A: CASH_PAYMENT_ATTACHMENT PUSH ---
-        _logger.info(
-          'CASH_PAYMENT_ATTACHMENT push start: '
-          'ready=${cashPaymentAttachmentItems.length}',
-        );
-
-        late final ({int processed, int succeeded, int failed})
-        cashPaymentAttachmentPhase;
-
-        try {
-          cashPaymentAttachmentPhase = await _processPhase(
-            cashPaymentAttachmentItems,
-          );
-        } on SyncConnectivityFailureException catch (error) {
-          return SyncServiceResult(
-            totalPending: pendingCount + failedCount,
-            processed: totalProcessed + error.processed,
-            succeeded: totalSucceeded + error.succeeded,
-            failed: totalFailed + error.failed,
-            stoppedAtPhase: syncEntityTypeCashPaymentAttachment,
-            serverUnavailable: true,
-            failureDetails: error.details,
-            performedServerCheck: true,
-          );
-        }
-
-        totalProcessed += cashPaymentAttachmentPhase.processed;
-        totalSucceeded += cashPaymentAttachmentPhase.succeeded;
-        totalFailed += cashPaymentAttachmentPhase.failed;
-
-        _logger.info(
-          'CASH_PAYMENT_ATTACHMENT push done: '
-          'succeeded=${cashPaymentAttachmentPhase.succeeded} '
-          'failed=${cashPaymentAttachmentPhase.failed}',
-        );
-
-        if (cashPaymentAttachmentPhase.failed > 0) {
-          _logger.warning(
             'CASH_PAYMENT_ATTACHMENT pull/merge skipped because '
-            'attachment push had '
-            '${cashPaymentAttachmentPhase.failed} failure(s).',
+            'no pull service is configured.',
           );
-        } else {
-          // --- Phase 5B: CASH_PAYMENT_ATTACHMENT PULL + MERGE ---
-          final attachmentPullMergeService =
-              _cashPaymentAttachmentPullMergeService;
-
-          if (attachmentPullMergeService != null) {
-            performedServerCheck = true;
-
-            _logger.info('CASH_PAYMENT_ATTACHMENT pull/merge start');
-
-            try {
-              final pullResult = await attachmentPullMergeService
-                  .pullAndMerge();
-
-              _logger.info(
-                'CASH_PAYMENT_ATTACHMENT pull/merge done: '
-                'pages=${pullResult.pagesFetched} '
-                'received=${pullResult.changesReceived} '
-                'unique=${pullResult.uniqueChanges} '
-                'inserted=${pullResult.inserted} '
-                'updated=${pullResult.updated} '
-                'tombstonesApplied=${pullResult.tombstonesApplied} '
-                'tombstonesIgnored=${pullResult.tombstonesIgnored} '
-                'localChangesProtected=${pullResult.localChangesProtected}',
-              );
-            } catch (error, stackTrace) {
-              final details = _classifyFailure(error);
-
-              totalFailed += 1;
-
-              _logger.error(
-                'CASH_PAYMENT_ATTACHMENT pull/merge failed.',
-                error: error,
-                stackTrace: stackTrace,
-              );
-
-              return SyncServiceResult(
-                totalPending: pendingCount + failedCount,
-                processed: totalProcessed,
-                succeeded: totalSucceeded,
-                failed: totalFailed,
-                stoppedAtPhase: syncEntityTypeCashPaymentAttachment,
-                serverUnavailable:
-                    details.type == SyncFailureType.serverConnectivity,
-                failureDetails: details,
-                performedServerCheck: true,
-              );
-            }
-          } else {
-            _logger.debug(
-              'CASH_PAYMENT_ATTACHMENT pull/merge skipped because '
-              'no pull service is configured.',
-            );
-          }
         }
       }
     }

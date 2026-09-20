@@ -185,6 +185,22 @@ class SyncQueueRepository {
     }
   }
 
+  /// Makes failed rows immediately eligible for an explicit manual sync.
+  /// Existing error text is retained until the row is actually attempted.
+  Future<void> retryAllFailed() async {
+    final statement = _db.prepare(SyncQueueQueries.retryAllFailed);
+    try {
+      statement.executeWith(
+        StatementParameters.named({
+          ':pendingStatus': SyncStatus.pending.dbValue,
+          ':failedStatus': SyncStatus.failed.dbValue,
+        }),
+      );
+    } finally {
+      statement.dispose();
+    }
+  }
+
   Future<void> retryQueueItem(int id) async {
     final statement = _db.prepare(SyncQueueQueries.retryById);
 

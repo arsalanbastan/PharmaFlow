@@ -120,6 +120,10 @@ class SyncEngine {
   }
 
   Future<void> _prepareManualSyncRequest() async {
+    // Manual sync bypasses automatic backoff so a failed local row cannot
+    // remain untried while repeatedly blocking incremental pull.
+    await _syncQueueRepository.retryAllFailed();
+
     await _setConnectionFailureState(
       consecutiveFailures: 0,
       autoRetrySuspended: false,

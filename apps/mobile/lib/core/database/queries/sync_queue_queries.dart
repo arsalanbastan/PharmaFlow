@@ -142,6 +142,14 @@ SET
 WHERE id = :id;
 ''';
 
+  static const String retryAllFailed = '''
+UPDATE sync_queue
+SET
+  status = :pendingStatus,
+  lastAttemptAt = NULL
+WHERE status = :failedStatus;
+''';
+
   static const String deleteById = '''
 DELETE FROM sync_queue
 WHERE id = :id;

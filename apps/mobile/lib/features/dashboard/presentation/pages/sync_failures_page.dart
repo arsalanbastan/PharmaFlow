@@ -4,15 +4,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/sync_failures_provider.dart';
 
 class SyncFailuresPage extends ConsumerStatefulWidget {
-  const SyncFailuresPage({super.key});
+  const SyncFailuresPage({
+    super.key,
+    this.initialFilter = SyncFailuresFilter.failed,
+  });
+
+  final SyncFailuresFilter initialFilter;
 
   @override
   ConsumerState<SyncFailuresPage> createState() => _SyncFailuresPageState();
 }
 
 class _SyncFailuresPageState extends ConsumerState<SyncFailuresPage> {
-  SyncFailuresFilter _filter = SyncFailuresFilter.failed;
+  late SyncFailuresFilter _filter;
   final Set<int> _busyQueueIds = <int>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _filter = widget.initialFilter;
+  }
 
   Future<void> _refresh() async {
     ref.invalidate(syncFailuresProvider(_filter));
@@ -315,7 +326,10 @@ class _FailureCard extends StatelessWidget {
             const SizedBox(height: 4),
             ExpansionTile(
               tilePadding: EdgeInsets.zero,
-              title: const Text('مشاهده جزئیات فنی', textAlign: TextAlign.right),
+              title: const Text(
+                'مشاهده جزئیات فنی',
+                textAlign: TextAlign.right,
+              ),
               children: [
                 _detailRow('Queue ID', item.queueId.toString()),
                 _detailRow('Entity ID', item.entityId.toString()),

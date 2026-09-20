@@ -148,8 +148,15 @@ class DashboardHeader extends ConsumerWidget {
                                       return;
                                     }
 
-                                    if (failedCount > 0) {
-                                      context.pushNamed('sync-failures');
+                                    if (failedCount > 0 || pendingCount > 0) {
+                                      context.pushNamed(
+                                        'sync-failures',
+                                        queryParameters: {
+                                          'filter': failedCount > 0
+                                              ? 'failed'
+                                              : 'pending',
+                                        },
+                                      );
                                       return;
                                     }
 
