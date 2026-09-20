@@ -58,6 +58,14 @@ class ChequeAttachmentPushService {
     final attachment = await _localAttachmentRepository.findById(item.entityId);
 
     if (attachment == null || attachment.id == null) {
+      // A DELETE can outlive its local attachment row. The queue does not
+      // retain enough remote identity to delete safely, so discard only the
+      // orphan queue task and allow later independent work to continue.
+      if (item.operation == SyncOperation.delete) {
+        await _syncQueueRepository.deleteQueueItem(queueId);
+        return true;
+      }
+
       throw ChequeAttachmentPushException(
         'Cheque attachment ${item.entityId} not found locally.',
       );

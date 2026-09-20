@@ -300,6 +300,54 @@ void main() {
       expect(attachment!.deleteRequestedAt, isNull);
     },
   );
+  test(
+    'orphan DELETE is discarded without a remote delete call',
+    () async {
+      final queueId = await queueRepository.add(
+        SyncQueueItem(
+          entityType: syncEntityTypeChequeAttachment,
+          entityId: 999999,
+          operation: SyncOperation.delete,
+          status: SyncStatus.pending,
+          retryCount: 0,
+          createdAt: DateTime.now().toUtc(),
+        ),
+      );
+      final item = await queueRepository.findById(queueId);
+      expect(item, isNotNull);
+
+      final result = await service.push(item!);
+
+      expect(result, isTrue);
+      expect(remoteRepository.deleteCalls, 0);
+      expect(await queueRepository.findById(queueId), isNull);
+    },
+  );
+
+  test(
+    'orphan DELETE is discarded without a remote delete call',
+    () async {
+      final queueId = await queueRepository.add(
+        SyncQueueItem(
+          entityType: syncEntityTypeChequeAttachment,
+          entityId: 999999,
+          operation: SyncOperation.delete,
+          status: SyncStatus.pending,
+          retryCount: 0,
+          createdAt: DateTime.now().toUtc(),
+        ),
+      );
+      final item = await queueRepository.findById(queueId);
+      expect(item, isNotNull);
+
+      final result = await service.push(item!);
+
+      expect(result, isTrue);
+      expect(remoteRepository.deleteCalls, 0);
+      expect(await queueRepository.findById(queueId), isNull);
+    },
+  );
+
   test('CREATE rejects source file mutation before network upload', () async {
     final originalBytes = Uint8List.fromList(<int>[10, 11, 12, 13]);
 

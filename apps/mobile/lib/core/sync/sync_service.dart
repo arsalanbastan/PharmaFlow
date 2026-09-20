@@ -541,17 +541,21 @@ class SyncService {
             'CHEQUE pull/merge failed.',
           );
 
-          return SyncServiceResult(
-            totalPending: pendingCount + failedCount,
-            processed: totalProcessed,
-            succeeded: totalSucceeded,
-            failed: totalFailed,
-            stoppedAtPhase: syncEntityTypeCheque,
-            serverUnavailable:
-                details.type == SyncFailureType.serverConnectivity,
-            failureDetails: details,
-            performedServerCheck: true,
-          );
+          // Connectivity failures still abort so SyncEngine can retry them.
+          // Local cheque merge conflicts are isolated and must not starve
+          // CHEQUE_ATTACHMENT or later independent queue phases.
+          if (details.type == SyncFailureType.serverConnectivity) {
+            return SyncServiceResult(
+              totalPending: pendingCount + failedCount,
+              processed: totalProcessed,
+              succeeded: totalSucceeded,
+              failed: totalFailed,
+              stoppedAtPhase: syncEntityTypeCheque,
+              serverUnavailable: true,
+              failureDetails: details,
+              performedServerCheck: true,
+            );
+          }
         }
       } else {
         _logger.debug(
