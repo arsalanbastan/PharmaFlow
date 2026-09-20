@@ -3,7 +3,7 @@ description: Modern Pharmacy Financial Commitment Management System
 
 publish_to: "none"
 
-version: 1.0.11+12
+version: 1.0.12+13
 environment:
   sdk: ">=3.12.0 <4.0.0"
 

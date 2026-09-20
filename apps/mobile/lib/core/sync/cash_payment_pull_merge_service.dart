@@ -193,7 +193,7 @@ class CashPaymentPullMergeService {
           );
         }
 
-        if (localId == null && change.isDeleted) {
+        if (localId == null && change.isDeleted && !fromBeginning) {
           continue;
         }
 
@@ -221,7 +221,7 @@ class CashPaymentPullMergeService {
       for (final change in changes) {
         final localId = localIdsByServerUuid[change.id];
 
-        if (localId == null && change.isDeleted) {
+        if (localId == null && change.isDeleted && !fromBeginning) {
           tombstonesIgnored += 1;
           continue;
         }
