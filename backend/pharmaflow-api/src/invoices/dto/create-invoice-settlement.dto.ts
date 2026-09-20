@@ -66,6 +66,16 @@ class InvoiceSettlementCashDto {
   description?: string;
 }
 
+class InvoiceSettlementDiscountAllocationDto {
+  @IsUUID('4')
+  invoiceId: string;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  amount: number;
+}
+
 export class CreateInvoiceSettlementDto {
   @IsArray()
   @ArrayMinSize(1)
@@ -88,6 +98,13 @@ export class CreateInvoiceSettlementDto {
   @IsNumber({ maxDecimalPlaces: 4 })
   @Min(0)
   discountAmount?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => InvoiceSettlementDiscountAllocationDto)
+  discountAllocations?: InvoiceSettlementDiscountAllocationDto[];
 
   @IsOptional()
   @IsString()

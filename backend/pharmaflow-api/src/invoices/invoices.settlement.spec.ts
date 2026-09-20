@@ -104,4 +104,50 @@ describe('InvoicesService settlement', () => {
     expect(tx.invoiceDiscountAllocation.createMany).toHaveBeenCalled();
     expect(auditLog.record).toHaveBeenCalled();
   });
-});
+
+  it('allocates explicit discounts to their invoices before assigning cheque', async () => {
+    const a = '11111111-1111-4111-8111-111111111111';
+    const b = '22222222-2222-4222-8222-222222222222';
+    const company = '33333333-3333-4333-8333-333333333333';
+    const bank = '44444444-4444-4444-8444-444444444444';
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      arsenInvoice: { findMany: jest.fn().mockResolvedValue([
+        { id: a, factorDocType: 1, factorPayablePrice: new Prisma.Decimal(200),
+          isDeletedInArsen: false, company: { id: company, name: 'Test' },
+          chequeAllocations: [], cashPaymentAllocations: [], discountAllocations: [] },
+        { id: b, factorDocType: 1, factorPayablePrice: new Prisma.Decimal(300),
+          isDeletedInArsen: false, company: { id: company, name: 'Test' },
+          chequeAllocations: [], cashPaymentAllocations: [], discountAllocations: [] },
+      ]) },
+      bankAccount: { count: jest.fn().mockResolvedValue(1) },
+      cheque: { create: jest.fn().mockResolvedValue({ id: 'cheque-2' }) },
+      chequeInvoiceAllocation: { createMany: jest.fn().mockResolvedValue({}) },
+      invoiceDiscountAllocation: { createMany: jest.fn().mockResolvedValue({}) },
+      pushOutbox: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = { $transaction: jest.fn((callback: (db: typeof tx) => unknown) =>
+      callback(tx)) };
+    const auditLog = { record: jest.fn().mockResolvedValue(undefined) };
+    const service = new InvoicesService(prisma as never, auditLog as never);
+    await service.createSettlement({
+      invoiceIds: [a, b],
+      cheque: { amount: 250, bankAccountId: bank, chequeNumber: '124',
+        chequeDate: '2026-09-20T00:00:00.000Z', dueDate: '2026-10-20T00:00:00.000Z' },
+      discountAmount: 50,
+      discountAllocations: [{ invoiceId: a, amount: 20 },
+        { invoiceId: b, amount: 30 }],
+    });
+    expect(tx.invoiceDiscountAllocation.createMany).toHaveBeenCalledWith({ data: [
+      expect.objectContaining({ invoiceId: a, amount: new Prisma.Decimal(20) }),
+      expect.objectContaining({ invoiceId: b, amount: new Prisma.Decimal(30) }),
+    ] });
+    expect(tx.chequeInvoiceAllocation.createMany).toHaveBeenCalledWith({ data: [
+      expect.objectContaining({ invoiceId: a, amount: new Prisma.Decimal(180) }),
+      expect.objectContaining({ invoiceId: b, amount: new Prisma.Decimal(70) }),
+    ] });
+    await expect(service.createSettlement({
+      invoiceIds: [a,b], discountAmount: 50,
+      discountAllocations: [{ invoiceId: a, amount: 51 }],
+    })).rejects.toThrow();
+  });});

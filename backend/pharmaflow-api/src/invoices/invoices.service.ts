@@ -322,6 +322,50 @@ export class InvoicesService {
 
         await this.validateSettlementBankAccounts(tx, dto);
 
+        const individuallyAssigned = dto.discountAllocations;
+        if (individuallyAssigned != null) {
+          const byInvoice = new Map<string, Prisma.Decimal>();
+          let assignedTotal = new Prisma.Decimal(0);
+          for (const row of individuallyAssigned) {
+            if (!remainingByInvoice.has(row.invoiceId) ||
+                byInvoice.has(row.invoiceId)) {
+              throw new BadRequestException(
+                'Discount allocations must reference each selected invoice at most once.',
+              );
+            }
+            const value = new Prisma.Decimal(row.amount);
+            if (!value.isFinite() || value.lt(0) ||
+                value.gt(remainingByInvoice.get(row.invoiceId)!)) {
+              throw new BadRequestException(
+                'Discount allocation exceeds the invoice remaining amount.',
+              );
+            }
+            byInvoice.set(row.invoiceId, value);
+            assignedTotal = assignedTotal.plus(value);
+          }
+          if (!assignedTotal.eq(discountAmount)) {
+            throw new BadRequestException(
+              'Per-invoice discounts must equal the total discount.',
+            );
+          }
+          const data = [...byInvoice.entries()]
+            .filter(([, amount]) => amount.gt(0))
+            .map(([invoiceId, amount]) => ({
+              invoiceId,
+              amount,
+              description: dto.discountDescription?.trim() || 'تخفیف پرداخت نقدی',
+            }));
+          if (data.length > 0) {
+            await tx.invoiceDiscountAllocation.createMany({ data });
+          }
+          for (const [invoiceId, amount] of byInvoice) {
+            remainingByInvoice.set(
+              invoiceId,
+              remainingByInvoice.get(invoiceId)!.minus(amount),
+            );
+          }
+        }
+
         let chequeId: string | null = null;
         let cashPaymentId: string | null = null;
 
@@ -389,7 +433,7 @@ export class InvoicesService {
           await enqueueCashPaymentCreatedPush(payment.id, tx);
         }
 
-        if (discountAmount.gt(0)) {
+        if (individuallyAssigned == null && discountAmount.gt(0)) {
           const allocations = this.allocateAmount(
             discountAmount,
             invoices,

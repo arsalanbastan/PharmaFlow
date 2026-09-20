@@ -7,6 +7,7 @@ import '../../../cheques/presentation/utils/cheque_input_formatters.dart';
 import '../../data/manager_invoices_repository.dart';
 import '../../domain/manager_invoice_settlement.dart';
 import '../../domain/invoice_maturity_planner.dart';
+import '../../domain/invoice_discount_calculator.dart';
 
 class InvoiceSettlementPage extends StatefulWidget {
   const InvoiceSettlementPage({
@@ -36,6 +37,8 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
   bool _useCheque = false;
   bool _useCash = false;
   bool _saving = false;
+  String? _paymentMode;
+  final Map<String, TextEditingController> _percentControllers = {};
   int _targetDelayDays = 20;
   String? _chequeBankAccountId;
   String? _cashBankAccountId;
@@ -73,6 +76,9 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
     _discountController.dispose();
     _discountDescriptionController.dispose();
     _notesController.dispose();
+    for (final controller in _percentControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -117,7 +123,29 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
     });
   }
 
+  Map<String, BigInt>? _invoiceDiscounts(InvoiceSettlementPreparation data) =>
+      InvoiceDiscountCalculator.byInvoice(data.invoices, {
+        for (final entry in _percentControllers.entries)
+          entry.key: entry.value.text,
+      });
+
+  void _discountChanged(InvoiceSettlementPreparation data) {
+    final amounts = _invoiceDiscounts(data);
+    final total = amounts?.values.fold<BigInt>(
+        BigInt.zero, (sum, value) => sum + value);
+    _discountController.text = total?.toString() ?? '0';
+    if (mounted) setState(() {});
+  }
+
   Future<void> _submit(InvoiceSettlementPreparation data) async {
+    if (const bool.fromEnvironment('PHARMAFLOW_INVOICE_PREVIEW')) return;
+    final allocations = _invoiceDiscounts(data);
+    if (allocations == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('درصد تخفیف یک یا چند فاکتور معتبر نیست.')),
+      );
+      return;
+    }
     FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) {
       return;
@@ -126,6 +154,26 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
     if (_useCheque && _chequeDueDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تاریخ سررسید چک را انتخاب کنید.')),
+      );
+      return;
+    }
+
+    // Backend DTO currently accepts JSON numbers. Do not silently round Rial
+    // values that exceed JavaScript's exact integer range.
+    final exactValues = <BigInt?>[
+      InvoiceMaturityPlan.parseRials(data.totalRemainingAmount),
+      InvoiceMaturityPlan.parseRials(_discountController.text),
+      if (_useCheque)
+        InvoiceMaturityPlan.parseRials(_chequeAmountController.text),
+      if (_useCash)
+        InvoiceMaturityPlan.parseRials(_cashAmountController.text),
+      ...allocations.values,
+    ];
+    final maxExact = BigInt.from(9007199254740991);
+    if (exactValues.any((value) =>
+        value == null || value < BigInt.zero || value > maxExact)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('مبلغ نامعتبر یا بیش از حد مجاز است.')),
       );
       return;
     }
@@ -167,6 +215,14 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
               'trackingNumber': _trackingNumberController.text.trim(),
           },
         'discountAmount': _amount(_discountController),
+        'discountAllocations': <Map<String, dynamic>>[
+          for (final item in allocations.entries)
+            if (item.value > BigInt.zero)
+              <String, dynamic>{
+                'invoiceId': item.key,
+                'amount': item.value.toInt(),
+              },
+        ],
         if (_discountDescriptionController.text.trim().isNotEmpty)
           'discountDescription': _discountDescriptionController.text.trim(),
         if (_notesController.text.trim().isNotEmpty)
@@ -200,7 +256,22 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(title: const Text('تسویه فاکتورهای انتخابی')),
+        appBar: AppBar(
+          title: Text(_paymentMode == null
+              ? 'برنامه‌ریزی تسویه'
+              : _paymentMode == 'CHEQUE'
+                  ? 'ثبت چک فاکتورها'
+                  : _paymentMode == 'CASH'
+                      ? 'ثبت واریز فاکتورها'
+                      : 'پرداخت ترکیبی فاکتورها'),
+          leading: _paymentMode == null
+              ? null
+              : IconButton(
+                  tooltip: 'بازگشت به خلاصه تسویه',
+                  icon: const Icon(Icons.arrow_forward),
+                  onPressed: () => setState(() => _paymentMode = null),
+                ),
+        ),
         body: FutureBuilder<InvoiceSettlementPreparation>(
           future: _preparation,
           builder: (context, snapshot) {
@@ -239,99 +310,88 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
       child: ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    data.company.name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text('${data.invoices.length} فاکتور انتخاب شده'),
-                  const SizedBox(height: 6),
-                  Text(
-                    'جمع مانده: ${_formatMoney(remaining)} ریال',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  const Text('سررسید اولیه فاکتورهای آرسن با ثبت چک یا پرداخت نقدی تغییر نمی‌کند.'),
-                  const Divider(height: 22),
-                  ...data.invoices.map(
-                    (invoice) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('فاکتور ${invoice.invoiceNumber ?? '-'} — ${invoice.invoiceDate ?? '-'}'),
-                                Text(
-                                  'سررسید اولیه: ${invoice.settlementDate ?? 'نامشخص'}'
-                                  '${invoice.paymentDays == null ? '' : ' — مهلت ${invoice.paymentDays} روز'}',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            '${_formatMoney(double.parse(invoice.remainingAmount))} ریال',
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.42),
             ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text(data.company.name, style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 5),
+              Text('${data.invoices.length} فاکتور انتخاب شده'),
+              const SizedBox(height: 4),
+              Text('جمع مانده: ${_formatMoney(remaining)} ریال',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900)),
+              if (maturityPlan != null)
+                Text('رأس اولیه: ${maturityPlan.originalMaturityJalali}'),
+            ]),
+          ),
+          const SizedBox(height: 9),
+          _discountRows(data),
+          const SizedBox(height: 5),
+          ExpansionTile(
+            initiallyExpanded: false,
+            title: const Text('محاسبه رأس چک و تأثیر پرداخت نقدی'),
+            leading: const Icon(Icons.calculate_outlined),
+            children: [
+              if (maturityPlan == null)
+                const Padding(padding: EdgeInsets.all(12),
+                    child: Text('رأس قابل محاسبه نیست؛ اطلاعات سررسید یا مانده ناقص است.'))
+              else
+                _buildMaturityPlanner(maturityPlan),
+            ],
           ),
           const SizedBox(height: 8),
-          if (maturityPlan == null)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(14),
-                child: Text('رأس قابل محاسبه نیست: سررسید اولیه یا مانده '
-                    'یک یا چند فاکتور نامعتبر یا نامشخص است.'),
-              ),
-            )
-          else
-            _buildMaturityPlanner(maturityPlan),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            value: _useCheque,
-            title: const Text('صدور چک'),
-            secondary: const Icon(Icons.receipt_long_outlined),
-            onChanged: _saving
-                ? null
-                : (value) => setState(() => _useCheque = value),
-          ),
-          if (_useCheque) _chequeFields(data.bankAccounts),
-          SwitchListTile(
-            value: _useCash,
-            title: const Text('پرداخت نقدی / واریز'),
-            secondary: const Icon(Icons.payments_outlined),
-            onChanged: _saving
-                ? null
-                : (value) => setState(() => _useCash = value),
-          ),
-          if (_useCash) _cashFields(data.bankAccounts),
+          if (_paymentMode == null) ...[
+            Text('روش پرداخت', style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: FilledButton.tonalIcon(
+                onPressed: () => setState(() {
+                  _paymentMode = 'CHEQUE'; _useCheque = true; _useCash = false;
+                }),
+                icon: const Icon(Icons.receipt_long_outlined),
+                label: const Text('ثبت چک'),
+              )),
+              const SizedBox(width: 7),
+              Expanded(child: FilledButton.tonalIcon(
+                onPressed: () => setState(() {
+                  _paymentMode = 'CASH'; _useCheque = false; _useCash = true;
+                }),
+                icon: const Icon(Icons.account_balance_outlined),
+                label: const Text('واریز نقدی'),
+              )),
+            ]),
+            const SizedBox(height: 7),
+            OutlinedButton.icon(
+              onPressed: () => setState(() {
+                _paymentMode = 'COMBINED'; _useCheque = true; _useCash = true;
+              }),
+              icon: const Icon(Icons.call_split_outlined),
+              label: const Text('پرداخت ترکیبی (نقد + چک)'),
+            ),
+          ] else ...[
+            if (_useCash) _cashFields(data.bankAccounts),
+            if (_useCheque) _chequeFields(data.bankAccounts),
+          ],
           const SizedBox(height: 8),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
                 children: [
-                  _amountField(
+                  TextFormField(
                     controller: _discountController,
-                    label: 'تخفیف نقدی شرکت (ریال)',
-                    isRequired: false,
+                    readOnly: true,
+                    decoration: const InputDecoration(
+                      labelText: 'جمع تخفیف نقدی فاکتورهای انتخابی (ریال)',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.percent),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
@@ -384,8 +444,11 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
             ),
           ),
           const SizedBox(height: 12),
+          if (_paymentMode != null)
           FilledButton.icon(
-            onPressed: _saving ? null : () => _submit(data),
+            onPressed: _saving || const bool.fromEnvironment('PHARMAFLOW_INVOICE_PREVIEW')
+                ? null
+                : () => _submit(data),
             icon: _saving
                 ? const SizedBox.square(
                     dimension: 18,
@@ -396,6 +459,80 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
           ),
           const SizedBox(height: 24),
         ],
+      ),
+    );
+  }
+
+  Widget _discountRows(InvoiceSettlementPreparation data) {
+    final amounts = _invoiceDiscounts(data);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            const Icon(Icons.receipt_long_outlined, size: 18),
+            const SizedBox(width: 7),
+            Text('فاکتورهای انتخابی و تخفیف نقدی',
+                style: Theme.of(context).textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w800)),
+          ]),
+          const SizedBox(height: 6),
+          for (final invoice in data.invoices) ...[
+            const Divider(height: 9),
+            Row(children: [
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('فاکتور ${invoice.invoiceNumber ?? '-'}',
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text('مانده: ${InvoiceMaturityPlan.formatRials(
+                        InvoiceMaturityPlan.parseRials(invoice.remainingAmount)
+                            ?? BigInt.zero)} ریال',
+                      style: Theme.of(context).textTheme.bodySmall),
+                  Text('سررسید: ${invoice.settlementDate ?? '-'}',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+              )),
+              SizedBox(
+                width: 74,
+                child: TextFormField(
+                  controller: _percentControllers.putIfAbsent(
+                      invoice.id, () => TextEditingController()),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textAlign: TextAlign.center,
+                  inputFormatters: [FilteringTextInputFormatter.allow(
+                      RegExp(r'[0-9۰-۹٠-٩.]'))],
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: '٪ تخفیف',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => _discountChanged(data),
+                  validator: (value) =>
+                      InvoiceDiscountCalculator.basisPoints(value ?? '') == null
+                      ? '۰ تا ۱۰۰' : null,
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(width: 97, child: Text(
+                '${InvoiceMaturityPlan.formatRials(amounts?[invoice.id]
+                    ?? BigInt.zero)} ریال',
+                textAlign: TextAlign.left,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              )),
+            ]),
+          ],
+          const Divider(height: 14),
+          Text(
+            amounts == null
+              ? 'درصد تخفیف را اصلاح کنید.'
+              : 'جمع تخفیف: ${InvoiceMaturityPlan.formatRials(
+                  amounts.values.fold<BigInt>(BigInt.zero,
+                      (sum, value) => sum + value))} ریال',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          const Text('درصد هر فاکتور بر مانده همان فاکتور اعمال می‌شود.'),
+        ]),
       ),
     );
   }

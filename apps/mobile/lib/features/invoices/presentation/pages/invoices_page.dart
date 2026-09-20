@@ -22,6 +22,7 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
 
   bool _loading = true;
   bool _loadingMore = false;
+  bool _filtersExpanded = false;
 
   String? _error;
   String _query = '';
@@ -223,6 +224,12 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
           title: const Text('فاکتورهای خرید'),
           actions: [
             IconButton(
+              tooltip: 'فیلتر تاریخ',
+              onPressed: () => setState(() => _filtersExpanded = !_filtersExpanded),
+              icon: Icon(_filtersExpanded
+                  ? Icons.filter_alt_off_outlined : Icons.filter_alt_outlined),
+            ),
+            IconButton(
               tooltip: 'بروزرسانی',
               onPressed: _loading ? null : () => _load(reset: true),
               icon: const Icon(Icons.refresh),
@@ -257,7 +264,8 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
                 ),
               ),
             ),
-            Padding(
+            if (_filtersExpanded)
+              Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               child: Row(
                 children: [
@@ -411,7 +419,7 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
   }
 }
 
-class _InvoiceCard extends StatelessWidget {
+class _InvoiceCard extends StatefulWidget {
   const _InvoiceCard({
     required this.invoice,
     required this.selected,
@@ -427,145 +435,137 @@ class _InvoiceCard extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final invoiceNumber =
-        invoice.invoiceNumber ?? invoice.arsenFactorId.toString();
+  State<_InvoiceCard> createState() => _InvoiceCardState();
+}
 
-    final colorScheme = Theme.of(context).colorScheme;
-    final cardColor = selected
-        ? colorScheme.primaryContainer.withValues(alpha: 0.55)
-        : invoice.paymentStatus == 'PAID'
-        ? Colors.green.withValues(alpha: 0.09)
-        : invoice.paymentStatus == 'PARTIAL'
-        ? Colors.orange.withValues(alpha: 0.10)
-        : null;
+class _InvoiceCardState extends State<_InvoiceCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final invoice = widget.invoice;
+    final paid = invoice.paymentStatus == 'PAID';
+    final partial = invoice.paymentStatus == 'PARTIAL';
+    final scheme = Theme.of(context).colorScheme;
+    final number = invoice.invoiceNumber ?? invoice.arsenFactorId.toString();
 
     return Card(
-      color: cardColor,
-      margin: const EdgeInsets.symmetric(vertical: 5),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Checkbox(
-                    value: selected,
-                    onChanged: selectionEnabled
-                        ? (value) => onSelectionChanged(value == true)
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      color: paid
+          ? const Color(0xFFE7F5E9)
+          : partial
+              ? const Color(0xFFFFF3DC)
+              : widget.selected
+                  ? scheme.primaryContainer
+                  : null,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(
+          color: paid
+              ? const Color(0xFFABD6B1)
+              : widget.selected
+                  ? scheme.primary
+                  : scheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 6, 6, 5),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 36,
+                  child: Checkbox(
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                    value: widget.selected,
+                    onChanged: widget.selectionEnabled
+                        ? (value) => widget.onSelectionChanged(value == true)
                         : null,
                   ),
-                  Expanded(
-                    child: Text(
-                      invoice.company.name,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
+                ),
+                Expanded(
+                  child: InkWell(
+                    onTap: widget.onTap,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(invoice.company.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 3),
+                          Text('فاکتور $number  •  ${invoice.invoiceDate ?? 'بدون تاریخ'}',
+                              style: Theme.of(context).textTheme.bodySmall),
+                        ],
                       ),
                     ),
                   ),
-                  if (invoice.isDeletedInArsen)
-                    const _InvoiceBadge(
-                      text: 'حذف‌شده در آرسن',
-                      icon: Icons.warning_amber_rounded,
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 14,
-                runSpacing: 7,
-                children: [
-                  _InvoiceInfo(icon: Icons.tag, text: 'شماره: $invoiceNumber'),
-                  _InvoiceInfo(
-                    icon: Icons.calendar_today_outlined,
-                    text: 'تاریخ: ${invoice.invoiceDate ?? '-'}',
-                  ),
-                  _InvoiceInfo(
-                    icon: Icons.inventory_2_outlined,
-                    text: '${invoice.itemCount} قلم',
-                  ),
-                  if (invoice.settlementDate != null)
-                    _InvoiceInfo(
-                      icon: Icons.event_available_outlined,
-                      text: 'سررسید اولیه: ${invoice.settlementDate}',
-                    ),
-                  if (invoice.paymentDays != null)
-                    _InvoiceInfo(
-                      icon: Icons.schedule,
-                      text: 'مهلت ${invoice.paymentDays} روز',
-                    ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Icon(
-                    invoice.paymentStatus == 'PAID'
-                        ? Icons.check_circle
-                        : invoice.paymentStatus == 'PARTIAL'
-                        ? Icons.timelapse
-                        : Icons.radio_button_unchecked,
-                    color: invoice.paymentStatus == 'PAID'
-                        ? Colors.green
-                        : invoice.paymentStatus == 'PARTIAL'
-                        ? Colors.orange.shade800
-                        : colorScheme.outline,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    invoice.paymentStatus == 'PAID'
-                        ? 'پرداخت شده'
-                        : invoice.paymentStatus == 'PARTIAL'
-                        ? 'پرداخت بخشی'
-                        : 'پرداخت نشده',
-                    style: TextStyle(
-                      fontWeight: invoice.paymentStatus != 'UNPAID'
-                          ? FontWeight.w700
-                          : FontWeight.w400,
-                    ),
-                  ),
-                  if (invoice.paymentStatus == 'PARTIAL') ...[
-                    const Spacer(),
-                    Text(
-                      '${_formatAmount(invoice.remainingAmount)} ریال مانده',
-                      style: TextStyle(
-                        color: Colors.orange.shade900,
-                        fontWeight: FontWeight.w600,
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('${_formatAmount(invoice.remainingAmount)} ریال',
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 3),
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(
+                        paid ? Icons.check_circle : partial
+                            ? Icons.timelapse : Icons.radio_button_unchecked,
+                        size: 14,
+                        color: paid ? const Color(0xFF26743C) : partial
+                            ? const Color(0xFF996000) : scheme.outline,
                       ),
-                    ),
+                      const SizedBox(width: 4),
+                      Text(paid ? 'پرداخت‌شده' : partial
+                          ? 'پرداخت بخشی' : 'پرداخت‌نشده',
+                          style: Theme.of(context).textTheme.labelSmall),
+                    ]),
                   ],
-                ],
-              ),
-              const Divider(height: 12),
-              Row(
-                children: [
-                  const Icon(Icons.payments_outlined, size: 19),
-                  const SizedBox(width: 6),
-                  Text(
-                    invoice.paymentStatus == 'UNPAID'
-                        ? 'مبلغ قابل پرداخت:'
-                        : 'مانده فاکتور:',
-                  ),
-                  const SizedBox(width: 5),
-                  Expanded(
-                    child: Text(
-                      _formatAmount(invoice.remainingAmount),
-                      textAlign: TextAlign.left,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.chevron_left),
-                ],
-              ),
-            ],
+                ),
+                IconButton(
+                  tooltip: _expanded ? 'بستن جزئیات' : 'نمایش جزئیات',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                  icon: Icon(_expanded ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down),
+                ),
+              ],
+            ),
           ),
-        ),
+          if (_expanded) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 7, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Wrap(spacing: 16, runSpacing: 6, children: [
+                    _InvoiceInfo(icon: Icons.event_available_outlined,
+                        text: 'سررسید: ${invoice.settlementDate ?? '-'}'),
+                    _InvoiceInfo(icon: Icons.inventory_2_outlined,
+                        text: '${invoice.itemCount} قلم'),
+                    if (invoice.paymentDays != null)
+                      _InvoiceInfo(icon: Icons.schedule,
+                          text: '${invoice.paymentDays} روز مهلت'),
+                    if (invoice.isDeletedInArsen)
+                      const _InvoiceBadge(text: 'حذف‌شده در آرسن',
+                          icon: Icons.warning_amber_rounded),
+                  ]),
+                  const SizedBox(height: 6),
+                  OutlinedButton.icon(
+                    onPressed: widget.onTap,
+                    icon: const Icon(Icons.open_in_new, size: 17),
+                    label: const Text('جزئیات کامل فاکتور'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
