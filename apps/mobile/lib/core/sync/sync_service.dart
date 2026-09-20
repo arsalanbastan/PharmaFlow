@@ -528,7 +528,6 @@ class SyncService {
           }
         } catch (error, stackTrace) {
           final details = _classifyFailure(error);
-          totalFailed += 1;
 
           _logger.error(
             'CHEQUE pull/merge failed.',
@@ -541,17 +540,23 @@ class SyncService {
             'CHEQUE pull/merge failed.',
           );
 
-          // Connectivity failures still abort so SyncEngine can retry them.
-          // Local cheque merge conflicts are isolated and must not starve
-          // CHEQUE_ATTACHMENT or later independent queue phases.
-          if (details.type == SyncFailureType.serverConnectivity) {
+          // Only a local cheque conflict is isolated. It must not make an
+          // otherwise complete sync fail when no queue work remains.
+          if (details.type == SyncFailureType.localData) {
+            _logger.warning(
+              'Local CHEQUE pull conflict isolated from overall sync result.',
+            );
+          } else {
+            totalFailed += 1;
+
             return SyncServiceResult(
               totalPending: pendingCount + failedCount,
               processed: totalProcessed,
               succeeded: totalSucceeded,
               failed: totalFailed,
               stoppedAtPhase: syncEntityTypeCheque,
-              serverUnavailable: true,
+              serverUnavailable:
+                  details.type == SyncFailureType.serverConnectivity,
               failureDetails: details,
               performedServerCheck: true,
             );
