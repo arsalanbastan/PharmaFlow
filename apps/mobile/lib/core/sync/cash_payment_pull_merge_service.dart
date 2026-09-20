@@ -94,14 +94,23 @@ class CashPaymentPullMergeService {
 
   final int pageLimit;
 
-  Future<CashPaymentPullMergeResult> pullAndMerge() async {
+  Future<CashPaymentPullMergeResult> pullAndMerge() {
+    return _pullAndMerge(fromBeginning: false);
+  }
+
+  Future<CashPaymentPullMergeResult> pullAndMergeFromBeginning() {
+    return _pullAndMerge(fromBeginning: true);
+  }
+
+  Future<CashPaymentPullMergeResult> _pullAndMerge({
+    required bool fromBeginning,
+  }) async {
     final cursorBefore = await _cursorRepository.getByEntityType(
       syncEntityTypeCashPayment,
     );
 
-    var requestCursor = cursorBefore;
-
-    var cursorAfter = cursorBefore;
+    var requestCursor = fromBeginning ? null : cursorBefore;
+    var cursorAfter = fromBeginning ? null : cursorBefore;
 
     var pagesFetched = 0;
     var changesReceived = 0;

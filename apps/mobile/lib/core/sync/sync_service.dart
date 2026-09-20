@@ -798,7 +798,35 @@ class SyncService {
           _logger.info('CASH_PAYMENT_ATTACHMENT pull/merge start');
 
           try {
-            final pullResult = await attachmentPullMergeService.pullAndMerge();
+            late CashPaymentAttachmentPullMergeResult pullResult;
+
+            try {
+              pullResult = await attachmentPullMergeService.pullAndMerge();
+            } on CashPaymentAttachmentMissingParentException catch (error) {
+              final parentRecoveryService = _cashPaymentPullMergeService;
+
+              if (parentRecoveryService == null) {
+                rethrow;
+              }
+
+              _logger.warning(
+                'CASH_PAYMENT_ATTACHMENT parent missing locally. '
+                'Rebuilding CASH_PAYMENT data before retry. '
+                'cashPaymentUuid=${error.cashPaymentUuid} '
+                'attachmentUuid=${error.attachmentUuid}',
+              );
+
+              final recoveryResult = await parentRecoveryService
+                  .pullAndMergeFromBeginning();
+
+              final refreshCallback = onCashPaymentPullMerged;
+
+              if (refreshCallback != null && recoveryResult.changedLocalData) {
+                await refreshCallback(recoveryResult);
+              }
+
+              pullResult = await attachmentPullMergeService.pullAndMerge();
+            }
 
             _logger.info(
               'CASH_PAYMENT_ATTACHMENT pull/merge done: '

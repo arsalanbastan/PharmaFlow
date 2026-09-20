@@ -36,6 +36,20 @@ class CashPaymentAttachmentMergeConflictException
   const CashPaymentAttachmentMergeConflictException(super.message);
 }
 
+class CashPaymentAttachmentMissingParentException
+    extends CashPaymentAttachmentMergeConflictException {
+  const CashPaymentAttachmentMissingParentException({
+    required this.cashPaymentUuid,
+    required this.attachmentUuid,
+  }) : super(
+         'Cash payment server UUID $cashPaymentUuid is missing locally '
+         'while merging attachment $attachmentUuid.',
+       );
+
+  final String cashPaymentUuid;
+  final String attachmentUuid;
+}
+
 class CashPaymentAttachmentPullMergeResult {
   const CashPaymentAttachmentPullMergeResult({
     required this.pagesFetched,
@@ -472,9 +486,9 @@ LIMIT 2
     }
 
     if (rows.isEmpty) {
-      throw CashPaymentAttachmentMergeConflictException(
-        'Cash payment server UUID $cashPaymentUuid is missing locally '
-        'while merging attachment $attachmentUuid.',
+      throw CashPaymentAttachmentMissingParentException(
+        cashPaymentUuid: cashPaymentUuid,
+        attachmentUuid: attachmentUuid,
       );
     }
 
