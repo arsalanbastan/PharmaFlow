@@ -33,6 +33,8 @@ class InvoiceSettlementItem {
     required this.id,
     required this.invoiceNumber,
     required this.invoiceDate,
+    required this.settlementDate,
+    required this.paymentDays,
     required this.factorPayablePrice,
     required this.paidAmount,
     required this.discountAmount,
@@ -42,6 +44,8 @@ class InvoiceSettlementItem {
   final String id;
   final String? invoiceNumber;
   final String? invoiceDate;
+  final String? settlementDate;
+  final int? paymentDays;
   final String factorPayablePrice;
   final String paidAmount;
   final String discountAmount;
@@ -52,6 +56,8 @@ class InvoiceSettlementItem {
       id: _requiredText(json['id'], 'invoice.id'),
       invoiceNumber: _optionalText(json['invoiceNumber']),
       invoiceDate: _optionalText(json['invoiceDate']),
+      settlementDate: _optionalText(json['settlementDate']),
+      paymentDays: int.tryParse(json['paymentDays']?.toString() ?? ''),
       factorPayablePrice: _requiredDecimal(
         json['factorPayablePrice'],
         'factorPayablePrice',

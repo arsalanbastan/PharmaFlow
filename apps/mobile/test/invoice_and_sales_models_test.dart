@@ -11,6 +11,8 @@ void main() {
         'arsenFactorId': 1201,
         'invoiceNumber': 'A-1201',
         'invoiceDate': '1405/06/27',
+        'settlementDate': '1405/08/31',
+        'paymentDays': 65,
         'factorDocType': 1,
         'factorPayablePrice': '1000000',
         'itemCount': 4,
@@ -28,6 +30,8 @@ void main() {
       });
 
       expect(invoice.paymentStatus, 'PARTIAL');
+      expect(invoice.settlementDate, '1405/08/31');
+      expect(invoice.paymentDays, 65);
       expect(invoice.paidAmount, '600000');
       expect(invoice.discountAmount, '100000');
       expect(invoice.remainingAmount, '300000');
@@ -47,6 +51,8 @@ void main() {
               'id': '5a3c8c61-738d-41e4-9daa-5f4f5964b659',
               'invoiceNumber': 'A-1201',
               'invoiceDate': '1405/06/27',
+              'settlementDate': '1405/08/31',
+              'paymentDays': 65,
               'factorPayablePrice': '1000000',
               'paidAmount': '600000',
               'discountAmount': '100000',
@@ -66,6 +72,8 @@ void main() {
 
       expect(preparation.totalRemainingAmount, '300000');
       expect(preparation.invoices, hasLength(1));
+      expect(preparation.invoices.single.settlementDate, '1405/08/31');
+      expect(preparation.invoices.single.paymentDays, 65);
       expect(preparation.bankAccounts.single.displayName, 'ملت — حساب جاری');
     });
   });

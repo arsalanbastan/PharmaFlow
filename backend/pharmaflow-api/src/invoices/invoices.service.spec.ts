@@ -9,6 +9,7 @@ describe('InvoicesService', () => {
       findMany: jest.fn(),
       findUnique: jest.fn(),
     },
+    bankAccount: { findMany: jest.fn() },
   };
   const auditLog = { record: jest.fn() };
 
@@ -78,6 +79,46 @@ describe('InvoicesService', () => {
         },
         skip: 0,
         take: 50,
+      }),
+    );
+  });
+
+  it('preserves original Arsen due date in settlement preview without writes', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    prisma.arsenInvoice.findMany.mockResolvedValue([
+      {
+        id,
+        invoiceNumber: 'INV-1200',
+        invoiceDate: '1405/06/10',
+        settlementDate: '1405/08/14',
+        paymentDays: 65,
+        factorDocType: 1,
+        factorPayablePrice: '12500000',
+        isDeletedInArsen: false,
+        company: {
+          id: '22222222-2222-4222-8222-222222222222',
+          name: 'شرکت تست',
+        },
+        chequeAllocations: [],
+        cashPaymentAllocations: [],
+        discountAllocations: [],
+      },
+    ]);
+    prisma.bankAccount.findMany.mockResolvedValue([]);
+    const preview = await service.prepareSettlement(id);
+    expect(preview.invoices[0]).toEqual(
+      expect.objectContaining({
+        settlementDate: '1405/08/14',
+        paymentDays: 65,
+        remainingAmount: '12500000',
+      }),
+    );
+    expect(prisma.arsenInvoice.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          settlementDate: true,
+          paymentDays: true,
+        }),
       }),
     );
   });

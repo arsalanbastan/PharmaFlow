@@ -15,6 +15,8 @@ class InvoicesPage extends ConsumerStatefulWidget {
 
 class _InvoicesPageState extends ConsumerState<InvoicesPage> {
   final _searchController = TextEditingController();
+  final _dateFromController = TextEditingController();
+  final _dateToController = TextEditingController();
   final List<ManagerInvoiceSummary> _items = [];
   final Set<String> _selectedInvoiceIds = <String>{};
 
@@ -23,6 +25,8 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
 
   String? _error;
   String _query = '';
+  String? _dateFrom;
+  String? _dateTo;
 
   int _page = 1;
   int _totalPages = 1;
@@ -40,6 +44,8 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _dateFromController.dispose();
+    _dateToController.dispose();
     super.dispose();
   }
 
@@ -68,6 +74,8 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
 
       final result = await _repository.getPage(
         query: _query,
+        dateFrom: _dateFrom,
+        dateTo: _dateTo,
         page: requestedPage,
       );
 
@@ -109,21 +117,36 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
 
   Future<void> _search() async {
     FocusScope.of(context).unfocus();
-
+    final from = _dateFromController.text.trim();
+    final to = _dateToController.text.trim();
+    final pattern = RegExp(r'^\d{4}/\d{2}/\d{2}$');
+    if ((from.isNotEmpty && !pattern.hasMatch(from)) ||
+        (to.isNotEmpty && !pattern.hasMatch(to)) ||
+        (from.isNotEmpty && to.isNotEmpty && from.compareTo(to) > 0)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('بازه تاریخ را به شکل ۱۴۰۵/۰۶/۰۱ وارد کنید؛ تاریخ شروع نباید بعد از پایان باشد.'),
+        ),
+      );
+      return;
+    }
     setState(() {
       _query = _searchController.text.trim();
+      _dateFrom = from.isEmpty ? null : from;
+      _dateTo = to.isEmpty ? null : to;
     });
-
     await _load(reset: true);
   }
 
   Future<void> _clearSearch() async {
     _searchController.clear();
-
+    _dateFromController.clear();
+    _dateToController.clear();
     setState(() {
       _query = '';
+      _dateFrom = null;
+      _dateTo = null;
     });
-
     await _load(reset: true);
   }
 
@@ -197,7 +220,7 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('فاکتورها'),
+          title: const Text('فاکتورهای خرید'),
           actions: [
             IconButton(
               tooltip: 'بروزرسانی',
@@ -218,7 +241,8 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
                   labelText: 'جستجو در فاکتورها',
                   hintText: 'شماره فاکتور یا نام شرکت',
                   prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _query.isEmpty
+                  suffixIcon: _query.isEmpty &&
+                          _dateFrom == null && _dateTo == null
                       ? IconButton(
                           tooltip: 'جستجو',
                           onPressed: _search,
@@ -231,6 +255,50 @@ class _InvoicesPageState extends ConsumerState<InvoicesPage> {
                         ),
                   border: const OutlineInputBorder(),
                 ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _dateFromController,
+                      keyboardType: TextInputType.datetime,
+                      textDirection: TextDirection.ltr,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _search(),
+                      decoration: const InputDecoration(
+                        labelText: 'تاریخ فاکتور از',
+                        hintText: '1405/06/01',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _dateToController,
+                      keyboardType: TextInputType.datetime,
+                      textDirection: TextDirection.ltr,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _search(),
+                      decoration: const InputDecoration(
+                        labelText: 'تاریخ فاکتور تا',
+                        hintText: '1405/06/31',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    tooltip: 'اعمال فیلترها',
+                    onPressed: _search,
+                    icon: const Icon(Icons.filter_alt_outlined),
+                  ),
+                ],
               ),
             ),
             if (!_loading && _error == null)
@@ -379,7 +447,7 @@ class _InvoiceCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -421,6 +489,11 @@ class _InvoiceCard extends StatelessWidget {
                     icon: Icons.inventory_2_outlined,
                     text: '${invoice.itemCount} قلم',
                   ),
+                  if (invoice.settlementDate != null)
+                    _InvoiceInfo(
+                      icon: Icons.event_available_outlined,
+                      text: 'سررسید اولیه: ${invoice.settlementDate}',
+                    ),
                   if (invoice.paymentDays != null)
                     _InvoiceInfo(
                       icon: Icons.schedule,
@@ -679,7 +752,7 @@ class _InvoiceDetailsBody extends StatelessWidget {
                   value: invoice.invoiceDate ?? '-',
                 ),
                 _DetailRow(
-                  label: 'تاریخ تسویه',
+                  label: 'سررسید اولیه فاکتور (آرسن)',
                   value: invoice.settlementDate ?? '-',
                 ),
                 _DetailRow(

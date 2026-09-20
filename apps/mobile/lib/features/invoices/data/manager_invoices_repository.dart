@@ -10,6 +10,8 @@ class ManagerInvoicesRepository {
 
   Future<ManagerInvoicePage> getPage({
     String? query,
+    String? dateFrom,
+    String? dateTo,
     int page = 1,
     int pageSize = 50,
   }) async {
@@ -22,6 +24,8 @@ class ManagerInvoicesRepository {
         'pageSize': pageSize.toString(),
         if (normalizedQuery != null && normalizedQuery.isNotEmpty)
           'q': normalizedQuery,
+        if (dateFrom != null && dateFrom.isNotEmpty) 'dateFrom': dateFrom,
+        if (dateTo != null && dateTo.isNotEmpty) 'dateTo': dateTo,
       },
     );
 

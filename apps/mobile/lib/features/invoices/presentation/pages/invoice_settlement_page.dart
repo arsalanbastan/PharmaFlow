@@ -257,6 +257,8 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
+                  const SizedBox(height: 5),
+                  const Text('سررسید اولیه فاکتورهای آرسن با ثبت چک یا پرداخت نقدی تغییر نمی‌کند.'),
                   const Divider(height: 22),
                   ...data.invoices.map(
                     (invoice) => Padding(
@@ -264,8 +266,16 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              'فاکتور ${invoice.invoiceNumber ?? '-'} — ${invoice.invoiceDate ?? '-'}',
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('فاکتور ${invoice.invoiceNumber ?? '-'} — ${invoice.invoiceDate ?? '-'}'),
+                                Text(
+                                  'سررسید اولیه: ${invoice.settlementDate ?? 'نامشخص'}'
+                                  '${invoice.paymentDays == null ? '' : ' — مهلت ${invoice.paymentDays} روز'}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
                             ),
                           ),
                           Text(
