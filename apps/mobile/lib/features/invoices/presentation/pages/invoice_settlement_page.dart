@@ -6,6 +6,7 @@ import '../../../../shared/widgets/date_picker/pharmaflow_date_picker.dart';
 import '../../../cheques/presentation/utils/cheque_input_formatters.dart';
 import '../../data/manager_invoices_repository.dart';
 import '../../domain/manager_invoice_settlement.dart';
+import '../../domain/invoice_maturity_planner.dart';
 
 class InvoiceSettlementPage extends StatefulWidget {
   const InvoiceSettlementPage({
@@ -35,6 +36,7 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
   bool _useCheque = false;
   bool _useCash = false;
   bool _saving = false;
+  int _targetDelayDays = 20;
   String? _chequeBankAccountId;
   String? _cashBankAccountId;
   String _cashPaymentMethod = 'BANK_DEPOSIT';
@@ -228,6 +230,7 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
   }
 
   Widget _buildForm(InvoiceSettlementPreparation data) {
+    final maturityPlan = InvoiceMaturityPlan.fromInvoices(data.invoices);
     final remaining = double.parse(data.totalRemainingAmount);
     final afterSettlement = remaining - _enteredTotal;
 
@@ -289,6 +292,17 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
               ),
             ),
           ),
+          const SizedBox(height: 8),
+          if (maturityPlan == null)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(14),
+                child: Text('رأس قابل محاسبه نیست: سررسید اولیه یا مانده '
+                    'یک یا چند فاکتور نامعتبر یا نامشخص است.'),
+              ),
+            )
+          else
+            _buildMaturityPlanner(maturityPlan),
           const SizedBox(height: 8),
           SwitchListTile(
             value: _useCheque,
@@ -382,6 +396,104 @@ class _InvoiceSettlementPageState extends State<InvoiceSettlementPage> {
           ),
           const SizedBox(height: 24),
         ],
+      ),
+    );
+  }
+
+  Widget _buildMaturityPlanner(InvoiceMaturityPlan plan) {
+    final minimumCash = plan.minimumCashForDelayDays(
+      _targetDelayDays,
+      _cashDate,
+    );
+    final chequeAmount = _useCheque
+        ? InvoiceMaturityPlan.parseRials(_chequeAmountController.text) ??
+            BigInt.zero
+        : BigInt.zero;
+    final cashAmount = _useCash
+        ? InvoiceMaturityPlan.parseRials(_cashAmountController.text) ??
+            BigInt.zero
+        : BigInt.zero;
+    final discount = InvoiceMaturityPlan.parseRials(
+      _discountController.text.isEmpty ? '0' : _discountController.text,
+    );
+    final preview = discount == BigInt.zero
+        ? plan.previewFullSettlement(
+            chequeRials: chequeAmount,
+            chequeDueDate: _chequeDueDate,
+            cashRials: cashAmount,
+            cashDate: _cashDate,
+          )
+        : null;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'برآورد رأس پرداخت (فقط پیش‌نمایش)',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text('رأس موزون سررسید اولیه مانده‌ها: '
+                '${plan.originalMaturityJalali}'),
+            Text('جمع مانده مبنای محاسبه: '
+                '${InvoiceMaturityPlan.formatRials(plan.totalRials)} ریال'),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Expanded(child: Text('تعویق فرضی چک نسبت به رأس اولیه')),
+                IconButton(
+                  tooltip: 'یک روز کمتر',
+                  onPressed: _targetDelayDays == 0
+                      ? null
+                      : () => setState(() => _targetDelayDays--),
+                  icon: const Icon(Icons.remove_circle_outline),
+                ),
+                Text('$_targetDelayDays روز'),
+                IconButton(
+                  tooltip: 'یک روز بیشتر',
+                  onPressed: _targetDelayDays >= 365
+                      ? null
+                      : () => setState(() => _targetDelayDays++),
+                  icon: const Icon(Icons.add_circle_outline),
+                ),
+              ],
+            ),
+            Text('تاریخ چک فرضی: '
+                '${plan.targetChequeJalali(_targetDelayDays)}'),
+            Text('تاریخ نقد فرضی: ${_formatJalali(_cashDate)}'),
+            const SizedBox(height: 5),
+            Text(
+              minimumCash == null
+                  ? 'با تاریخ نقد انتخابی، هم‌تراز کردن رأس با این چک '
+                      'از طریق پرداخت نقدی ممکن نیست.'
+                  : 'حداقل نقدی برای هم‌تراز کردن رأس: '
+                      '${InvoiceMaturityPlan.formatRials(minimumCash)} ریال '
+                      '(باقی‌مانده با یک چک)',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const Divider(height: 18),
+            Text(
+              preview == null
+                  ? 'برای مقایسه رأس پرداخت واقعی، تسویه کامل بدون تخفیف '
+                      'را با مبالغ چک/نقد و تاریخ سررسید چک وارد کنید.'
+                  : 'رأس پرداخت واردشده: ${preview.actualMaturityJalali} '
+                      '— اختلاف با رأس اولیه: '
+                      '${preview.formattedDayDifference} روز',
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'این فقط مقایسه ریاضی روی مانده فعلی است؛ '
+              'توافق با شرکت، تخفیف و اقساط قبلی در این برآورد لحاظ نمی‌شود. '
+              'هیچ تاریخ یا مبلغی خودکار ثبت یا تغییر نمی‌کند.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
       ),
     );
   }
