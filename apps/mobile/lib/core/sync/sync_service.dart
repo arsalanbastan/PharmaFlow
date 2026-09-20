@@ -816,12 +816,27 @@ class SyncService {
                 'attachmentUuid=${error.attachmentUuid}',
               );
 
-              final recoveryResult = await parentRecoveryService
-                  .pullAndMergeFromBeginning();
+              CashPaymentPullMergeResult? recoveryResult;
+
+              try {
+                recoveryResult = await parentRecoveryService
+                    .pullAndMergeFromBeginning();
+              } on CashPaymentMissingDependencyException catch (error) {
+                _logger.warning(
+                  'CASH_PAYMENT historical parent cannot be rebuilt because '
+                  'its dependency is absent locally. The orphan attachment '
+                  'will be skipped. '
+                  'dependency=${error.dependencyName} '
+                  'dependencyUuid=${error.dependencyUuid} '
+                  'cashPaymentUuid=${error.paymentUuid}',
+                );
+              }
 
               final refreshCallback = onCashPaymentPullMerged;
 
-              if (refreshCallback != null && recoveryResult.changedLocalData) {
+              if (refreshCallback != null &&
+                  recoveryResult != null &&
+                  recoveryResult.changedLocalData) {
                 await refreshCallback(recoveryResult);
               }
 

@@ -35,6 +35,22 @@ class CashPaymentMergeConflictException extends CashPaymentPullMergeException {
   const CashPaymentMergeConflictException(super.message);
 }
 
+class CashPaymentMissingDependencyException
+    extends CashPaymentMergeConflictException {
+  const CashPaymentMissingDependencyException({
+    required this.dependencyName,
+    required this.dependencyUuid,
+    required this.paymentUuid,
+  }) : super(
+         '$dependencyName server UUID $dependencyUuid is missing locally '
+         'while merging cash payment $paymentUuid.',
+       );
+
+  final String dependencyName;
+  final String dependencyUuid;
+  final String paymentUuid;
+}
+
 class CashPaymentPullMergeResult {
   const CashPaymentPullMergeResult({
     required this.pagesFetched,
@@ -453,9 +469,10 @@ LIMIT 2
     }
 
     if (rows.isEmpty) {
-      throw CashPaymentMergeConflictException(
-        '$dependencyName server UUID $serverUuid is missing locally '
-        'while merging cash payment $paymentUuid.',
+      throw CashPaymentMissingDependencyException(
+        dependencyName: dependencyName,
+        dependencyUuid: serverUuid,
+        paymentUuid: paymentUuid,
       );
     }
 
