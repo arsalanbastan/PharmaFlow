@@ -825,7 +825,9 @@ class SyncService {
                 await refreshCallback(recoveryResult);
               }
 
-              pullResult = await attachmentPullMergeService.pullAndMerge();
+              pullResult = await attachmentPullMergeService.pullAndMerge(
+                skipMissingParents: true,
+              );
             }
 
             _logger.info(

@@ -110,7 +110,9 @@ class CashPaymentAttachmentPullMergeService {
 
   final int pageLimit;
 
-  Future<CashPaymentAttachmentPullMergeResult> pullAndMerge() async {
+  Future<CashPaymentAttachmentPullMergeResult> pullAndMerge({
+    bool skipMissingParents = false,
+  }) async {
     final cursorBefore = await _cursorRepository.getByEntityType(
       syncEntityTypeCashPaymentAttachment,
     );
@@ -183,6 +185,7 @@ class CashPaymentAttachmentPullMergeService {
       final localIdsByUuid = <String, int?>{};
       final parentIdsByUuid = <String, int>{};
       final protectedUuids = <String>{};
+      final missingParentUuids = <String>{};
 
       // ------------------------------------------------------
       // PRE-FLIGHT
@@ -215,11 +218,25 @@ class CashPaymentAttachmentPullMergeService {
           continue;
         }
 
-        final parentLocalId = _requireCashPaymentLocalId(
-          db,
-          cashPaymentUuid: change.cashPaymentId,
-          attachmentUuid: change.id,
-        );
+        late final int parentLocalId;
+
+        try {
+          parentLocalId = _requireCashPaymentLocalId(
+            db,
+            cashPaymentUuid: change.cashPaymentId,
+            attachmentUuid: change.id,
+          );
+        } on CashPaymentAttachmentMissingParentException {
+          if (!skipMissingParents) {
+            rethrow;
+          }
+
+          // Parent recovery has already run and the parent is absent from
+          // server history. Skip this orphan while still advancing the
+          // attachment cursor so it cannot block future synchronization.
+          missingParentUuids.add(change.id);
+          continue;
+        }
 
         if (localId != null) {
           final existingParentId = _existingParentLocalId(db, localId);
@@ -241,7 +258,8 @@ class CashPaymentAttachmentPullMergeService {
       // ------------------------------------------------------
 
       for (final change in changes) {
-        if (protectedUuids.contains(change.id)) {
+        if (protectedUuids.contains(change.id) ||
+            missingParentUuids.contains(change.id)) {
           continue;
         }
         final localId = localIdsByUuid[change.id];
