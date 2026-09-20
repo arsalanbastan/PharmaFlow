@@ -152,7 +152,7 @@ void main() {
   );
 
   test(
-    'CHEQUE failure gates CASH_PAYMENT even when cash queue item is older',
+    'CHEQUE failure does not gate independent CASH_PAYMENT work',
     () async {
       final db = sqlite3.openInMemory();
 
@@ -187,7 +187,7 @@ void main() {
         /*
          * This CHEQUE queue item is newer than CASH_PAYMENT but deliberately
          * references a missing local cheque. Dependency phases must still
-         * process CHEQUE first and leave CASH_PAYMENT untouched.
+         * process CHEQUE first, report its failure, and continue independent CASH_PAYMENT work.
          */
         await queueRepository.add(
           SyncQueueItem(
@@ -211,7 +211,7 @@ void main() {
         final result = await service.sync();
 
         expect(result.failed, 1);
-        expect(fakeCashRemote.operations, isEmpty);
+        expect(fakeCashRemote.operations, ['CREATE']);
 
         final processable = await queueRepository.getProcessable();
 
@@ -219,8 +219,7 @@ void main() {
             .where((item) => item.entityType == syncEntityTypeCashPayment)
             .toList();
 
-        expect(cashItems, hasLength(1));
-        expect(cashItems.single.status, SyncStatus.pending);
+        expect(cashItems, isEmpty);
       } finally {
         DatabaseService.instance.close();
       }
