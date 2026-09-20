@@ -257,6 +257,49 @@ void main() {
     },
   );
 
+  test(
+    'stale DELETE without local intent is discarded without remote removal',
+    () async {
+      final bytes = Uint8List.fromList(<int>[21, 22, 23, 24]);
+
+      final attachmentId = await _insertAttachment(
+        repository: localAttachmentRepository,
+        directory: tempDirectory,
+        bytes: bytes,
+      );
+
+      final createItem = (await queueRepository.getPending()).singleWhere(
+        (item) =>
+            item.entityType == syncEntityTypeChequeAttachment &&
+            item.entityId == attachmentId &&
+            item.operation == SyncOperation.create,
+      );
+      await queueRepository.markSynced(createItem.id!);
+
+      final staleDeleteId = await queueRepository.add(
+        SyncQueueItem(
+          entityType: syncEntityTypeChequeAttachment,
+          entityId: attachmentId,
+          operation: SyncOperation.delete,
+          status: SyncStatus.pending,
+          retryCount: 0,
+          createdAt: DateTime.now().toUtc(),
+        ),
+      );
+      final staleDelete = await queueRepository.findById(staleDeleteId);
+      expect(staleDelete, isNotNull);
+
+      final result = await service.push(staleDelete!);
+
+      expect(result, isTrue);
+      expect(remoteRepository.deleteCalls, 0);
+      expect(await queueRepository.findById(staleDeleteId), isNull);
+
+      final attachment = await localAttachmentRepository.findById(attachmentId);
+      expect(attachment, isNotNull);
+      expect(attachment!.deleteRequestedAt, isNull);
+    },
+  );
   test('CREATE rejects source file mutation before network upload', () async {
     final originalBytes = Uint8List.fromList(<int>[10, 11, 12, 13]);
 

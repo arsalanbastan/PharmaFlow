@@ -228,7 +228,14 @@ class ChequeAttachmentPushService {
     required SyncQueueItem item,
     required ChequeAttachment attachment,
   }) async {
-    final attachmentUuid = _requireUuid(
+        // Stale attachment DELETE queue item: a later pull/reconciliation has
+    // restored the attachment as active, so the old local delete intent no
+    // longer exists. Discard only the queue row and never call remote DELETE.
+    if (attachment.deleteRequestedAt == null) {
+      await _syncQueueRepository.deleteQueueItem(item.id!);
+      return;
+    }
+final attachmentUuid = _requireUuid(
       attachment.serverUuid,
       'Attachment local id ${attachment.id} has no server UUID for DELETE.',
     );
