@@ -184,6 +184,7 @@ export class CashPaymentAttachmentStorageService {
         secretAccessKey,
       },
       maxAttempts: 4,
+      requestChecksumCalculation: 'WHEN_REQUIRED',
     });
   }
 

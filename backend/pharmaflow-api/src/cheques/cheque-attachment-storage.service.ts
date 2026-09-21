@@ -184,6 +184,7 @@ export class ChequeAttachmentStorageService {
         secretAccessKey,
       },
       maxAttempts: 4,
+      requestChecksumCalculation: 'WHEN_REQUIRED',
     });
   }
 
