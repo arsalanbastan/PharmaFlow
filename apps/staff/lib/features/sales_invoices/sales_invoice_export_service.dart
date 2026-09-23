@@ -12,8 +12,8 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 
-import '../../domain/sales_invoice.dart';
-import '../../../cheques/presentation/utils/cheque_text_utils.dart';
+import 'sales_invoice.dart';
+import 'amount_words.dart';
 
 class SalesInvoiceExportService {
   const SalesInvoiceExportService();

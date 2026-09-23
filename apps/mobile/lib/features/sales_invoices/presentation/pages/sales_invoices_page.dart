@@ -20,6 +20,7 @@ import '../../../cheques/presentation/utils/cheque_text_utils.dart';
 import '../../../settings/presentation/providers/communication_settings_provider.dart';
 import '../../data/sales_invoices_repository.dart';
 import '../../domain/sales_invoice.dart';
+import '../../domain/catalog_item_details.dart';
 import '../services/sales_invoice_export_service.dart';
 
 class SalesInvoicesPage extends ConsumerStatefulWidget {
@@ -276,10 +277,32 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
   final _buyerPhone = TextEditingController();
   final _buyerAddress = TextEditingController();
   final _search = TextEditingController();
+  final _searchFieldKey = GlobalKey();
+  void _showSearchAboveKeyboard() {
+    Future<void>.delayed(const Duration(milliseconds: 280), () {
+      final target = _searchFieldKey.currentContext;
+      if (mounted && target != null) {
+        Scrollable.ensureVisible(target, alignment: 0.1,
+            duration: const Duration(milliseconds: 220));
+      }
+    });
+  }
   final _invoiceDiscount = TextEditingController();
   final _notes = TextEditingController();
   final List<_SalesDraftLine> _lines = [];
   List<ManagerCatalogSummary> _suggestions = const [];
+  CatalogSortField _catalogSort = CatalogSortField.relevance;
+  bool _sortDescending = false;
+  List<ManagerCatalogSummary> get _sortedSuggestions => sortCatalogMatches(
+    _suggestions, field: _catalogSort, descending: _sortDescending,
+    name: (item) => item.displayName, shape: (item) => item.shapeName,
+    alternateName: (item) => item.genericName);
+  void _toggleCatalogSort(CatalogSortField field) {
+    setState(() {
+      if (_catalogSort == field) { _sortDescending = !_sortDescending; }
+      else { _catalogSort = field; _sortDescending = false; }
+    });
+  }
   Timer? _debounce;
   bool _searching = false;
   bool _saving = false;
@@ -328,13 +351,27 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
     _debounce = Timer(const Duration(milliseconds: 350), () async {
       setState(() => _searching = true);
       try {
-        final result = await _catalog.getPage(query: query, active: 'ACTIVE');
-        if (mounted)
-          setState(() => _suggestions = result.items.take(12).toList());
+        final matches = <ManagerCatalogSummary>[];
+        var page = 1;
+        while (true) {
+          final result = await _catalog.getPage(
+            query: query, active: 'ACTIVE', page: page, pageSize: 100);
+          if (!mounted || _search.text.trim() != query) return;
+          matches.addAll(result.items);
+          if (page >= result.totalPages) break;
+          page++;
+        }
+        if (mounted && _search.text.trim() == query) {
+          setState(() => _suggestions = matches);
+        }
       } catch (_) {
-        if (mounted) setState(() => _suggestions = const []);
+        if (mounted && _search.text.trim() == query) {
+          setState(() => _suggestions = const []);
+        }
       } finally {
-        if (mounted) setState(() => _searching = false);
+        if (mounted && _search.text.trim() == query) {
+          setState(() => _searching = false);
+        }
       }
     });
   }
@@ -459,9 +496,11 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
         data: compactTheme,
         child: Scaffold(
           appBar: AppBar(title: const Text('صدور فاکتور فروش')),
+          resizeToAvoidBottomInset: true,
           body: Form(
             key: _formKey,
             child: ListView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: const EdgeInsets.all(10),
               children: [
                 _InvoiceFormSection(
@@ -522,6 +561,8 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
                   icon: Icons.inventory_2_outlined,
                   children: [
               TextField(
+                key: _searchFieldKey,
+                onTap: _showSearchAboveKeyboard,
                 controller: _search,
                 decoration: InputDecoration(
                   labelText: 'جستجو و افزودن دارو / کالا',
@@ -543,19 +584,33 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(
-                    children: _suggestions
-                        .map(
-                          (item) => ListTile(
-                            dense: true,
-                            title: Text(item.displayName),
-                            subtitle: Text(
-                              '${item.category == 'DRUG' ? 'دارو' : 'کالا'} • قیمت فروش: ${_money(item.salesPrice ?? '0')} ریال',
-                            ),
-                            trailing: const Icon(Icons.add_circle_outline),
-                            onTap: () => _addItem(item),
-                          ),
-                        )
-                        .toList(growable: false),
+                    children: [
+                      Row(children: [
+                        TextButton(onPressed: () => _toggleCatalogSort(CatalogSortField.relevance), child: const Text('ارتباط')),
+                        TextButton(onPressed: () => _toggleCatalogSort(CatalogSortField.dose), child: Text('دوز/حجم ${_catalogSort == CatalogSortField.dose ? (_sortDescending ? '↓' : '↑') : ''}')),
+                        TextButton(onPressed: () => _toggleCatalogSort(CatalogSortField.shape), child: Text('شکل ${_catalogSort == CatalogSortField.shape ? (_sortDescending ? '↓' : '↑') : ''}')),
+                      ]),
+                      SizedBox(
+                        height: 260,
+                        child: ListView.builder(
+                          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                          itemCount: _sortedSuggestions.length,
+                          itemBuilder: (context, index) {
+                            final item = _sortedSuggestions[index];
+                            return ListTile(
+                              dense: true,
+                              title: Text(item.displayName),
+                              subtitle: Text(
+                                '${catalogItemDetails(category: item.category, name: item.displayName, alternateName: item.genericName, shape: item.shapeName, unit: item.unit, packetQuantity: item.packetQuantity)}\nقیمت فروش: ${_money(item.salesPrice ?? '0')} ریال',
+                              ),
+                              isThreeLine: true,
+                              trailing: const Icon(Icons.add_circle_outline),
+                              onTap: () => _addItem(item),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               const SizedBox(height: 10),
@@ -722,6 +777,7 @@ class _SalesLineDialog extends StatefulWidget {
 
 class _SalesLineDialogState extends State<_SalesLineDialog> {
   late final TextEditingController _quantityController;
+  final _quantityFocus = FocusNode();
   late final TextEditingController _priceController;
   late final TextEditingController _discountController;
 
@@ -732,23 +788,33 @@ class _SalesLineDialogState extends State<_SalesLineDialog> {
       text: widget.initial == null ? '1' : _quantity(widget.initial!.quantity),
     );
     _priceController = TextEditingController(
-      text: _plainAmount(
+      text: _money(_plainAmount(
         widget.initial?.unitPrice ??
             double.tryParse(widget.item.salesPrice ?? '') ??
             0,
-      ),
+      )),
     );
     _discountController = TextEditingController(
       text: _plainAmount(widget.initial?.discount ?? 0),
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _quantityFocus.requestFocus();
+    });
   }
 
   @override
   void dispose() {
+    _quantityFocus.dispose();
     _quantityController.dispose();
     _priceController.dispose();
     _discountController.dispose();
     super.dispose();
+  }
+
+  void _changeQuantity(int delta) {
+    final current = double.tryParse(_quantityController.text) ?? 1;
+    _quantityController.text = _quantity((current + delta).clamp(1, double.infinity).toDouble());
+    _quantityController.selection = TextSelection.collapsed(offset: _quantityController.text.length);
   }
 
   @override
@@ -759,13 +825,19 @@ class _SalesLineDialogState extends State<_SalesLineDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
+            Row(children: [
+              IconButton(icon: const Icon(Icons.add), tooltip: 'افزایش تعداد', onPressed: () => _changeQuantity(1)),
+              Expanded(child: TextField(
               controller: _quantityController,
+              focusNode: _quantityFocus,
+              autofocus: true,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
               decoration: const InputDecoration(labelText: 'تعداد'),
-            ),
+              )),
+              IconButton(icon: const Icon(Icons.remove), tooltip: 'کاهش تعداد', onPressed: () => _changeQuantity(-1)),
+            ]),
             TextField(
               controller: _priceController,
               keyboardType: TextInputType.number,
@@ -775,6 +847,11 @@ class _SalesLineDialogState extends State<_SalesLineDialog> {
               decoration: const InputDecoration(
                 labelText: 'قیمت واحد (قابل ویرایش)',
               ),
+              onChanged: (_) => setState(() {}),
+            ),
+            Text(
+              amountToPersianWords(_parseAmount(_priceController.text).round()) ?? 'صفر تومان',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             TextField(
               controller: _discountController,
@@ -1003,12 +1080,12 @@ class _SalesInvoiceDocument extends StatelessWidget {
             const SizedBox(height: 6),
             Table(
               border: TableBorder.all(color: Colors.black54),
-              columnWidths: const {0: FlexColumnWidth(2), 1: FlexColumnWidth(3)},
+              columnWidths: const {0: FlexColumnWidth(3), 1: FlexColumnWidth(2)},
               children: [
-                _tableRow([_jalali(invoice.issueDate), 'تاریخ فاکتور:']),
-                _tableRow([invoice.invoiceNumber ?? '-', 'شماره فاکتور:']),
-                _tableRow(['فروش دستی', 'نوع نسخه:']),
-                _tableRow([invoice.buyerName, 'نام:']),
+                _tableRow(['تاریخ فاکتور:', _jalali(invoice.issueDate)]),
+                _tableRow(['شماره فاکتور:', invoice.invoiceNumber ?? '-']),
+                _tableRow(['نوع نسخه:', 'فروش دستی']),
+                _tableRow(['نام و نام خانوادگی:', invoice.buyerName]),
               ],
             ),
             Table(
@@ -1037,7 +1114,7 @@ class _SalesInvoiceDocument extends StatelessWidget {
               decoration: BoxDecoration(border: Border.all(color: Colors.black87)),
               child: Column(
                 children: [
-                  _totalLine('قابل پرداخت شد', invoice.payableAmount, bold: true),
+                  _totalLine('قابل پرداخت', invoice.payableAmount, bold: true),
                   if (amountToPersianWords(
                         double.parse(invoice.payableAmount).round(),
                       ) !=

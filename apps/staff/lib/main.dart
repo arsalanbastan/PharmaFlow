@@ -11,6 +11,7 @@ import 'core/update/staff_app_version.dart';
 import 'core/update/staff_update_runner.dart';
 import 'features/orders/presentation/staff_order_form_page.dart';
 import 'features/orders/presentation/staff_orders_dashboard.dart';
+import 'features/sales_invoices/staff_sales_page.dart';
 import 'core/auth/staff_login_page.dart';
 
 void main() {
@@ -363,6 +364,7 @@ class _StaffHomePageState extends State<StaffHomePage> {
         child: StaffOrdersDashboard(key: _dashboardKey, user: widget.user),
       ),
       StaffOrderFormPage(embedded: true, onOrderCreated: _onOrderCreated),
+      const StaffSalesPage(),
     ];
 
     return Directionality(
@@ -375,7 +377,7 @@ class _StaffHomePageState extends State<StaffHomePage> {
               ? null
               : AppBar(
                   centerTitle: true,
-                  title: const Text('ثبت درخواست جدید'),
+                  title: Text(_selectedIndex == 1 ? 'ثبت درخواست جدید' : 'فاکتورهای فروش'),
                 ),
           body: IndexedStack(index: _selectedIndex, children: pages),
           bottomNavigationBar: SafeArea(
@@ -461,6 +463,13 @@ class _StaffBottomMenu extends StatelessWidget {
               label: 'ثبت درخواست',
               selected: selectedIndex == 1,
               onTap: () => onSelect(1),
+            ),
+            _StaffMenuButton(
+              icon: Icons.receipt_long_outlined,
+              selectedIcon: Icons.receipt_long,
+              label: 'فاکتور فروش',
+              selected: selectedIndex == 2,
+              onTap: () => onSelect(2),
             ),
             if (showUpdate)
               _StaffMenuButton(
