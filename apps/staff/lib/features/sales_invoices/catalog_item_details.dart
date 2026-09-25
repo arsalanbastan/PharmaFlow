@@ -4,6 +4,7 @@ String catalogItemDetails({
   required String category,
   required String name,
   String? alternateName,
+  String? brand,
   String? shape,
   String? unit,
   int? packetQuantity,
@@ -11,6 +12,10 @@ String catalogItemDetails({
   final details = <String>[];
   if (category == 'DRUG' && shape != null && shape.trim().isNotEmpty) {
     details.add('شکل: ${shape.trim()}');
+  }
+  if (brand != null && brand.trim().isNotEmpty &&
+      !name.contains(brand.trim())) {
+    details.add('برند: ${brand.trim()}');
   }
 
   final names = [name, ?alternateName];

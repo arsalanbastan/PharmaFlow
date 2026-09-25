@@ -136,10 +136,7 @@ export class SalesInvoicesService {
   }
 
   async create(dto: CreateSalesInvoiceDto) {
-    const buyerName = dto.buyerName.trim();
-    if (buyerName.length === 0) {
-      throw new BadRequestException('buyerName is required.');
-    }
+    const buyerName = dto.buyerName?.trim() ?? '';
 
     const catalogIds = dto.items.map((item) => item.catalogItemId);
     if (new Set(catalogIds).size !== catalogIds.length) {

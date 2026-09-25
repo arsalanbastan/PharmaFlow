@@ -203,6 +203,42 @@ describe('CatalogService', () => {
     );
   });
 
+  it('filters dose, shape and brand tokens in any order', async () => {
+    prisma.arsenCatalogItem.findMany.mockResolvedValue([
+      row({ id: '11111111-1111-4111-8111-111111111111',
+        persianName: 'استامینوفن ۳۲۵ میلی گرم', shapeName: 'شیاف',
+        persianBrandName: 'عبیدی' }),
+      row({ id: '22222222-2222-4222-8222-222222222222',
+        persianName: 'استامینوفن ۳۲۵ میلی گرم', shapeName: 'قرص',
+        persianBrandName: 'عبیدی' }),
+      row({ id: '33333333-3333-4333-8333-333333333333',
+        persianName: 'استامینوفن ۳۲۵ میلی گرم', shapeName: 'شیاف',
+        persianBrandName: 'شرکت دیگر' }),
+      row({ id: '44444444-4444-4444-8444-444444444444',
+        persianName: 'استامینوفن ۱۳۲۵ میلی گرم', shapeName: 'شیاف',
+        persianBrandName: 'عبیدی' }),
+    ]);
+
+    for (const q of ['شیاف استامینوفن 325 عبیدی',
+      'استامینوفن ۳۲۵ شیاف عبیدی']) {
+      const result = await service.findAll({ q });
+      expect(result.items.map((item) => item.id)).toEqual([
+        '11111111-1111-4111-8111-111111111111',
+      ]);
+    }
+    expect(prisma.arsenCatalogItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ AND: expect.arrayContaining([
+        expect.objectContaining({ OR: expect.arrayContaining([
+          expect.objectContaining({ shapeName: expect.anything() }),
+        ]) }),
+      ]) }) }),
+    );
+    const searchWhere = prisma.arsenCatalogItem.findMany.mock.calls[0][0].where;
+    expect(JSON.stringify(searchWhere, (_key, value) =>
+      typeof value === 'bigint' ? value.toString() : value))
+      .toContain('۳۲۵');
+  });
+
   it('normalizes Arabic and Persian Yeh and Kaf during smart matching', async () => {
     prisma.arsenCatalogItem.findMany
       .mockResolvedValue([

@@ -412,6 +412,18 @@ export class CatalogService {
             mode: 'insensitive',
           },
         },
+        {
+          shapeName: {
+            contains: variant,
+            mode: 'insensitive',
+          },
+        },
+        {
+          unit: {
+            contains: variant,
+            mode: 'insensitive',
+          },
+        },
       );
     }
 
@@ -434,6 +446,13 @@ export class CatalogService {
     token: string,
   ): string[] {
     const variants = new Set<string>([token]);
+
+    if (/[0-9]/.test(token)) {
+      variants.add(token.replace(/[0-9]/g, (digit) =>
+        String.fromCharCode(0x06f0 + Number(digit))));
+      variants.add(token.replace(/[0-9]/g, (digit) =>
+        String.fromCharCode(0x0660 + Number(digit))));
+    }
 
     const replacements = [
       ['ی', 'ي'],
@@ -461,7 +480,9 @@ export class CatalogService {
 
     return tokens.every((token) =>
       fields.some((field) =>
-        field.text.includes(token),
+        /^\d+$/.test(token)
+          ? new RegExp(`(^|[^0-9])${token}([^0-9]|$)`).test(field.text)
+          : field.text.includes(token),
       ),
     );
   }
@@ -590,6 +611,14 @@ export class CatalogService {
           row.brandName ?? '',
         ),
         weight: 80,
+      },
+      {
+        text: this.normalizeSearchText(row.shapeName ?? ''),
+        weight: 55,
+      },
+      {
+        text: this.normalizeSearchText(row.unit ?? ''),
+        weight: 20,
       },
       {
         text: row.arsenDrugId.toString(),

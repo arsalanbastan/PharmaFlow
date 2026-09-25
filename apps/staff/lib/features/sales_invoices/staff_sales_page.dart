@@ -35,21 +35,28 @@ class _StaffSalesPageState extends State<StaffSalesPage> {
   SalesInvoicePage? invoices;
   String? error;
   bool loading = false;
+  Timer? invoiceSearchDebounce;
   @override
   void initState() { super.initState(); load(); }
   @override
-  void dispose() { api.close(); search.dispose(); super.dispose(); }
+  void dispose() { invoiceSearchDebounce?.cancel(); api.close(); search.dispose(); super.dispose(); }
   Future<void> load() async {
+    final requestedQuery = search.text.trim();
     setState(() { loading = true; error = null; });
-    try { final result = await api.list(query: search.text.trim()); if (mounted) setState(() => invoices = result); }
-    catch (e) { if (mounted) setState(() => error = '$e'); }
-    finally { if (mounted) setState(() => loading = false); }
+    try { final result = await api.list(query: requestedQuery);
+      if (mounted && search.text.trim() == requestedQuery) setState(() => invoices = result); }
+    catch (e) { if (mounted && search.text.trim() == requestedQuery) setState(() => error = '$e'); }
+    finally { if (mounted && search.text.trim() == requestedQuery) setState(() => loading = false); }
   }
   @override
   Widget build(BuildContext context) => Column(children: [
     Padding(padding: const EdgeInsets.all(12), child: Row(children: [
       Expanded(child: TextField(controller: search, decoration: const InputDecoration(
           labelText: 'جستجو در فاکتورهای صادرشده', prefixIcon: Icon(Icons.search)),
+          onChanged: (_) {
+            invoiceSearchDebounce?.cancel();
+            invoiceSearchDebounce = Timer(const Duration(milliseconds: 300), load);
+          },
           onSubmitted: (_) => load())),
       IconButton(onPressed: load, icon: const Icon(Icons.refresh), tooltip: 'بروزرسانی'),
     ])),
@@ -128,8 +135,9 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   void search() {
     debounce?.cancel();
     final text = query.text.trim();
-    if (text.length < 2) { setState(() => suggestions = []); return; }
-    debounce = Timer(const Duration(milliseconds: 350), () async {
+    if (suggestions.isNotEmpty) setState(() => suggestions = []);
+    if (text.length < 2) return;
+    debounce = Timer(const Duration(milliseconds: 220), () async {
       try { final result = await widget.api.search(text); if (mounted && query.text.trim() == text) setState(() => suggestions = result); }
       catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))); }
     });
@@ -145,12 +153,13 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
       query.clear(); suggestions = []; });
   }
   Future<void> save() async {
-    if (buyer.text.trim().isEmpty || lines.isEmpty) { notify('نام خریدار و حداقل یک قلم لازم است.'); return; }
+    if (lines.isEmpty) { notify('حداقل یک قلم لازم است.'); return; }
     if (amount(discount.text) > subtotal) { notify('تخفیف از جمع فاکتور بیشتر است.'); return; }
     setState(() => saving = true);
     try {
       final invoice = await widget.api.create({
-        'issueDate': date.toDateTime().toIso8601String(), 'buyerName': buyer.text.trim(),
+        'issueDate': date.toDateTime().toIso8601String(),
+        if (buyer.text.trim().isNotEmpty) 'buyerName': buyer.text.trim(),
         if (nationalId.text.trim().isNotEmpty) 'buyerNationalId': nationalId.text.trim(),
         if (phone.text.trim().isNotEmpty) 'buyerPhone': phone.text.trim(),
         if (address.text.trim().isNotEmpty) 'buyerAddress': address.text.trim(),
@@ -169,7 +178,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('صدور فاکتور فروش')),
       resizeToAvoidBottomInset: true,
       body: ListView(keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, padding: const EdgeInsets.all(12), children: [
-        TextField(controller: buyer, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی خریدار')),
+        TextField(controller: buyer, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی خریدار (اختیاری)')),
         TextField(controller: nationalId, decoration: const InputDecoration(labelText: 'کد/شناسه ملی (اختیاری)')),
         TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'تلفن (اختیاری)')),
         TextField(controller: address, decoration: const InputDecoration(labelText: 'نشانی خریدار (اختیاری)')),
@@ -251,6 +260,8 @@ class _LineDialogState extends State<_LineDialog> {
         Row(children: [IconButton(onPressed: () => adjust(1), icon: const Icon(Icons.add)),
           Expanded(child: TextField(controller: quantity, focusNode: quantityFocus, autofocus: true,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => addLine(),
               decoration: const InputDecoration(labelText: 'تعداد'))),
           IconButton(onPressed: () => adjust(-1), icon: const Icon(Icons.remove))]),
         TextField(controller: price, keyboardType: TextInputType.number,
@@ -260,12 +271,14 @@ class _LineDialogState extends State<_LineDialog> {
         TextField(controller: discount, keyboardType: TextInputType.number,
             inputFormatters: [ThousandsFormatter()], decoration: const InputDecoration(labelText: 'تخفیف این ردیف (ریال)')),
       ])), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
-        FilledButton(onPressed: () {
-          final count = double.tryParse(quantity.text) ?? 0;
-          final unit = amount(price.text), rebate = amount(discount.text);
-          if (count <= 0 || rebate > count * unit) return;
-          Navigator.pop(context, _Line(widget.item, count, unit, rebate));
-        }, child: const Text('افزودن'))]);
+        FilledButton(onPressed: addLine, child: const Text('افزودن'))]);
+
+  void addLine() {
+    final count = double.tryParse(quantity.text) ?? 0;
+    final unit = amount(price.text), rebate = amount(discount.text);
+    if (count <= 0 || rebate > count * unit) return;
+    Navigator.pop(context, _Line(widget.item, count, unit, rebate));
+  }
 }
 
 class StaffInvoiceDetails extends StatefulWidget {

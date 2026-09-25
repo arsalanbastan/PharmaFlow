@@ -11,18 +11,20 @@ class StaffCatalogItem {
         unit = data['unit'] as String?,
         category = data['category'] as String? ?? 'DRUG',
         shape = data['shapeName'] as String?,
+        brand = (data['persianBrandName'] ?? data['brandName']) as String?,
         packetQuantity = data['packetQuantity'] as int?,
         alternateName = data['genericName'] as String?,
         price = double.tryParse('${data['salesPrice'] ?? 0}') ?? 0;
   final String id;
   final String name;
   final String category;
-  final String? shape, alternateName;
+  final String? shape, alternateName, brand;
   final int? packetQuantity;
   final String? unit;
   String get details => catalogItemDetails(
       category: category, name: name, alternateName: alternateName,
-      shape: shape, unit: unit, packetQuantity: packetQuantity);
+      shape: shape, unit: unit, packetQuantity: packetQuantity,
+      brand: brand);
   final double price;
 }
 

@@ -40,7 +40,8 @@ export class CreateSalesInvoiceDto {
 
   @IsString()
   @MaxLength(250)
-  buyerName: string;
+  @IsOptional()
+  buyerName?: string;
 
   @IsOptional()
   @IsString()

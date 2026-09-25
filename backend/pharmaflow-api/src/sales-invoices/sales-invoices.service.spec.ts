@@ -113,5 +113,13 @@ describe('SalesInvoicesService', () => {
         payableAmount: '170',
       }),
     );
+
+    await service.create({
+      issueDate: '2026-09-17T00:00:00.000Z',
+      items: [{ catalogItemId: catalogId, quantity: 1, unitPrice: 100 }],
+    });
+    expect(tx.salesInvoice.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ buyerName: '' }) }),
+    );
   });
 });

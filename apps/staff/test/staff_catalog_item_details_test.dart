@@ -18,6 +18,11 @@ void main() {
     expect(catalogItemDetails(category: 'DRUG', name: 'استامینوفن 500',
         shape: 'قرص'), contains('عدد درج‌شده در نام: 500'));
   });
+  test('shows an available brand separately from shape and dose', () {
+    expect(catalogItemDetails(category: 'DRUG',
+        name: 'فکسوفنادین ۸۰ میلی گرم', shape: 'قرص', brand: 'عبیدی'),
+        contains('برند: عبیدی'));
+  });
 
   test('sorts all selected search matches by numeric dose, then by shape', () {
   final rows = [
