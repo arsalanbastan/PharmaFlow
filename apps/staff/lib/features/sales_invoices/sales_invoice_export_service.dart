@@ -120,8 +120,8 @@ class SalesInvoiceExportService {
             child: pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text(number.format(double.parse(invoice.subtotal))),
                 pw.Text('قیمت کل اقلام:', style: pw.TextStyle(font: bold)),
+                pw.Text(number.format(double.parse(invoice.subtotal))),
               ],
             ),
           ),
@@ -137,12 +137,12 @@ class SalesInvoiceExportService {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text(
-                      number.format(payable),
-                      style: pw.TextStyle(font: bold, fontSize: 15),
-                    ),
-                    pw.Text(
                       'قابل پرداخت:',
                       style: pw.TextStyle(font: bold, fontSize: 14),
+                    ),
+                    pw.Text(
+                      number.format(payable),
+                      style: pw.TextStyle(font: bold, fontSize: 15),
                     ),
                   ],
                 ),
@@ -194,7 +194,7 @@ class SalesInvoiceExportService {
   pw.TableRow _metaRow(String label, String value) => pw.TableRow(
     children: [
       _receiptCell('$label :', centered: false),
-      _receiptCell(value),
+      _receiptCell(value, left: true),
     ],
   );
 
@@ -202,11 +202,12 @@ class SalesInvoiceExportService {
     String text, {
     pw.Font? bold,
     bool centered = false,
+    bool left = false,
   }) => pw.Padding(
     padding: const pw.EdgeInsets.all(3),
     child: pw.Text(
       text,
-      textAlign: centered ? pw.TextAlign.center : pw.TextAlign.right,
+      textAlign: centered ? pw.TextAlign.center : left ? pw.TextAlign.left : pw.TextAlign.right,
       style: pw.TextStyle(font: bold, fontSize: 8),
     ),
   );
@@ -223,8 +224,8 @@ class SalesInvoiceExportService {
     child: pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       children: [
-        pw.Text(number.format(double.parse(raw))),
         pw.Text(label, style: pw.TextStyle(font: bold)),
+        pw.Text(number.format(double.parse(raw))),
       ],
     ),
   );

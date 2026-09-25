@@ -49,7 +49,7 @@ class _StaffSalesPageState extends State<StaffSalesPage> {
     finally { if (mounted && search.text.trim() == requestedQuery) setState(() => loading = false); }
   }
   @override
-  Widget build(BuildContext context) => Column(children: [
+  Widget build(BuildContext context) => Directionality(textDirection: TextDirection.rtl, child: Column(children: [
     Padding(padding: const EdgeInsets.all(12), child: Row(children: [
       Expanded(child: TextField(controller: search, decoration: const InputDecoration(
           labelText: 'جستجو در فاکتورهای صادرشده', prefixIcon: Icon(Icons.search)),
@@ -75,7 +75,7 @@ class _StaffSalesPageState extends State<StaffSalesPage> {
               trailing: const Icon(Icons.chevron_left), onTap: () => Navigator.push(context,
                   MaterialPageRoute(builder: (_) => StaffInvoiceDetails(api: api, id: item.id))));
         })),
-  ]);
+  ]));
 }
 
 class _Line {
@@ -175,13 +175,14 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     finally { if (mounted) setState(() => saving = false); }
   }
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('صدور فاکتور فروش')),
+  Widget build(BuildContext context) => Directionality(textDirection: TextDirection.rtl,
+      child: Scaffold(appBar: AppBar(title: const Text('صدور فاکتور فروش')),
       resizeToAvoidBottomInset: true,
       body: ListView(keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, padding: const EdgeInsets.all(12), children: [
-        TextField(controller: buyer, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی خریدار (اختیاری)')),
-        TextField(controller: nationalId, decoration: const InputDecoration(labelText: 'کد/شناسه ملی (اختیاری)')),
-        TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'تلفن (اختیاری)')),
-        TextField(controller: address, decoration: const InputDecoration(labelText: 'نشانی خریدار (اختیاری)')),
+        TextField(controller: buyer, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی خریدار (اختیاری)')),
+        TextField(controller: nationalId, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'کد/شناسه ملی (اختیاری)')),
+        TextField(controller: phone, textAlign: TextAlign.right, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'تلفن (اختیاری)')),
+        TextField(controller: address, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'نشانی خریدار (اختیاری)')),
         OutlinedButton.icon(onPressed: () async {
           final picked = await showDatePicker(context: context, initialDate: date.toDateTime(),
               firstDate: Jalali(1390).toDateTime(), lastDate: Jalali(1450, 12, 29).toDateTime());
@@ -189,7 +190,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
         }, icon: const Icon(Icons.calendar_month), label: Text('تاریخ فاکتور: ${jalali(date.toDateTime())}')),
         const SizedBox(height: 12),
         TextField(key: searchFieldKey, onTap: showSearchAboveKeyboard,
-            controller: query, decoration: const InputDecoration(labelText: 'جستجو و افزودن دارو / کالا', prefixIcon: Icon(Icons.search))),
+            controller: query, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'جستجو و افزودن دارو / کالا', prefixIcon: Icon(Icons.search))),
         if (suggestions.isNotEmpty) Row(children: [
           TextButton(onPressed: () => toggleSort(CatalogSortField.relevance), child: const Text('ارتباط')),
           TextButton(onPressed: () => toggleSort(CatalogSortField.dose), child: Text('دوز/حجم ${catalogSort == CatalogSortField.dose ? (sortDescending ? '↓' : '↑') : ''}')),
@@ -211,12 +212,13 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
             onTap: () => edit(entry.value.item, index: entry.key),
             trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => setState(() => lines.removeAt(entry.key)))))),
         TextField(controller: discount, keyboardType: TextInputType.number,
+            textAlign: TextAlign.right,
             inputFormatters: [ThousandsFormatter()], decoration: const InputDecoration(labelText: 'تخفیف کل (ریال)')),
-        TextField(controller: notes, decoration: const InputDecoration(labelText: 'توضیحات (اختیاری)')),
+        TextField(controller: notes, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'توضیحات (اختیاری)')),
         Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text('قابل پرداخت: ${money((subtotal - amount(discount.text)).clamp(0, double.infinity))} ریال',
             style: Theme.of(context).textTheme.titleLarge)),
         FilledButton(onPressed: saving ? null : save, child: Text(saving ? 'در حال ثبت...' : 'صدور فاکتور')),
-      ]));
+      ])));
 }
 
 class ThousandsFormatter extends TextInputFormatter {
@@ -255,23 +257,25 @@ class _LineDialogState extends State<_LineDialog> {
     quantity.selection = TextSelection.collapsed(offset: quantity.text.length);
   }
   @override
-  Widget build(BuildContext context) => AlertDialog(title: Text(widget.item.name), content: SingleChildScrollView(child:
+  Widget build(BuildContext context) => Directionality(textDirection: TextDirection.rtl,
+      child: AlertDialog(title: Text(widget.item.name), content: SingleChildScrollView(child:
       Column(mainAxisSize: MainAxisSize.min, children: [
         Row(children: [IconButton(onPressed: () => adjust(1), icon: const Icon(Icons.add)),
           Expanded(child: TextField(controller: quantity, focusNode: quantityFocus, autofocus: true,
+              textAlign: TextAlign.right,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => addLine(),
               decoration: const InputDecoration(labelText: 'تعداد'))),
           IconButton(onPressed: () => adjust(-1), icon: const Icon(Icons.remove))]),
-        TextField(controller: price, keyboardType: TextInputType.number,
+        TextField(controller: price, keyboardType: TextInputType.number, textAlign: TextAlign.right,
             inputFormatters: [ThousandsFormatter()], onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(labelText: 'قیمت واحد (ریال، قابل ویرایش)')),
         Text(amountToPersianWords(amount(price.text).round()) ?? 'صفر تومان'),
-        TextField(controller: discount, keyboardType: TextInputType.number,
+        TextField(controller: discount, keyboardType: TextInputType.number, textAlign: TextAlign.right,
             inputFormatters: [ThousandsFormatter()], decoration: const InputDecoration(labelText: 'تخفیف این ردیف (ریال)')),
       ])), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
-        FilledButton(onPressed: addLine, child: const Text('افزودن'))]);
+        FilledButton(onPressed: addLine, child: const Text('افزودن'))]));
 
   void addLine() {
     final count = double.tryParse(quantity.text) ?? 0;
@@ -293,6 +297,14 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
   final captureKey = GlobalKey();
   late final Future<SalesInvoiceDetails> invoiceFuture;
   bool working = false;
+
+  Widget invoiceRow(String label, String value, {bool emphasized = false}) =>
+      Directionality(textDirection: TextDirection.rtl, child: Row(children: [
+        Expanded(child: Text(label, textAlign: TextAlign.right,
+            style: emphasized ? Theme.of(context).textTheme.titleMedium : null)),
+        Expanded(child: Text(value, textAlign: TextAlign.left,
+            style: emphasized ? Theme.of(context).textTheme.titleMedium : null)),
+      ]));
 
   @override
   void initState() {
@@ -347,26 +359,26 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
         final invoice = snapshot.data!;
         final exporter = SalesInvoiceExportService();
         return ListView(padding: const EdgeInsets.all(12), children: [
-          RepaintBoundary(key: captureKey, child: Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          RepaintBoundary(key: captureKey, child: Directionality(textDirection: TextDirection.rtl,
+              child: Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Image.asset('assets/branding/logo.png', height: 70),
             Text(invoice.sellerName, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleLarge),
             ...[('تاریخ فاکتور:', jalali(invoice.issueDate)), ('شماره فاکتور:', invoice.invoiceNumber ?? '-'),
-                ('نوع نسخه:', 'فروش دستی'), ('نام و نام خانوادگی:', invoice.buyerName)].map((row) => Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(row.$1), Flexible(child: Text(row.$2))])),
+                ('نوع نسخه:', 'فروش دستی'), ('نام و نام خانوادگی:', invoice.buyerName)].map((row) =>
+                invoiceRow(row.$1, row.$2)),
             const Divider(),
             ...invoice.items.map((item) => ListTile(title: Text(item.itemName),
                 subtitle: Text('${item.quantity} × ${money(amount(item.unitPrice))} ریال'),
                 trailing: Text(money(amount(item.lineTotal))))),
             const Divider(),
-            Text('قیمت کل اقلام: ${money(amount(invoice.subtotal))} ریال'),
-            if (amount(invoice.discount) > 0) Text('تخفیف: ${money(amount(invoice.discount))} ریال'),
-            Text('قابل پرداخت: ${money(amount(invoice.payableAmount))} ریال',
-                style: Theme.of(context).textTheme.titleMedium),
+            invoiceRow('قیمت کل اقلام:', '${money(amount(invoice.subtotal))} ریال'),
+            if (amount(invoice.discount) > 0) invoiceRow('تخفیف:', '${money(amount(invoice.discount))} ریال'),
+            invoiceRow('قابل پرداخت:', '${money(amount(invoice.payableAmount))} ریال', emphasized: true),
             Text(amountToPersianWords(amount(invoice.payableAmount).round()) ?? ''),
             if (invoice.notes != null) Text('توضیحات: ${invoice.notes}'),
             if (invoice.sellerAddress != null) Text(invoice.sellerAddress!),
             if (invoice.sellerPhone != null) Text(invoice.sellerPhone!),
-          ])))),
+          ]))))),
           Wrap(spacing: 8, children: [
             if (!kIsWeb) FilledButton.icon(icon: const Icon(Icons.picture_as_pdf), label: const Text('اشتراک PDF'),
                 onPressed: working ? null : () => exporter.sharePdf(invoice)),
