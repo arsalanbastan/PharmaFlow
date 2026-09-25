@@ -11,13 +11,12 @@ plugins {
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 
-if (!keystorePropertiesFile.exists()) {
-    throw GradleException(
-        "android/key.properties is required for PharmaFlow release signing."
-    )
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+} else if (gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
+    throw GradleException("android/key.properties is required for PharmaFlow release signing.")
 }
-
-keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 android {
     namespace = "com.example.pharmaflow.staff"
     compileSdk = flutter.compileSdkVersion
@@ -40,7 +39,7 @@ android {
     }
 
     signingConfigs {
-        create("release") {
+        if (hasReleaseKeystore) create("release") {
             keyAlias = keystoreProperties["keyAlias"] as String
             keyPassword = keystoreProperties["keyPassword"] as String
             storeFile = keystoreProperties["storeFile"]?.let { file(it) }
@@ -49,9 +48,9 @@ android {
     }
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }
