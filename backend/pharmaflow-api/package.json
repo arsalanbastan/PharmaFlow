@@ -6,7 +6,7 @@
     "private":  true,
     "license":  "UNLICENSED",
     "scripts":  {
-                    "build":  "node ./node_modules/prisma/build/index.js generate",
+                    "build":  "node ./node_modules/prisma/build/index.js generate && node ./node_modules/typescript/bin/tsc -p tsconfig.build.json",
                     "format":  "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
                     "start":  "node ./node_modules/prisma/build/index.js migrate deploy \u0026\u0026 node dist/src/main.js",
                     "start:dev":  "nest start --watch",
