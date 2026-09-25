@@ -13,7 +13,7 @@ String catalogItemDetails({
     details.add('شکل: ${shape.trim()}');
   }
 
-  final names = [name, if (alternateName != null) alternateName];
+  final names = [name, ?alternateName];
   final measure = RegExp(
     r'([0-9۰-۹٠-٩]+(?:[.,٫/][0-9۰-۹٠-٩]+)?)\s*(میلی\s*گرم|میلی\s*لیتر|میکرو\s*گرم|گرمی|گرم|لیتری|لیتر|mg|mcg|µg|g|ml|l|cc|٪|%)',
     caseSensitive: false,

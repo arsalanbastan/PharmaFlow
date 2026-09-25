@@ -281,7 +281,7 @@ class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
   void _showSearchAboveKeyboard() {
     Future<void>.delayed(const Duration(milliseconds: 280), () {
       final target = _searchFieldKey.currentContext;
-      if (mounted && target != null) {
+      if (mounted && target != null && target.mounted) {
         Scrollable.ensureVisible(target, alignment: 0.1,
             duration: const Duration(milliseconds: 220));
       }
