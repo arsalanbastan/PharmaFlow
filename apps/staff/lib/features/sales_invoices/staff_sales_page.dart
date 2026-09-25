@@ -1,7 +1,14 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 import 'amount_words.dart';
 import 'sales_invoice.dart';
@@ -261,18 +268,70 @@ class _LineDialogState extends State<_LineDialog> {
         }, child: const Text('افزودن'))]);
 }
 
-class StaffInvoiceDetails extends StatelessWidget {
+class StaffInvoiceDetails extends StatefulWidget {
   const StaffInvoiceDetails({required this.api, required this.id, super.key});
   final StaffSalesApi api;
   final String id;
   @override
+  State<StaffInvoiceDetails> createState() => _StaffInvoiceDetailsState();
+}
+
+class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
+  final captureKey = GlobalKey();
+  late final Future<SalesInvoiceDetails> invoiceFuture;
+  bool working = false;
+
+  @override
+  void initState() {
+    super.initState();
+    invoiceFuture = widget.api.detail(widget.id);
+  }
+
+  Future<Uint8List> captureImage() async {
+    final boundary = captureKey.currentContext?.findRenderObject()
+        as RenderRepaintBoundary?;
+    if (boundary == null) throw StateError('فاکتور برای ذخیره تصویر آماده نیست.');
+    final image = await boundary.toImage(pixelRatio: 2);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (bytes == null) throw StateError('ساخت تصویر فاکتور ممکن نشد.');
+    return bytes.buffer.asUint8List();
+  }
+
+  Future<void> exportImage(SalesInvoiceDetails invoice, {required bool share}) async {
+    setState(() => working = true);
+    try {
+      final bytes = await captureImage();
+      final name = 'sales_invoice_${invoice.invoiceNumber ?? invoice.id}.png';
+      if (share) {
+        final file = File(p.join((await getTemporaryDirectory()).path, name));
+        await file.writeAsBytes(bytes, flush: true);
+        await SharePlus.instance.share(ShareParams(
+          files: [XFile(file.path, mimeType: 'image/png')],
+          fileNameOverrides: [name],
+          text: 'فاکتور فروش ${invoice.invoiceNumber ?? ''}',
+        ));
+      } else {
+        await FilePicker.platform.saveFile(
+          dialogTitle: 'ذخیره تصویر فاکتور', fileName: name,
+          type: FileType.custom, allowedExtensions: const ['png'], bytes: bytes,
+        );
+      }
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('خروجی تصویر انجام نشد: $error')));
+    } finally {
+      if (mounted) setState(() => working = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('مشاهده فاکتور فروش')),
-      body: FutureBuilder<SalesInvoiceDetails>(future: api.detail(id), builder: (context, snapshot) {
+      body: FutureBuilder<SalesInvoiceDetails>(future: invoiceFuture, builder: (context, snapshot) {
         if (!snapshot.hasData) return Center(child: Text(snapshot.hasError ? '${snapshot.error}' : 'در حال دریافت فاکتور...'));
         final invoice = snapshot.data!;
         final exporter = SalesInvoiceExportService();
         return ListView(padding: const EdgeInsets.all(12), children: [
-          Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          RepaintBoundary(key: captureKey, child: Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Image.asset('assets/branding/logo.png', height: 70),
             Text(invoice.sellerName, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleLarge),
             ...[('تاریخ فاکتور:', jalali(invoice.issueDate)), ('شماره فاکتور:', invoice.invoiceNumber ?? '-'),
@@ -291,12 +350,18 @@ class StaffInvoiceDetails extends StatelessWidget {
             if (invoice.notes != null) Text('توضیحات: ${invoice.notes}'),
             if (invoice.sellerAddress != null) Text(invoice.sellerAddress!),
             if (invoice.sellerPhone != null) Text(invoice.sellerPhone!),
-          ]))),
+          ])))),
           Wrap(spacing: 8, children: [
             if (!kIsWeb) FilledButton.icon(icon: const Icon(Icons.picture_as_pdf), label: const Text('اشتراک PDF'),
-                onPressed: () => exporter.sharePdf(invoice)),
+                onPressed: working ? null : () => exporter.sharePdf(invoice)),
             OutlinedButton.icon(icon: const Icon(Icons.download), label: const Text('ذخیره / چاپ PDF'),
-                onPressed: () => exporter.savePdf(invoice)),
+                onPressed: working ? null : () => exporter.savePdf(invoice)),
+            if (!kIsWeb) FilledButton.tonalIcon(icon: const Icon(Icons.image_outlined),
+                label: const Text('اشتراک تصویر'),
+                onPressed: working ? null : () => exportImage(invoice, share: true)),
+            OutlinedButton.icon(icon: const Icon(Icons.save_alt_outlined),
+                label: const Text('ذخیره تصویر'),
+                onPressed: working ? null : () => exportImage(invoice, share: false)),
           ]),
         ]);
       }));
