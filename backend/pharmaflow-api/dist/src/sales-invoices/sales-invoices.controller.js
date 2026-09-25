@@ -43,6 +43,7 @@ let SalesInvoicesController = class SalesInvoicesController {
 };
 exports.SalesInvoicesController = SalesInvoicesController;
 __decorate([
+    (0, roles_decorator_1.Roles)('STAFF', 'MANAGER'),
     (0, common_1.Get)(),
     __param(0, (0, common_1.Query)('q')),
     __param(1, (0, common_1.Query)('page')),
@@ -52,12 +53,14 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], SalesInvoicesController.prototype, "findAll", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('STAFF', 'MANAGER'),
     (0, common_1.Get)('profile'),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], SalesInvoicesController.prototype, "profile", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('MANAGER'),
     (0, common_1.Put)('profile'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -65,6 +68,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], SalesInvoicesController.prototype, "updateProfile", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('STAFF', 'MANAGER'),
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -72,6 +76,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], SalesInvoicesController.prototype, "create", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('STAFF', 'MANAGER'),
     (0, common_1.Get)(':id'),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
@@ -79,7 +84,6 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], SalesInvoicesController.prototype, "findOne", null);
 exports.SalesInvoicesController = SalesInvoicesController = __decorate([
-    (0, roles_decorator_1.Roles)('MANAGER'),
     (0, common_1.UseGuards)(auth_guard_1.AuthGuard, roles_guard_1.RolesGuard),
     (0, common_1.Controller)('api/v1/sales-invoices'),
     __metadata("design:paramtypes", [sales_invoices_service_1.SalesInvoicesService])

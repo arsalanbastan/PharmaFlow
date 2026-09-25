@@ -24,6 +24,24 @@ export declare class CatalogController {
         totalCount: number;
         totalPages: number;
     }>;
+    staffSearch(q?: string, page?: string): Promise<{
+        items: {
+            id: string;
+            category: string;
+            persianName: string | null;
+            genericName: string | null;
+            persianBrandName: string | null;
+            brandName: string | null;
+            unit: string | null;
+            shapeName: string | null;
+            packetQuantity: number | null;
+            salesPrice: string | null;
+        }[];
+        page: number;
+        pageSize: number;
+        totalCount: number;
+        totalPages: number;
+    }>;
     findOne(id: string): Promise<{
         id: string;
         arsenDrugId: string;
