@@ -317,8 +317,11 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
         );
       }
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('خروجی تصویر انجام نشد: $error')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خروجی تصویر انجام نشد: $error')),
+        );
+      }
     } finally {
       if (mounted) setState(() => working = false);
     }
