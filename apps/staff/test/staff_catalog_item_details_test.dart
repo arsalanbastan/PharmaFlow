@@ -30,6 +30,6 @@ void main() {
   expect(doses.map((row) => row.name), [rows[2].name, rows[1].name, rows[0].name]);
   final shapes = sortCatalogMatches(rows, field: CatalogSortField.shape,
       descending: false, name: (row) => row.name, shape: (row) => row.shape);
-  expect(shapes.last.shape, 'شیاف');
+  expect(shapes.first.shape, 'شیاف');
 });
 }
