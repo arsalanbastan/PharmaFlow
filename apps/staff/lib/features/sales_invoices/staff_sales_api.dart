@@ -10,6 +10,7 @@ class StaffCatalogItem {
         name = (data['persianName'] ?? data['persianBrandName'] ?? data['brandName'] ?? data['genericName'] ?? '') as String,
         unit = data['unit'] as String?,
         category = data['category'] as String? ?? 'DRUG',
+        matchedBarcode = data['matchedBarcode'] as String?,
         shape = data['shapeName'] as String?,
         brand = (data['persianBrandName'] ?? data['brandName']) as String?,
         packetQuantity = data['packetQuantity'] as int?,
