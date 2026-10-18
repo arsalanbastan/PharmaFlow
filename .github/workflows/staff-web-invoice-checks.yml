@@ -29,6 +29,13 @@ jobs:
       - name: Build Staff web
         working-directory: apps/staff
         run: flutter build web --release
+      - name: Upload Staff Web preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: staff-web-invoice-preview
+          path: apps/staff/build/web/
+          if-no-files-found: error
+          retention-days: 7
 
   backend:
     runs-on: ubuntu-latest
