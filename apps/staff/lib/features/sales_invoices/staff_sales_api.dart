@@ -43,12 +43,14 @@ class StaffSalesApi {
     return {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
   }
 
-  Future<Map<String, dynamic>> _request(String path, {Map<String, dynamic>? body}) async {
+  Future<Map<String, dynamic>> _request(String path, {Map<String, dynamic>? body, String? method}) async {
     final uri = Uri.parse('$_base$path');
     final headers = await _headers();
-    final response = body == null
-        ? await _client.get(uri, headers: headers).timeout(const Duration(seconds: 25))
-        : await _client.post(uri, headers: headers, body: jsonEncode(body)).timeout(const Duration(seconds: 25));
+    final response = method == 'PUT'
+        ? await _client.put(uri, headers: headers, body: jsonEncode(body ?? const {})).timeout(const Duration(seconds: 25))
+        : body == null
+            ? await _client.get(uri, headers: headers).timeout(const Duration(seconds: 25))
+            : await _client.post(uri, headers: headers, body: jsonEncode(body)).timeout(const Duration(seconds: 25));
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError('خطای سرور (${response.statusCode}): ${utf8.decode(response.bodyBytes)}');
     }
@@ -56,6 +58,9 @@ class StaffSalesApi {
   }
 
   Future<SalesInvoiceProfile> profile() async => SalesInvoiceProfile.fromJson(await _request('/sales-invoices/profile'));
+  Future<SalesInvoiceProfile> updateProfile(Map<String, dynamic> body) async =>
+      SalesInvoiceProfile.fromJson(await _request('/sales-invoices/profile', body: body, method: 'PUT'));
+  Future<bool> canManage() async => (await _storage.load())?.user.role == 'MANAGER';
 
   Future<SalesInvoicePage> list({String query = ''}) async => SalesInvoicePage.fromJson(
       await _request('/sales-invoices?page=1&pageSize=25&q=${Uri.encodeQueryComponent(query)}'));
