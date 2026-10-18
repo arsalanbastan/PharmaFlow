@@ -93,7 +93,9 @@ export class CatalogService {
     // lookup bridge because the catalog feed currently has no barcode column.
     const barcodeRows = await this.prisma.arsenInvoiceItem.findMany({
       where: {
-        barcode: { contains: query, mode: 'insensitive' },
+        barcode: /^\\d+$/.test(query)
+          ? query
+          : { contains: query, mode: 'insensitive' },
         arsenDrugId: { not: null },
       },
       select: { barcode: true, arsenDrugId: true },
