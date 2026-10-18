@@ -86,7 +86,7 @@ export class CatalogService {
     });
     const query = filters.q?.trim();
     if (!query || query.length < 4 || (filters.page != null && filters.page !== '1')) {
-      return result;
+      return { ...result, items: result.items.map((item) => ({ ...item, matchedBarcode: null })) };
     }
 
     // Arsen purchase invoice details retain scanned barcodes; use them as a
@@ -109,7 +109,9 @@ export class CatalogService {
         if (!barcodeByDrug.has(id)) barcodeByDrug.set(id, row.barcode);
       }
     }
-    if (barcodeByDrug.size === 0) return result;
+    if (barcodeByDrug.size === 0) {
+      return { ...result, items: result.items.map((item) => ({ ...item, matchedBarcode: null })) };
+    }
 
     const drugIds = [...barcodeByDrug.keys()].map((id) => BigInt(id));
     const barcodeCatalogRows = await this.prisma.arsenCatalogItem.findMany({
