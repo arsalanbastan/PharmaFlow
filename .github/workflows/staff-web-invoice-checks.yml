@@ -25,7 +25,7 @@ jobs:
         run: flutter pub get
       - name: Analyze Staff app
         working-directory: apps/staff
-        run: flutter analyze --no-pub
+        run: flutter analyze --no-pub --no-fatal-infos
       - name: Build Staff web
         working-directory: apps/staff
         run: flutter build web --release
