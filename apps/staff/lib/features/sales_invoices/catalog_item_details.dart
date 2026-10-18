@@ -11,7 +11,11 @@ String catalogItemDetails({
 }) {
   final details = <String>[];
   if (category == 'DRUG' && shape != null && shape.trim().isNotEmpty) {
-    details.add('شکل: ${shape.trim()}');
+    details.add('شکل دارویی: ${shape.trim()}');
+  }
+  if (alternateName != null && alternateName.trim().isNotEmpty &&
+      alternateName.trim() != name.trim()) {
+    details.add('نام ژنریک: ${alternateName.trim()}');
   }
   if (brand != null && brand.trim().isNotEmpty &&
       !name.contains(brand.trim())) {

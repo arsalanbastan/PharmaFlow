@@ -7,6 +7,8 @@ class SalesInvoiceProfile {
     required this.phone,
     required this.address,
     required this.logoData,
+    this.manualServiceTariff = 81000,
+    this.freeServiceTariff = 727000,
   });
 
   final String sellerName;
@@ -16,6 +18,8 @@ class SalesInvoiceProfile {
   final String? phone;
   final String? address;
   final String? logoData;
+  final double manualServiceTariff;
+  final double freeServiceTariff;
 
   factory SalesInvoiceProfile.fromJson(Map<String, dynamic> json) {
     return SalesInvoiceProfile(
@@ -26,6 +30,8 @@ class SalesInvoiceProfile {
       phone: _optionalText(json['phone']),
       address: _optionalText(json['address']),
       logoData: _optionalText(json['logoData']),
+      manualServiceTariff: double.tryParse('${json['manualServiceTariff'] ?? 81000}') ?? 81000,
+      freeServiceTariff: double.tryParse('${json['freeServiceTariff'] ?? 727000}') ?? 727000,
     );
   }
 }
@@ -151,6 +157,8 @@ class SalesInvoiceDetails {
     required this.sellerAddress,
     required this.sellerLogoData,
     required this.subtotal,
+    required this.serviceTariff,
+    required this.invoiceType,
     required this.discount,
     required this.payableAmount,
     required this.notes,
@@ -172,6 +180,8 @@ class SalesInvoiceDetails {
   final String? sellerAddress;
   final String? sellerLogoData;
   final String subtotal;
+  final String serviceTariff;
+  final String invoiceType;
   final String discount;
   final String payableAmount;
   final String? notes;
@@ -198,6 +208,8 @@ class SalesInvoiceDetails {
       sellerAddress: _optionalText(json['sellerAddress']),
       sellerLogoData: _optionalText(json['sellerLogoData']),
       subtotal: _requiredText(json['subtotal'], 'subtotal'),
+      serviceTariff: _optionalText(json['serviceTariff']) ?? '0',
+      invoiceType: _optionalText(json['invoiceType']) ?? 'LEGACY',
       discount: _requiredText(json['discount'], 'discount'),
       payableAmount: _requiredText(json['payableAmount'], 'payableAmount'),
       notes: _optionalText(json['notes']),

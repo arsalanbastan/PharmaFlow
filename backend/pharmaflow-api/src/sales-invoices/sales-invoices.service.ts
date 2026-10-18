@@ -30,7 +30,7 @@ export class SalesInvoicesService {
   profile() {
     return this.prisma.salesInvoiceProfile.upsert({
       where: { id: 'default' },
-      create: { id: 'default', sellerName: 'داروخانه دکتر خسروانی' },
+      create: { id: 'default', sellerName: 'داروخانه دکتر خسروانی', manualServiceTariff: 81000, freeServiceTariff: 727000 },
       update: {},
     });
   }
@@ -49,6 +49,8 @@ export class SalesInvoicesService {
       phone: this.optional(dto.phone),
       address: this.optional(dto.address),
       logoData: this.optional(dto.logoData),
+      ...(dto.manualServiceTariff == null ? {} : { manualServiceTariff: new Prisma.Decimal(dto.manualServiceTariff) }),
+      ...(dto.freeServiceTariff == null ? {} : { freeServiceTariff: new Prisma.Decimal(dto.freeServiceTariff) }),
     };
 
     return this.prisma.salesInvoiceProfile.upsert({
@@ -87,6 +89,8 @@ export class SalesInvoicesService {
         subtotal: true,
         discount: true,
         payableAmount: true,
+        invoiceType: true,
+        serviceTariff: true,
         status: true,
         createdAt: true,
         _count: { select: { items: true } },
@@ -107,6 +111,8 @@ export class SalesInvoicesService {
         subtotal: row.subtotal.toString(),
         discount: row.discount.toString(),
         payableAmount: row.payableAmount.toString(),
+        invoiceType: row.invoiceType,
+        serviceTariff: row.serviceTariff.toString(),
         status: row.status,
         itemCount: row._count.items,
         createdAt: row.createdAt,
@@ -158,6 +164,11 @@ export class SalesInvoicesService {
     }
 
     const byId = new Map(catalogItems.map((item) => [item.id, item]));
+    const invoiceType = dto.invoiceType ?? 'LEGACY';
+    const containsDrug = catalogItems.some((item) => item.category === 'DRUG');
+    const serviceTariff = invoiceType === 'LEGACY' || !containsDrug
+      ? new Prisma.Decimal(0)
+      : new Prisma.Decimal(invoiceType === 'MANUAL' ? profile.manualServiceTariff : profile.freeServiceTariff);
     let subtotal = new Prisma.Decimal(0);
     const items = dto.items.map((requested) => {
       const catalog = byId.get(requested.catalogItemId)!;
@@ -191,17 +202,17 @@ export class SalesInvoicesService {
     });
 
     const discount = new Prisma.Decimal(dto.discount ?? 0);
-    if (discount.gt(subtotal)) {
-      throw new BadRequestException(
-        'Invoice discount cannot exceed the subtotal.',
-      );
+    if (discount.gt(subtotal.plus(serviceTariff))) {
+      throw new BadRequestException('Invoice discount cannot exceed the invoice total.');
     }
-    const payableAmount = subtotal.minus(discount);
+    const payableAmount = subtotal.plus(serviceTariff).minus(discount);
 
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.salesInvoice.create({
         data: {
           issueDate: new Date(dto.issueDate),
+          invoiceType,
+          serviceTariff,
           buyerName,
           buyerNationalId: this.optional(dto.buyerNationalId),
           buyerPhone: this.optional(dto.buyerPhone),
@@ -250,6 +261,8 @@ export class SalesInvoicesService {
     sequence: bigint;
     invoiceNumber: string | null;
     issueDate: Date;
+    invoiceType: string;
+    serviceTariff: Prisma.Decimal;
     buyerName: string;
     buyerNationalId: string | null;
     buyerPhone: string | null;
@@ -283,10 +296,12 @@ export class SalesInvoicesService {
   }) {
     return {
       ...invoice,
+      invoiceType: invoice.invoiceType ?? 'LEGACY',
       sequence: invoice.sequence.toString(),
       subtotal: invoice.subtotal.toString(),
       discount: invoice.discount.toString(),
       payableAmount: invoice.payableAmount.toString(),
+      serviceTariff: (invoice.serviceTariff ?? new Prisma.Decimal(0)).toString(),
       items: invoice.items.map((item) => ({
         ...item,
         arsenDrugId: item.arsenDrugId?.toString() ?? null,

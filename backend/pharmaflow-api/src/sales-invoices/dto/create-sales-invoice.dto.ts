@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsDateString,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -37,6 +38,10 @@ class CreateSalesInvoiceItemDto {
 export class CreateSalesInvoiceDto {
   @IsDateString()
   issueDate: string;
+
+  @IsOptional()
+  @IsIn(['MANUAL', 'FREE'])
+  invoiceType?: 'MANUAL' | 'FREE';
 
   @IsString()
   @MaxLength(250)

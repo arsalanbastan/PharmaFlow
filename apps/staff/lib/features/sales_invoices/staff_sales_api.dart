@@ -18,6 +18,7 @@ class StaffCatalogItem {
   final String id;
   final String name;
   final String category;
+  final String? matchedBarcode;
   final String? shape, alternateName, brand;
   final int? packetQuantity;
   final String? unit;
@@ -52,6 +53,8 @@ class StaffSalesApi {
     }
     return Map<String, dynamic>.from(jsonDecode(utf8.decode(response.bodyBytes)) as Map);
   }
+
+  Future<SalesInvoiceProfile> profile() async => SalesInvoiceProfile.fromJson(await _request('/sales-invoices/profile'));
 
   Future<SalesInvoicePage> list({String query = ''}) async => SalesInvoicePage.fromJson(
       await _request('/sales-invoices?page=1&pageSize=25&q=${Uri.encodeQueryComponent(query)}'));

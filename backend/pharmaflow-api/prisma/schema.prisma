@@ -142,6 +142,7 @@ model ArsenInvoiceItem {
 
   @@index([invoiceId, arsenFactorDetailsId])
   @@index([arsenDrugId])
+  @@index([barcode])
   @@map("arsen_invoice_items")
 }
 
@@ -190,6 +191,8 @@ model SalesInvoiceProfile {
   phone String?
   address String?
   logoData String?
+  manualServiceTariff Decimal @default(81000) @db.Decimal(20, 4)
+  freeServiceTariff Decimal @default(727000) @db.Decimal(20, 4)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -201,6 +204,8 @@ model SalesInvoice {
   sequence BigInt @unique @default(autoincrement())
   invoiceNumber String? @unique
   issueDate DateTime
+  invoiceType String @default("LEGACY")
+  serviceTariff Decimal @default(0) @db.Decimal(20, 4)
 
   buyerName String
   buyerNationalId String?

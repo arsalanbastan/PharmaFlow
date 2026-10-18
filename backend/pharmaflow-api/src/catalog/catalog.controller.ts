@@ -37,9 +37,9 @@ export class CatalogController {
   @Roles('STAFF', 'MANAGER')
   @Get('staff-search')
   async staffSearch(@Query('q') q?: string, @Query('page') page?: string) {
-    const result = await this.catalog.findAll({ q, active: 'ACTIVE', page, pageSize: '100' });
-    return { ...result, items: result.items.map(({ id, category, persianName, genericName, persianBrandName, brandName, unit, shapeName, packetQuantity, salesPrice }) =>
-      ({ id, category, persianName, genericName, persianBrandName, brandName, unit, shapeName, packetQuantity, salesPrice })) };
+    const result = await this.catalog.staffSearch({ q, page });
+    return { ...result, items: result.items.map(({ id, category, persianName, genericName, persianBrandName, brandName, unit, shapeName, packetQuantity, salesPrice, matchedBarcode }) =>
+      ({ id, category, persianName, genericName, persianBrandName, brandName, unit, shapeName, packetQuantity, salesPrice, matchedBarcode })) };
   }
 
   @Roles('MANAGER')

@@ -75,7 +75,7 @@ class SalesInvoiceExportService {
             children: [
               _metaRow('تاریخ فاکتور', _jalali(invoice.issueDate)),
               _metaRow('شماره فاکتور', invoice.invoiceNumber ?? '-'),
-              _metaRow('نوع نسخه', 'فروش دستی'),
+              _metaRow('نوع نسخه', invoice.invoiceType == 'FREE' ? 'فروش آزاد' : invoice.invoiceType == 'MANUAL' ? 'فروش دستی' : 'قدیمی'),
               _metaRow('نام و نام خانوادگی', invoice.buyerName),
               if (invoice.buyerPhone != null)
                 _metaRow('تلفن', invoice.buyerPhone!),
@@ -125,6 +125,8 @@ class SalesInvoiceExportService {
               ],
             ),
           ),
+          if (double.parse(invoice.serviceTariff) > 0)
+            _receiptTotal('تعرفه خدمات دارویی:', invoice.serviceTariff, number, bold),
           if (double.parse(invoice.discount) > 0)
             _receiptTotal('تخفیف:', invoice.discount, number, bold),
           pw.Container(

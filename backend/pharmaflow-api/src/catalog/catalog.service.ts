@@ -77,6 +77,57 @@ export class CatalogService {
     );
   }
 
+  async staffSearch(filters: { q?: string; page?: string } = {}) {
+    const result = await this.findAll({
+      q: filters.q,
+      active: 'ACTIVE',
+      page: filters.page,
+      pageSize: '100',
+    });
+    const query = filters.q?.trim();
+    if (!query || query.length < 4 || (filters.page != null && filters.page !== '1')) {
+      return result;
+    }
+
+    // Arsen purchase invoice details retain scanned barcodes; use them as a
+    // lookup bridge because the catalog feed currently has no barcode column.
+    const barcodeRows = await this.prisma.arsenInvoiceItem.findMany({
+      where: {
+        barcode: { contains: query, mode: 'insensitive' },
+        arsenDrugId: { not: null },
+      },
+      select: { barcode: true, arsenDrugId: true },
+      take: 200,
+      orderBy: { createdAt: 'desc' },
+    });
+    const barcodeByDrug = new Map<string, string>();
+    for (const row of barcodeRows) {
+      if (row.arsenDrugId != null && row.barcode != null) {
+        const id = row.arsenDrugId.toString();
+        if (!barcodeByDrug.has(id)) barcodeByDrug.set(id, row.barcode);
+      }
+    }
+    if (barcodeByDrug.size === 0) return result;
+
+    const drugIds = [...barcodeByDrug.keys()].map((id) => BigInt(id));
+    const barcodeCatalogRows = await this.prisma.arsenCatalogItem.findMany({
+      where: { arsenDrugId: { in: drugIds }, isActive: true },
+      orderBy: { ingestSequence: 'desc' },
+    });
+    const barcodeItems = barcodeCatalogRows.map((row) => ({
+      ...this.serializeSummary(row),
+      matchedBarcode: barcodeByDrug.get(row.arsenDrugId.toString()) ?? null,
+    }));
+    const normalItems = result.items.map((item) => ({ ...item, matchedBarcode: null }));
+    const seen = new Set<string>();
+    const merged = [...barcodeItems, ...normalItems].filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+    return { ...result, items: merged.slice(0, 100), totalCount: Math.max(result.totalCount, merged.length) };
+  }
+
   async findOne(id: string) {
     const normalizedId = id.trim();
 

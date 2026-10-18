@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shamsi_date/shamsi_date.dart';
+import '../../shared/widgets/date_picker/pharmaflow_date_picker.dart';
 import 'amount_words.dart';
 import 'sales_invoice.dart';
 import 'sales_invoice_export_service.dart';
@@ -37,7 +38,18 @@ class _StaffSalesPageState extends State<StaffSalesPage> {
   bool loading = false;
   Timer? invoiceSearchDebounce;
   @override
-  void initState() { super.initState(); load(); }
+  void initState() {
+    super.initState();
+    load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _openCreate();
+    });
+  }
+  Future<void> _openCreate() async {
+    final changed = await Navigator.push<bool>(context,
+        MaterialPageRoute(builder: (_) => StaffInvoiceForm(api: api)));
+    if (changed == true && mounted) load();
+  }
   @override
   void dispose() { invoiceSearchDebounce?.cancel(); api.close(); search.dispose(); super.dispose(); }
   Future<void> load() async {
@@ -72,8 +84,11 @@ class _StaffSalesPageState extends State<StaffSalesPage> {
           final item = invoices!.items[index];
           return ListTile(title: Text('فاکتور ${item.invoiceNumber ?? ''} — ${item.buyerName}'),
               subtitle: Text('${jalali(item.issueDate)} • ${money(amount(item.payableAmount))} ریال'),
-              trailing: const Icon(Icons.chevron_left), onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => StaffInvoiceDetails(api: api, id: item.id))));
+              trailing: const Icon(Icons.chevron_left), onTap: () async {
+                final action = await Navigator.push<String>(context,
+                    MaterialPageRoute(builder: (_) => StaffInvoiceDetails(api: api, id: item.id)));
+                if (action == 'new' && mounted) _openCreate();
+              });
         })),
   ]));
 }
@@ -97,6 +112,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   final phone = TextEditingController();
   final address = TextEditingController();
   final query = TextEditingController();
+  final searchFocus = FocusNode();
   final searchFieldKey = GlobalKey();
   void showSearchAboveKeyboard() {
     Future<void>.delayed(const Duration(milliseconds: 280), () {
@@ -123,14 +139,64 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   });
   Timer? debounce;
   Jalali date = Jalali.now();
+  String invoiceType = 'MANUAL';
   bool saving = false;
+  bool get containsDrug => lines.any((line) => line.item.category.toUpperCase() == 'DRUG');
+  double manualTariff = 81000;
+  double freeTariff = 727000;
+  double get serviceTariff => !containsDrug ? 0 : (invoiceType == 'MANUAL' ? manualTariff : freeTariff);
+  double get payable => (subtotal + serviceTariff - amount(discount.text)).clamp(0, double.infinity).toDouble();
   @override
-  void initState() { super.initState(); query.addListener(search); discount.addListener(refresh); }
+  void initState() {
+    super.initState();
+    query.addListener(search);
+    discount.addListener(refresh);
+    _loadTariffs();
+  }
+  Future<void> _loadTariffs() async {
+    try {
+      final profile = await widget.api.profile();
+      if (mounted) setState(() {
+        manualTariff = profile.manualServiceTariff;
+        freeTariff = profile.freeServiceTariff;
+      });
+    } catch (_) {
+      // The invoice can still be drafted with the documented default tariffs.
+    }
+  }
+  void _resetForm() {
+    for (final c in [buyer, nationalId, phone, address, query, discount, notes]) { c.clear(); }
+    setState(() {
+      lines.clear();
+      suggestions = [];
+      date = Jalali.now();
+      invoiceType = 'MANUAL';
+    });
+  }
   void refresh() { if (mounted) setState(() {}); }
   @override
   void dispose() {
     debounce?.cancel(); for (final c in [buyer, nationalId, phone, address, query, discount, notes]) { c.dispose(); }
+    searchFocus.dispose();
     super.dispose();
+  }
+  Future<void> scanBarcode() async {
+    final scanned = query.text.trim();
+    if (scanned.isEmpty) return;
+    debounce?.cancel();
+    try {
+      final result = await widget.api.search(scanned);
+      if (!mounted || query.text.trim() != scanned) return;
+      final exact = result.where((item) => item.matchedBarcode == scanned).toList();
+      if (exact.length == 1) {
+        addItem(exact.single);
+      } else {
+        setState(() => suggestions = result);
+        if (exact.isEmpty) notify('بارکد دقیق پیدا نشد؛ از نتایج جستجو کالا را انتخاب کنید.');
+      }
+    } catch (e) {
+      if (mounted) notify('جستجوی بارکد انجام نشد: $e');
+    }
   }
   void search() {
     debounce?.cancel();
@@ -144,21 +210,41 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   }
   double get subtotal => lines.fold(0, (double sum, line) => sum + line.total);
   void notify(String message) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-  Future<void> edit(StaffCatalogItem item, {int? index}) async {
-    if (index == null && lines.any((line) => line.item.id == item.id)) { notify('این قلم قبلاً اضافه شده است.'); return; }
+  void addItem(StaffCatalogItem item) {
+    final index = lines.indexWhere((line) => line.item.id == item.id);
+    setState(() {
+      if (index >= 0) {
+        final old = lines[index];
+        lines[index] = _Line(old.item, old.quantity + 1, old.price,
+            old.discount.clamp(0, (old.quantity + 1) * old.price));
+      } else {
+        lines.add(_Line(item, 1, item.price, 0));
+      }
+      suggestions = [];
+      query.clear();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) searchFocus.requestFocus(); });
+  }
+  void setQuantity(int index, double quantity) {
+    if (quantity <= 0) return;
+    final old = lines[index];
+    setState(() => lines[index] = _Line(old.item, quantity, old.price,
+        old.discount.clamp(0, quantity * old.price)));
+  }
+  Future<void> edit(StaffCatalogItem item, {required int index}) async {
     final line = await showDialog<_Line>(context: context,
-        builder: (_) => _LineDialog(item: item, initial: index == null ? null : lines[index]));
+        builder: (_) => _LineDialog(item: item, initial: lines[index]));
     if (line == null || !mounted) return;
-    setState(() { if (index == null) { lines.add(line); } else { lines[index] = line; }
-      query.clear(); suggestions = []; });
+    setState(() => lines[index] = line);
   }
   Future<void> save() async {
     if (lines.isEmpty) { notify('حداقل یک قلم لازم است.'); return; }
-    if (amount(discount.text) > subtotal) { notify('تخفیف از جمع فاکتور بیشتر است.'); return; }
+    if (amount(discount.text) > subtotal + serviceTariff) { notify('تخفیف از جمع فاکتور بیشتر است.'); return; }
     setState(() => saving = true);
     try {
       final invoice = await widget.api.create({
         'issueDate': date.toDateTime().toIso8601String(),
+        'invoiceType': invoiceType,
         if (buyer.text.trim().isNotEmpty) 'buyerName': buyer.text.trim(),
         if (nationalId.text.trim().isNotEmpty) 'buyerNationalId': nationalId.text.trim(),
         if (phone.text.trim().isNotEmpty) 'buyerPhone': phone.text.trim(),
@@ -169,28 +255,39 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
             'quantity': line.quantity, 'unitPrice': line.price, 'lineDiscount': line.discount}).toList(),
       });
       if (!mounted) return;
-      await Navigator.push(context, MaterialPageRoute(builder: (_) => StaffInvoiceDetails(api: widget.api, id: invoice.id)));
-      if (mounted) Navigator.pop(context, true);
+      final action = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => StaffInvoiceDetails(api: widget.api, id: invoice.id)));
+      if (mounted) {
+        if (action == 'new') { _resetForm(); }
+        else { Navigator.pop(context, true); }
+      }
     } catch (e) { if (mounted) notify('صدور فاکتور انجام نشد: $e'); }
     finally { if (mounted) setState(() => saving = false); }
   }
   @override
   Widget build(BuildContext context) => Directionality(textDirection: TextDirection.rtl,
-      child: Scaffold(appBar: AppBar(title: const Text('صدور فاکتور فروش')),
+      child: Scaffold(appBar: AppBar(title: const Text('صدور فاکتور فروش'), actions: [TextButton.icon(onPressed: () => Navigator.pop(context, false), icon: const Icon(Icons.history), label: const Text('فاکتورهای قبلی'))]),
       resizeToAvoidBottomInset: true,
       body: ListView(keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, padding: const EdgeInsets.all(12), children: [
+        const Text('بخش اول: مشخصات فاکتور و خریدار', style: TextStyle(fontWeight: FontWeight.bold)),
+        DropdownButtonFormField<String>(value: invoiceType, decoration: const InputDecoration(labelText: 'نوع فروش'), items: const [DropdownMenuItem(value: 'MANUAL', child: Text('فروش دستی')), DropdownMenuItem(value: 'FREE', child: Text('فروش آزاد'))], onChanged: (value) { if (value != null) setState(() => invoiceType = value); }),
         TextField(controller: buyer, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی خریدار (اختیاری)')),
-        TextField(controller: nationalId, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'کد/شناسه ملی (اختیاری)')),
+        TextField(controller: nationalId, textAlign: TextAlign.right, keyboardType: TextInputType.number, inputFormatters: [PersianDigitsOnlyFormatter()], decoration: const InputDecoration(labelText: 'کد/شناسه ملی (اختیاری)')),
         TextField(controller: phone, textAlign: TextAlign.right, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'تلفن (اختیاری)')),
         TextField(controller: address, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'نشانی خریدار (اختیاری)')),
         OutlinedButton.icon(onPressed: () async {
-          final picked = await showDatePicker(context: context, initialDate: date.toDateTime(),
-              firstDate: Jalali(1390).toDateTime(), lastDate: Jalali(1450, 12, 29).toDateTime());
-          if (picked != null) setState(() => date = Jalali.fromDateTime(picked));
+          final picked = await PharmaFlowDatePicker.show(
+            context: context,
+            initialDate: date,
+            firstDate: Jalali(1390, 1, 1),
+            lastDate: Jalali(1450, 12, 29),
+          );
+          if (picked != null) setState(() => date = picked);
         }, icon: const Icon(Icons.calendar_month), label: Text('تاریخ فاکتور: ${jalali(date.toDateTime())}')),
+        const Divider(height: 28, thickness: 1),
+        const Text('بخش دوم: انتخاب دارو و کالا', style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
-        TextField(key: searchFieldKey, onTap: showSearchAboveKeyboard,
-            controller: query, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'جستجو و افزودن دارو / کالا', prefixIcon: Icon(Icons.search))),
+        TextField(key: searchFieldKey, focusNode: searchFocus, autofocus: true, onTap: showSearchAboveKeyboard,
+            controller: query, textAlign: TextAlign.right, onSubmitted: (_) => scanBarcode(), decoration: const InputDecoration(labelText: 'جستجو یا اسکن بارکد دارو / کالا', prefixIcon: Icon(Icons.qr_code_scanner))),
         if (suggestions.isNotEmpty) Row(children: [
           TextButton(onPressed: () => toggleSort(CatalogSortField.relevance), child: const Text('ارتباط')),
           TextButton(onPressed: () => toggleSort(CatalogSortField.dose), child: Text('دوز/حجم ${catalogSort == CatalogSortField.dose ? (sortDescending ? '↓' : '↑') : ''}')),
@@ -202,23 +299,85 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
           itemBuilder: (context, index) {
             final item = sortedSuggestions[index];
             return ListTile(title: Text(item.name),
-              subtitle: Text('${item.details}\nقیمت فروش: ${money(item.price)} ریال'),
-              isThreeLine: true, onTap: () => edit(item));
+              subtitle: Text('${item.details}\nقیمت فروش ثبت‌شده: ${money(item.price)} ریال${item.packetQuantity != null && item.packetQuantity! > 1 ? ' • تعداد در بسته: ${item.packetQuantity}' : ''}'),
+              isThreeLine: true, onTap: () => addItem(item));
           },
         )),
         ...lines.asMap().entries.map((entry) => Card(child: ListTile(
             title: Text(entry.value.item.name),
-            subtitle: Text('${entry.value.quantity} × ${money(entry.value.price)} — جمع ${money(entry.value.total)} ریال'),
+            subtitle: Text('${money(entry.value.price)} ریال × ${entry.value.quantity} — جمع ${money(entry.value.total)} ریال'),
             onTap: () => edit(entry.value.item, index: entry.key),
-            trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => setState(() => lines.removeAt(entry.key)))))),
+            trailing: SizedBox(width: 250, child: Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(tooltip: 'افزایش تعداد', onPressed: () => setQuantity(entry.key, entry.value.quantity + 1), icon: const Icon(Icons.add_circle_outline)),
+              SizedBox(width: 58, child: _QuantityControl(value: entry.value.quantity, onChanged: (value) => setQuantity(entry.key, value))),
+              IconButton(tooltip: 'کاهش تعداد', onPressed: () => setQuantity(entry.key, (entry.value.quantity - 1).clamp(1, double.infinity).toDouble()), icon: const Icon(Icons.remove_circle_outline)),
+              IconButton(tooltip: 'حذف قلم', icon: const Icon(Icons.delete_outline), onPressed: () => setState(() => lines.removeAt(entry.key))),
+            ]))))),
+        const Divider(height: 28, thickness: 1),
+        const Text('بخش سوم: جمع‌بندی و صدور فاکتور', style: TextStyle(fontWeight: FontWeight.bold)),
+        Text('جمع اقلام: ${money(subtotal)} ریال'),
+        Text('تعرفه خدمات دارویی${containsDrug ? '' : ' (بدون دارو: صفر)'}: ${money(serviceTariff)} ریال'),
         TextField(controller: discount, keyboardType: TextInputType.number,
             textAlign: TextAlign.right,
             inputFormatters: [ThousandsFormatter()], decoration: const InputDecoration(labelText: 'تخفیف کل (ریال)')),
         TextField(controller: notes, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'توضیحات (اختیاری)')),
-        Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text('قابل پرداخت: ${money((subtotal - amount(discount.text)).clamp(0, double.infinity))} ریال',
+        Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text('قابل پرداخت: ${money(payable)} ریال',
             style: Theme.of(context).textTheme.titleLarge)),
         FilledButton(onPressed: saving ? null : save, child: Text(saving ? 'در حال ثبت...' : 'صدور فاکتور')),
       ])));
+}
+
+class PersianDigitsOnlyFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = normalizePersianDigitsToEnglish(newValue.text).replaceAll(RegExp(r'[^0-9]'), '');
+    return TextEditingValue(text: digits, selection: TextSelection.collapsed(offset: digits.length));
+  }
+}
+
+class _QuantityControl extends StatefulWidget {
+  const _QuantityControl({required this.value, required this.onChanged});
+  final double value;
+  final ValueChanged<double> onChanged;
+  @override
+  State<_QuantityControl> createState() => _QuantityControlState();
+}
+class _QuantityControlState extends State<_QuantityControl> {
+  late final TextEditingController controller;
+  @override
+  void initState() {
+    super.initState();
+    controller = TextEditingController(text: _text(widget.value));
+  }
+  @override
+  void didUpdateWidget(covariant _QuantityControl oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value && amount(controller.text) != widget.value) {
+      controller.text = _text(widget.value);
+    }
+  }
+  String _text(double value) => value == value.roundToDouble() ? '${value.toInt()}' : '$value';
+  @override
+  void dispose() { controller.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) => TextField(
+    controller: controller,
+    textAlign: TextAlign.center,
+    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+    onTap: () => controller.selection = TextSelection(baseOffset: 0, extentOffset: controller.text.length),
+    onSubmitted: (text) {
+      final value = double.tryParse(normalizePersianDigitsToEnglish(text));
+      if (value != null && value > 0) widget.onChanged(value);
+      else controller.text = _text(widget.value);
+    },
+    onEditingComplete: () {
+      final value = double.tryParse(normalizePersianDigitsToEnglish(controller.text));
+      if (value != null && value > 0) widget.onChanged(value);
+      else controller.text = _text(widget.value);
+      FocusScope.of(context).unfocus();
+    },
+    decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 2), border: OutlineInputBorder()),
+  );
 }
 
 class ThousandsFormatter extends TextInputFormatter {
@@ -353,7 +512,7 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('مشاهده فاکتور فروش')),
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('مشاهده فاکتور فروش'), actions: [TextButton.icon(onPressed: () => Navigator.pop(context, 'new'), icon: const Icon(Icons.add), label: const Text('صدور فاکتور جدید'))]),
       body: FutureBuilder<SalesInvoiceDetails>(future: invoiceFuture, builder: (context, snapshot) {
         if (!snapshot.hasData) return Center(child: Text(snapshot.hasError ? '${snapshot.error}' : 'در حال دریافت فاکتور...'));
         final invoice = snapshot.data!;
@@ -364,7 +523,7 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
             Image.asset('assets/branding/logo.png', height: 70),
             Text(invoice.sellerName, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleLarge),
             ...[('تاریخ فاکتور:', jalali(invoice.issueDate)), ('شماره فاکتور:', invoice.invoiceNumber ?? '-'),
-                ('نوع نسخه:', 'فروش دستی'), ('نام و نام خانوادگی:', invoice.buyerName)].map((row) =>
+                ('نوع نسخه:', invoice.invoiceType == 'FREE' ? 'فروش آزاد' : invoice.invoiceType == 'MANUAL' ? 'فروش دستی' : 'قدیمی'), ('نام و نام خانوادگی:', invoice.buyerName)].map((row) =>
                 invoiceRow(row.$1, row.$2)),
             const Divider(),
             ...invoice.items.map((item) => ListTile(title: Text(item.itemName),
@@ -372,6 +531,7 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
                 trailing: Text(money(amount(item.lineTotal))))),
             const Divider(),
             invoiceRow('قیمت کل اقلام:', '${money(amount(invoice.subtotal))} ریال'),
+            if (amount(invoice.serviceTariff) > 0) invoiceRow('تعرفه خدمات دارویی:', '${money(amount(invoice.serviceTariff))} ریال'),
             if (amount(invoice.discount) > 0) invoiceRow('تخفیف:', '${money(amount(invoice.discount))} ریال'),
             invoiceRow('قابل پرداخت:', '${money(amount(invoice.payableAmount))} ریال', emphasized: true),
             Text(amountToPersianWords(amount(invoice.payableAmount).round()) ?? ''),
