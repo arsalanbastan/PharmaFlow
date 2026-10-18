@@ -1205,8 +1205,6 @@ class _SalesProfileDialogState extends State<_SalesProfileDialog> {
   late final TextEditingController _economicCode;
   late final TextEditingController _phone;
   late final TextEditingController _address;
-  late final TextEditingController _manualTariff;
-  late final TextEditingController _freeTariff;
   bool _saving = false;
 
   @override
@@ -1218,8 +1216,6 @@ class _SalesProfileDialogState extends State<_SalesProfileDialog> {
     _economicCode = TextEditingController(text: widget.profile.economicCode);
     _phone = TextEditingController(text: widget.profile.phone);
     _address = TextEditingController(text: widget.profile.address);
-    _manualTariff = TextEditingController(text: _plainAmount(widget.profile.manualServiceTariff));
-    _freeTariff = TextEditingController(text: _plainAmount(widget.profile.freeServiceTariff));
   }
 
   @override
@@ -1231,8 +1227,6 @@ class _SalesProfileDialogState extends State<_SalesProfileDialog> {
       _economicCode,
       _phone,
       _address,
-      _manualTariff,
-      _freeTariff,
     ]) {
       controller.dispose();
     }
@@ -1253,10 +1247,6 @@ class _SalesProfileDialogState extends State<_SalesProfileDialog> {
             _field(_economicCode, 'کد اقتصادی'),
             _field(_phone, 'تلفن'),
             _field(_address, 'نشانی', maxLines: 2),
-            const Divider(height: 24),
-            const Align(alignment: Alignment.centerRight, child: Text('تعرفه خدمات دارویی (ریال)', style: TextStyle(fontWeight: FontWeight.bold))),
-            _field(_manualTariff, 'تعرفه فروش دستی', keyboardType: TextInputType.number),
-            _field(_freeTariff, 'تعرفه فروش آزاد', keyboardType: TextInputType.number),
           ],
         ),
       ),
@@ -1279,8 +1269,6 @@ class _SalesProfileDialogState extends State<_SalesProfileDialog> {
                       'economicCode': _economicCode.text.trim(),
                       'phone': _phone.text.trim(),
                       'address': _address.text.trim(),
-                      'manualServiceTariff': _parseAmount(_manualTariff.text),
-                      'freeServiceTariff': _parseAmount(_freeTariff.text),
                     });
                     if (context.mounted) Navigator.pop(context, true);
                   } finally {
@@ -1297,14 +1285,12 @@ class _SalesProfileDialogState extends State<_SalesProfileDialog> {
     TextEditingController controller,
     String label, {
     int maxLines = 1,
-    TextInputType? keyboardType,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
       child: TextField(
         controller: controller,
         maxLines: maxLines,
-        keyboardType: keyboardType,
         decoration: InputDecoration(
           labelText: label,
           border: const OutlineInputBorder(),
