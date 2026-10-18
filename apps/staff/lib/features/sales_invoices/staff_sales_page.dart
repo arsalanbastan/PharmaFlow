@@ -141,6 +141,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   Jalali date = Jalali.now();
   String invoiceType = 'MANUAL';
   bool saving = false;
+  bool canManage = false;
   bool get containsDrug => lines.any((line) => line.item.category.toUpperCase() == 'DRUG');
   double manualTariff = 81000;
   double freeTariff = 727000;
@@ -152,6 +153,48 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     query.addListener(search);
     discount.addListener(refresh);
     _loadTariffs();
+    widget.api.canManage().then((value) { if (mounted) setState(() => canManage = value); });
+  }
+  Future<void> _editTariffs() async {
+    try {
+      final profile = await widget.api.profile();
+      final manual = TextEditingController(text: money(profile.manualServiceTariff));
+      final free = TextEditingController(text: money(profile.freeServiceTariff));
+      final saved = await showDialog<bool>(context: context, builder: (dialogContext) =>
+        Directionality(textDirection: TextDirection.rtl, child: AlertDialog(
+          title: const Text('تنظیم تعرفه خدمات دارویی'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: manual, keyboardType: TextInputType.number, inputFormatters: [ThousandsFormatter()], decoration: const InputDecoration(labelText: 'تعرفه فروش دستی (ریال)')),
+            TextField(controller: free, keyboardType: TextInputType.number, inputFormatters: [ThousandsFormatter()], decoration: const InputDecoration(labelText: 'تعرفه فروش آزاد (ریال)')),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('انصراف')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('ذخیره')),
+          ],
+        )));
+      if (saved == true) {
+        final updated = await widget.api.updateProfile({
+          'sellerName': profile.sellerName,
+          if (profile.legalName != null) 'legalName': profile.legalName,
+          if (profile.nationalId != null) 'nationalId': profile.nationalId,
+          if (profile.economicCode != null) 'economicCode': profile.economicCode,
+          if (profile.phone != null) 'phone': profile.phone,
+          if (profile.address != null) 'address': profile.address,
+          if (profile.logoData != null) 'logoData': profile.logoData,
+          'manualServiceTariff': amount(manual.text),
+          'freeServiceTariff': amount(free.text),
+        });
+        if (mounted) setState(() {
+          manualTariff = updated.manualServiceTariff;
+          freeTariff = updated.freeServiceTariff;
+        });
+        if (mounted) notify('تعرفه‌ها ذخیره شدند.');
+      }
+      manual.dispose();
+      free.dispose();
+    } catch (e) {
+      if (mounted) notify('ذخیره تعرفه‌ها انجام نشد: $e');
+    }
   }
   Future<void> _loadTariffs() async {
     try {
@@ -265,7 +308,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   }
   @override
   Widget build(BuildContext context) => Directionality(textDirection: TextDirection.rtl,
-      child: Scaffold(appBar: AppBar(title: const Text('صدور فاکتور فروش'), actions: [TextButton.icon(onPressed: () => Navigator.pop(context, false), icon: const Icon(Icons.history), label: const Text('فاکتورهای قبلی'))]),
+      child: Scaffold(appBar: AppBar(title: const Text('صدور فاکتور فروش'), actions: [if (canManage) IconButton(tooltip: 'تنظیم تعرفه خدمات دارویی', onPressed: _editTariffs, icon: const Icon(Icons.settings)), TextButton.icon(onPressed: () => Navigator.pop(context, false), icon: const Icon(Icons.history), label: const Text('فاکتورهای قبلی'))]),
       resizeToAvoidBottomInset: true,
       body: ListView(keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, padding: const EdgeInsets.all(12), children: [
         const Text('بخش اول: مشخصات فاکتور و خریدار', style: TextStyle(fontWeight: FontWeight.bold)),
