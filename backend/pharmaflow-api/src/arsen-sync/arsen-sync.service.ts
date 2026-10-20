@@ -555,4 +555,36 @@ export class ArsenSyncService {
       invoiceId: saved.id,
     };
   }
+
+  async recordSyncErrors(errors: Array<{ arsenFactorId: number; errorKind: string; message: string }>) {
+    const unique = new Map<number, { arsenFactorId: number; errorKind: string; message: string }>();
+    for (const item of errors ?? []) {
+      if (!Number.isInteger(item.arsenFactorId) || item.arsenFactorId <= 0) continue;
+      unique.set(item.arsenFactorId, {
+        arsenFactorId: item.arsenFactorId,
+        errorKind: String(item.errorKind || 'INVOICE_SYNC'),
+        message: String(item.message || 'Invoice could not be synced').slice(0, 4000),
+      });
+    }
+    const now = new Date();
+    for (const item of unique.values()) {
+      await this.prisma.arsenSyncError.upsert({
+        where: { arsenFactorId: item.arsenFactorId },
+        create: { ...item, firstSeenAt: now, lastSeenAt: now },
+        update: { errorKind: item.errorKind, message: item.message, lastSeenAt: now, occurrences: { increment: 1 } },
+      });
+    }
+    return { received: unique.size };
+  }
+
+  async listSyncErrors() {
+    return this.prisma.arsenSyncError.findMany({
+      orderBy: [{ lastSeenAt: 'desc' }, { arsenFactorId: 'asc' }],
+    });
+  }
+
+  async clearSyncErrors() {
+    const result = await this.prisma.arsenSyncError.deleteMany({});
+    return { deleted: result.count };
+  }
 }
