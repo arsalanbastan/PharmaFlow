@@ -53,7 +53,7 @@ class _StaffSalesPageState extends State<StaffSalesPage> {
     if (_openingCreate || !mounted) return;
     _openingCreate = true;
     try {
-      final changed = await Navigator.of(context, rootNavigator: true).push<bool>(
+      await Navigator.of(context, rootNavigator: true).push<bool>(
         MaterialPageRoute<bool>(
           builder: (_) => StaffInvoiceForm(api: api),
         ),
