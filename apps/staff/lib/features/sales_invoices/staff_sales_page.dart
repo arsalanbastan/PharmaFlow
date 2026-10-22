@@ -58,7 +58,9 @@ class _StaffSalesPageState extends State<StaffSalesPage> {
           builder: (_) => StaffInvoiceForm(api: api),
         ),
       );
-      if (changed == true && mounted) {
+      // Refresh the list both after saving and when the user chooses
+      // "previous invoices" from the form.
+      if (mounted) {
         await load();
       }
     } finally {
