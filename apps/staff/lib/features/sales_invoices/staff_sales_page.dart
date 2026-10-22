@@ -37,18 +37,33 @@ class _StaffSalesPageState extends State<StaffSalesPage> {
   String? error;
   bool loading = false;
   Timer? invoiceSearchDebounce;
+  bool _openingCreate = false;
+
   @override
   void initState() {
     super.initState();
-    load();
+    // The invoice section must land on a new invoice, not the history list.
+    // Delay navigation until the first frame so the root Navigator is ready.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _openCreate();
     });
   }
+
   Future<void> _openCreate() async {
-    final changed = await Navigator.push<bool>(context,
-        MaterialPageRoute(builder: (_) => StaffInvoiceForm(api: api)));
-    if (changed == true && mounted) load();
+    if (_openingCreate || !mounted) return;
+    _openingCreate = true;
+    try {
+      final changed = await Navigator.of(context, rootNavigator: true).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => StaffInvoiceForm(api: api),
+        ),
+      );
+      if (changed == true && mounted) {
+        await load();
+      }
+    } finally {
+      _openingCreate = false;
+    }
   }
   @override
   void dispose() { invoiceSearchDebounce?.cancel(); api.close(); search.dispose(); super.dispose(); }
