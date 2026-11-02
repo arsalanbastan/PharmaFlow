@@ -166,9 +166,9 @@ export class SalesInvoicesService {
     const byId = new Map(catalogItems.map((item) => [item.id, item]));
     const invoiceType = dto.invoiceType ?? 'LEGACY';
     const containsDrug = catalogItems.some((item) => item.category === 'DRUG');
-    const serviceTariff = invoiceType === 'LEGACY' || !containsDrug
+    const serviceTariff = !containsDrug || invoiceType === 'GOODS' || invoiceType === 'LEGACY'
       ? new Prisma.Decimal(0)
-      : new Prisma.Decimal(invoiceType === 'MANUAL' ? profile.manualServiceTariff : profile.freeServiceTariff);
+      : new Prisma.Decimal((invoiceType === 'OTC' || invoiceType === 'MANUAL') ? profile.manualServiceTariff : profile.freeServiceTariff);
     let subtotal = new Prisma.Decimal(0);
     const items = dto.items.map((requested) => {
       const catalog = byId.get(requested.catalogItemId)!;

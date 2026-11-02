@@ -8,6 +8,8 @@ describe('SalesInvoicesService', () => {
     const profile = {
       id: 'default',
       sellerName: 'داروخانه دکتر خسروانی',
+      manualServiceTariff: new Prisma.Decimal(81000),
+      freeServiceTariff: new Prisma.Decimal(727000),
       legalName: null,
       nationalId: null,
       economicCode: null,
@@ -67,6 +69,7 @@ describe('SalesInvoicesService', () => {
           {
             id: catalogId,
             arsenDrugId: 10n,
+            category: 'DRUG',
             persianName: 'داروی تست',
             genericName: null,
             persianBrandName: null,
@@ -120,6 +123,42 @@ describe('SalesInvoicesService', () => {
     });
     expect(tx.salesInvoice.create).toHaveBeenLastCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ buyerName: '' }) }),
+    );
+
+    await service.create({
+      issueDate: '2026-09-17T00:00:00.000Z',
+      invoiceType: 'GOODS',
+      items: [{ catalogItemId: catalogId, quantity: 1, unitPrice: 100 }],
+    });
+    expect(tx.salesInvoice.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({
+        serviceTariff: new Prisma.Decimal(0),
+        payableAmount: new Prisma.Decimal(100),
+      }) }),
+    );
+
+    await service.create({
+      issueDate: '2026-09-17T00:00:00.000Z',
+      invoiceType: 'OTC',
+      items: [{ catalogItemId: catalogId, quantity: 1, unitPrice: 100 }],
+    });
+    expect(tx.salesInvoice.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({
+        serviceTariff: new Prisma.Decimal(81000),
+        payableAmount: new Prisma.Decimal(81100),
+      }) }),
+    );
+
+    await service.create({
+      issueDate: '2026-09-17T00:00:00.000Z',
+      invoiceType: 'FREE',
+      items: [{ catalogItemId: catalogId, quantity: 1, unitPrice: 100 }],
+    });
+    expect(tx.salesInvoice.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({
+        serviceTariff: new Prisma.Decimal(727000),
+        payableAmount: new Prisma.Decimal(727100),
+      }) }),
     );
   });
 });

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -13,7 +14,6 @@ import 'package:shamsi_date/shamsi_date.dart';
 import '../../shared/widgets/date_picker/pharmaflow_date_picker.dart';
 import 'amount_words.dart';
 import 'sales_invoice.dart';
-import 'sales_invoice_export_service.dart';
 import 'staff_sales_api.dart';
 import 'catalog_item_details.dart';
 
@@ -26,11 +26,12 @@ String jalali(DateTime date) {
 }
 
 class StaffSalesPage extends StatefulWidget {
-  const StaffSalesPage({super.key});
+  const StaffSalesPage({super.key, this.onReturnHome});
+  final VoidCallback? onReturnHome;
   @override
-  State<StaffSalesPage> createState() => _StaffSalesPageState();
+  State<StaffSalesPage> createState() => StaffSalesPageState();
 }
-class _StaffSalesPageState extends State<StaffSalesPage> {
+class StaffSalesPageState extends State<StaffSalesPage> {
   final api = StaffSalesApi();
   final search = TextEditingController();
   SalesInvoicePage? invoices;
@@ -39,28 +40,21 @@ class _StaffSalesPageState extends State<StaffSalesPage> {
   Timer? invoiceSearchDebounce;
   bool _openingCreate = false;
 
-  @override
-  void initState() {
-    super.initState();
-    // The invoice section must land on a new invoice, not the history list.
-    // Delay navigation until the first frame so the root Navigator is ready.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _openCreate();
-    });
-  }
+  Future<void> openCreate() => _openCreate();
 
   Future<void> _openCreate() async {
     if (_openingCreate || !mounted) return;
     _openingCreate = true;
     try {
-      await Navigator.of(context, rootNavigator: true).push<bool>(
-        MaterialPageRoute<bool>(
+      final result = await Navigator.of(context, rootNavigator: true).push<String>(
+        MaterialPageRoute<String>(
           builder: (_) => StaffInvoiceForm(api: api),
         ),
       );
-      // Refresh the list both after saving and when the user chooses
-      // "previous invoices" from the form.
-      if (mounted) {
+      if (!mounted) return;
+      if (result == 'home') {
+        widget.onReturnHome?.call();
+      } else {
         await load();
       }
     } finally {
@@ -91,8 +85,16 @@ class _StaffSalesPageState extends State<StaffSalesPage> {
     ])),
     Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: SizedBox(width: double.infinity,
         child: FilledButton.icon(icon: const Icon(Icons.add), label: const Text('فاکتور جدید'), onPressed: () async {
-          final changed = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => StaffInvoiceForm(api: api)));
-          if (changed == true) load();
+          final result = await Navigator.push<String>(
+            context,
+            MaterialPageRoute(builder: (_) => StaffInvoiceForm(api: api)),
+          );
+          if (!mounted) return;
+          if (result == 'home') {
+            widget.onReturnHome?.call();
+          } else {
+            load();
+          }
         }))),
     if (loading) const LinearProgressIndicator(),
     if (error != null) Padding(padding: const EdgeInsets.all(12), child: Text(error!)),
@@ -104,7 +106,12 @@ class _StaffSalesPageState extends State<StaffSalesPage> {
               trailing: const Icon(Icons.chevron_left), onTap: () async {
                 final action = await Navigator.push<String>(context,
                     MaterialPageRoute(builder: (_) => StaffInvoiceDetails(api: api, id: item.id)));
-                if (action == 'new' && mounted) _openCreate();
+                if (!mounted) return;
+                if (action == 'new') {
+                  openCreate();
+                } else if (action == 'home') {
+                  widget.onReturnHome?.call();
+                }
               });
         })),
   ]));
@@ -130,6 +137,16 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   final address = TextEditingController();
   final query = TextEditingController();
   final searchFocus = FocusNode();
+  final Map<String, FocusNode> quantityFocusNodes = {};
+  final itemsSectionKey = GlobalKey();
+  FocusNode _quantityFocusNode(String id) =>
+      quantityFocusNodes.putIfAbsent(id, FocusNode.new);
+  final MobileScannerController scannerController = MobileScannerController(
+    facing: CameraFacing.back,
+    detectionSpeed: DetectionSpeed.noDuplicates,
+  );
+  bool scannerBusy = false;
+  String? lastScannedCode;
   final searchFieldKey = GlobalKey();
   void showSearchAboveKeyboard() {
     Future<void>.delayed(const Duration(milliseconds: 280), () {
@@ -156,13 +173,15 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   });
   Timer? debounce;
   Jalali date = Jalali.now();
-  String invoiceType = 'MANUAL';
+  String invoiceType = 'OTC';
   bool saving = false;
   bool canManage = false;
   bool get containsDrug => lines.any((line) => line.item.category.toUpperCase() == 'DRUG');
   double manualTariff = 81000;
   double freeTariff = 727000;
-  double get serviceTariff => !containsDrug ? 0 : (invoiceType == 'MANUAL' ? manualTariff : freeTariff);
+  double get serviceTariff => !containsDrug || invoiceType == 'GOODS'
+      ? 0
+      : (invoiceType == 'OTC' ? manualTariff : freeTariff);
   double get payable => (subtotal + serviceTariff - amount(discount.text)).clamp(0, double.infinity).toDouble();
   @override
   void initState() {
@@ -181,8 +200,8 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
         Directionality(textDirection: TextDirection.rtl, child: AlertDialog(
           title: const Text('تنظیم تعرفه خدمات دارویی'),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(controller: manual, keyboardType: TextInputType.number, inputFormatters: [ThousandsFormatter()], decoration: const InputDecoration(labelText: 'تعرفه فروش دستی (ریال)')),
-            TextField(controller: free, keyboardType: TextInputType.number, inputFormatters: [ThousandsFormatter()], decoration: const InputDecoration(labelText: 'تعرفه فروش آزاد (ریال)')),
+            TextField(controller: manual, keyboardType: TextInputType.number, inputFormatters: [ThousandsFormatter()], decoration: const InputDecoration(labelText: 'تعرفه فروش OTC (ریال)')),
+            TextField(controller: free, keyboardType: TextInputType.number, inputFormatters: [ThousandsFormatter()], decoration: const InputDecoration(labelText: 'تعرفه نسخه آزاد (ریال)')),
           ]),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('انصراف')),
@@ -230,7 +249,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
       lines.clear();
       suggestions = [];
       date = Jalali.now();
-      invoiceType = 'MANUAL';
+      invoiceType = 'OTC';
     });
   }
   void refresh() { if (mounted) setState(() {}); }
@@ -238,6 +257,8 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   void dispose() {
     debounce?.cancel(); for (final c in [buyer, nationalId, phone, address, query, discount, notes]) { c.dispose(); }
     searchFocus.dispose();
+    scannerController.dispose();
+    for (final node in quantityFocusNodes.values) { node.dispose(); }
     super.dispose();
   }
   Future<void> scanBarcode() async {
@@ -258,6 +279,31 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
       if (mounted) notify('جستجوی بارکد انجام نشد: $e');
     }
   }
+  Future<void> handleScannedBarcode(String rawCode) async {
+    final code = rawCode.trim();
+    if (code.isEmpty || scannerBusy || code == lastScannedCode) return;
+    scannerBusy = true;
+    lastScannedCode = code;
+    try {
+      final result = await widget.api.search(code);
+      if (!mounted) return;
+      final exact = result.where((item) => item.matchedBarcode == code).toList();
+      if (exact.length == 1) {
+        addItem(exact.single);
+      } else {
+        query.text = code;
+        setState(() => suggestions = result);
+        if (exact.isEmpty) notify('بارکد دقیق پیدا نشد؛ از نتایج جستجو کالا را انتخاب کنید.');
+      }
+    } catch (e) {
+      if (mounted) notify('خواندن بارکد انجام نشد: $e');
+    } finally {
+      // Keep this barcode locked while it remains in the camera frame.
+      // onDetect releases the lock when no barcode is visible.
+      scannerBusy = false;
+    }
+  }
+
   void search() {
     debounce?.cancel();
     final text = query.text.trim();
@@ -283,7 +329,22 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
       suggestions = [];
       query.clear();
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) searchFocus.requestFocus(); });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final sectionContext = itemsSectionKey.currentContext;
+      if (sectionContext != null) {
+        await Scrollable.ensureVisible(
+          sectionContext,
+          alignment: 0.15,
+          duration: const Duration(milliseconds: 220),
+        );
+      }
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _quantityFocusNode(item.id).requestFocus();
+        });
+      }
+    });
   }
   void setQuantity(int index, double quantity) {
     if (quantity <= 0) return;
@@ -315,76 +376,273 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
             'quantity': line.quantity, 'unitPrice': line.price, 'lineDiscount': line.discount}).toList(),
       });
       if (!mounted) return;
-      final action = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => StaffInvoiceDetails(api: widget.api, id: invoice.id)));
+      final action = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(builder: (_) => StaffInvoiceDetails(api: widget.api, id: invoice.id)),
+      );
       if (mounted) {
-        if (action == 'new') { _resetForm(); }
-        else { Navigator.pop(context, true); }
+        if (action == 'new') {
+          _resetForm();
+        } else if (action == 'home') {
+          Navigator.pop(context, 'home');
+        } else {
+          Navigator.pop(context, 'done');
+        }
       }
     } catch (e) { if (mounted) notify('صدور فاکتور انجام نشد: $e'); }
     finally { if (mounted) setState(() => saving = false); }
   }
+  Widget _invoiceSection(String title, List<Widget> children, {Key? key}) => Card(
+    key: key,
+    margin: const EdgeInsets.only(bottom: 14),
+    elevation: 1,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    ),
+  );
+
   @override
-  Widget build(BuildContext context) => Directionality(textDirection: TextDirection.rtl,
-      child: Scaffold(appBar: AppBar(title: const Text('صدور فاکتور فروش'), actions: [if (canManage) IconButton(tooltip: 'تنظیم تعرفه خدمات دارویی', onPressed: _editTariffs, icon: const Icon(Icons.settings)), TextButton.icon(onPressed: () => Navigator.pop(context, false), icon: const Icon(Icons.history), label: const Text('فاکتورهای قبلی'))]),
+  Widget build(BuildContext context) => Directionality(
+    textDirection: TextDirection.rtl,
+    child: Scaffold(
+      appBar: AppBar(
+        title: const Text('صدور فاکتور فروش'),
+        actions: [
+          if (canManage)
+            IconButton(
+              tooltip: 'تنظیم تعرفه خدمات دارویی',
+              onPressed: _editTariffs,
+              icon: const Icon(Icons.settings),
+            ),
+          TextButton.icon(
+            onPressed: () => Navigator.pop(context, 'history'),
+            icon: const Icon(Icons.history),
+            label: const Text('فاکتورهای قبلی'),
+          ),
+        ],
+      ),
       resizeToAvoidBottomInset: true,
-      body: ListView(keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, padding: const EdgeInsets.all(12), children: [
-        const Text('بخش اول: مشخصات فاکتور و خریدار', style: TextStyle(fontWeight: FontWeight.bold)),
-        DropdownButtonFormField<String>(value: invoiceType, decoration: const InputDecoration(labelText: 'نوع فروش'), items: const [DropdownMenuItem(value: 'MANUAL', child: Text('فروش دستی')), DropdownMenuItem(value: 'FREE', child: Text('فروش آزاد'))], onChanged: (value) { if (value != null) setState(() => invoiceType = value); }),
-        TextField(controller: buyer, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی خریدار (اختیاری)')),
-        TextField(controller: nationalId, textAlign: TextAlign.right, keyboardType: TextInputType.number, inputFormatters: [PersianDigitsOnlyFormatter()], decoration: const InputDecoration(labelText: 'کد/شناسه ملی (اختیاری)')),
-        TextField(controller: phone, textAlign: TextAlign.right, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'تلفن (اختیاری)')),
-        TextField(controller: address, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'نشانی خریدار (اختیاری)')),
-        OutlinedButton.icon(onPressed: () async {
-          final picked = await PharmaFlowDatePicker.show(
-            context: context,
-            initialDate: date,
-            firstDate: Jalali(1390, 1, 1),
-            lastDate: Jalali(1450, 12, 29),
-          );
-          if (picked != null) setState(() => date = picked);
-        }, icon: const Icon(Icons.calendar_month), label: Text('تاریخ فاکتور: ${jalali(date.toDateTime())}')),
-        const Divider(height: 28, thickness: 1),
-        const Text('بخش دوم: انتخاب دارو و کالا', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        TextField(key: searchFieldKey, focusNode: searchFocus, autofocus: true, onTap: showSearchAboveKeyboard,
-            controller: query, textAlign: TextAlign.right, onSubmitted: (_) => scanBarcode(), decoration: const InputDecoration(labelText: 'جستجو یا اسکن بارکد دارو / کالا', prefixIcon: Icon(Icons.qr_code_scanner))),
-        if (suggestions.isNotEmpty) Row(children: [
-          TextButton(onPressed: () => toggleSort(CatalogSortField.relevance), child: const Text('ارتباط')),
-          TextButton(onPressed: () => toggleSort(CatalogSortField.dose), child: Text('دوز/حجم ${catalogSort == CatalogSortField.dose ? (sortDescending ? '↓' : '↑') : ''}')),
-          TextButton(onPressed: () => toggleSort(CatalogSortField.shape), child: Text('شکل ${catalogSort == CatalogSortField.shape ? (sortDescending ? '↓' : '↑') : ''}')),
-        ]),
-        if (suggestions.isNotEmpty) SizedBox(height: 260, child: ListView.builder(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          itemCount: sortedSuggestions.length,
-          itemBuilder: (context, index) {
-            final item = sortedSuggestions[index];
-            return ListTile(title: Text(item.name),
-              subtitle: Text('${item.details}\nقیمت فروش ثبت‌شده: ${money(item.price)} ریال${item.packetQuantity != null && item.packetQuantity! > 1 ? ' • تعداد در بسته: ${item.packetQuantity}' : ''}'),
-              isThreeLine: true, onTap: () => addItem(item));
-          },
-        )),
-        ...lines.asMap().entries.map((entry) => Card(child: ListTile(
-            title: Text(entry.value.item.name),
-            subtitle: Text('${money(entry.value.price)} ریال × ${entry.value.quantity} — جمع ${money(entry.value.total)} ریال'),
-            onTap: () => edit(entry.value.item, index: entry.key),
-            trailing: SizedBox(width: 250, child: Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(tooltip: 'افزایش تعداد', onPressed: () => setQuantity(entry.key, entry.value.quantity + 1), icon: const Icon(Icons.add_circle_outline)),
-              SizedBox(width: 58, child: _QuantityControl(value: entry.value.quantity, onChanged: (value) => setQuantity(entry.key, value))),
-              IconButton(tooltip: 'کاهش تعداد', onPressed: () => setQuantity(entry.key, (entry.value.quantity - 1).clamp(1, double.infinity).toDouble()), icon: const Icon(Icons.remove_circle_outline)),
-              IconButton(tooltip: 'حذف قلم', icon: const Icon(Icons.delete_outline), onPressed: () => setState(() => lines.removeAt(entry.key))),
-            ]))))),
-        const Divider(height: 28, thickness: 1),
-        const Text('بخش سوم: جمع‌بندی و صدور فاکتور', style: TextStyle(fontWeight: FontWeight.bold)),
-        Text('جمع اقلام: ${money(subtotal)} ریال'),
-        Text('تعرفه خدمات دارویی${containsDrug ? '' : ' (بدون دارو: صفر)'}: ${money(serviceTariff)} ریال'),
-        TextField(controller: discount, keyboardType: TextInputType.number,
-            textAlign: TextAlign.right,
-            inputFormatters: [ThousandsFormatter()], decoration: const InputDecoration(labelText: 'تخفیف کل (ریال)')),
-        TextField(controller: notes, textAlign: TextAlign.right, decoration: const InputDecoration(labelText: 'توضیحات (اختیاری)')),
-        Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text('قابل پرداخت: ${money(payable)} ریال',
-            style: Theme.of(context).textTheme.titleLarge)),
-        FilledButton(onPressed: saving ? null : save, child: Text(saving ? 'در حال ثبت...' : 'صدور فاکتور')),
-      ])));
+      body: ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.all(12),
+        children: [
+          _invoiceSection('مشخصات فاکتور', [
+            DropdownButtonFormField<String>(
+              value: invoiceType,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'نوع فروش'),
+              items: const [
+                DropdownMenuItem(value: 'GOODS', child: Text('فروش کالا')),
+                DropdownMenuItem(value: 'OTC', child: Text('فروش OTC')),
+                DropdownMenuItem(value: 'FREE', child: Text('نسخه آزاد')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => invoiceType = value);
+              },
+            ),
+            TextField(controller: buyer, textAlign: TextAlign.right,
+              decoration: const InputDecoration(labelText: 'نام و نام خانوادگی خریدار (اختیاری)')),
+            TextField(controller: nationalId, textAlign: TextAlign.right,
+              keyboardType: TextInputType.number,
+              inputFormatters: [PersianDigitsOnlyFormatter()],
+              decoration: const InputDecoration(labelText: 'کد/شناسه ملی (اختیاری)')),
+            TextField(controller: phone, textAlign: TextAlign.right,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'تلفن (اختیاری)')),
+            TextField(controller: address, textAlign: TextAlign.right,
+              decoration: const InputDecoration(labelText: 'نشانی خریدار (اختیاری)')),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final picked = await PharmaFlowDatePicker.show(
+                  context: context,
+                  initialDate: date,
+                  firstDate: Jalali(1390, 1, 1),
+                  lastDate: Jalali(1450, 12, 29),
+                );
+                if (picked != null) setState(() => date = picked);
+              },
+              icon: const Icon(Icons.calendar_month),
+              label: Text('تاریخ فاکتور: ${jalali(date.toDateTime())}'),
+            ),
+          ]),
+          _invoiceSection('انتخاب کالا و دارو', [
+            Container(
+              height: 190,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  MobileScanner(
+                    controller: scannerController,
+                    onDetect: (capture) {
+                      if (capture.barcodes.isEmpty) {
+                        lastScannedCode = null;
+                        return;
+                      }
+                      for (final barcode in capture.barcodes) {
+                        final value = barcode.rawValue;
+                        if (value != null && value.trim().isNotEmpty) {
+                          handleScannedBarcode(value);
+                          break;
+                        }
+                      }
+                    },
+                    errorBuilder: (context, error) => Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.no_photography_outlined, size: 34),
+                            SizedBox(height: 8),
+                            Text('دوربین در دسترس نیست؛ جستجوی متنی همچنان فعال است.',
+                              textAlign: TextAlign.center),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: .55),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text('بارکد را مقابل دوربین پشت قرار دهید',
+                        style: TextStyle(color: Colors.white, fontSize: 12)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: searchFieldKey,
+              focusNode: searchFocus,
+              controller: query,
+              textAlign: TextAlign.right,
+              onTap: showSearchAboveKeyboard,
+              onSubmitted: (_) => scanBarcode(),
+              decoration: const InputDecoration(
+                labelText: 'جستجوی متنی یا ورود بارکد',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (suggestions.isNotEmpty) Row(children: [
+              TextButton(onPressed: () => toggleSort(CatalogSortField.relevance), child: const Text('ارتباط')),
+              TextButton(onPressed: () => toggleSort(CatalogSortField.dose),
+                child: Text('دوز/حجم ${catalogSort == CatalogSortField.dose ? (sortDescending ? '↓' : '↑') : ''}')),
+              TextButton(onPressed: () => toggleSort(CatalogSortField.shape),
+                child: Text('شکل ${catalogSort == CatalogSortField.shape ? (sortDescending ? '↓' : '↑') : ''}')),
+            ]),
+            if (suggestions.isNotEmpty)
+              SizedBox(
+                height: 260,
+                child: ListView.builder(
+                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                  itemCount: sortedSuggestions.length,
+                  itemBuilder: (context, index) {
+                    final item = sortedSuggestions[index];
+                    return ListTile(
+                      title: Text(item.name),
+                      subtitle: Text('${item.details}\nقیمت فروش ثبت‌شده: ${money(item.price)} ریال${item.packetQuantity != null && item.packetQuantity! > 1 ? ' • تعداد در بسته: ${item.packetQuantity}' : ''}'),
+                      isThreeLine: true,
+                      onTap: () => addItem(item),
+                    );
+                  },
+                ),
+              ),
+          ]),
+          _invoiceSection('اقلام فاکتور و مبالغ', [
+            if (lines.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('هنوز کالایی به فاکتور اضافه نشده است.',
+                  textAlign: TextAlign.center),
+              ),
+            ...lines.asMap().entries.map((entry) {
+              final item = entry.value.item;
+              return Card(
+                child: ListTile(
+                  title: Text(item.name),
+                  subtitle: Text('${money(entry.value.price)} ریال × ${entry.value.quantity} — جمع ${money(entry.value.total)} ریال'),
+                  onTap: () => edit(item, index: entry.key),
+                  trailing: SizedBox(
+                    width: 250,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(tooltip: 'افزایش تعداد',
+                          onPressed: () => setQuantity(entry.key, entry.value.quantity + 1),
+                          icon: const Icon(Icons.add_circle_outline)),
+                        SizedBox(
+                          width: 58,
+                          child: _QuantityControl(
+                            value: entry.value.quantity,
+                            focusNode: _quantityFocusNode(item.id),
+                            onChanged: (value) => setQuantity(entry.key, value),
+                          ),
+                        ),
+                        IconButton(tooltip: 'کاهش تعداد',
+                          onPressed: () => setQuantity(entry.key,
+                            (entry.value.quantity - 1).clamp(1, double.infinity).toDouble()),
+                          icon: const Icon(Icons.remove_circle_outline)),
+                        IconButton(tooltip: 'حذف قلم',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => setState(() => lines.removeAt(entry.key))),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
+            const SizedBox(height: 8),
+            Text('جمع اقلام: ${money(subtotal)} ریال'),
+            Text('تعرفه خدمات دارویی${containsDrug ? '' : ' (بدون دارو: صفر)'}: ${money(serviceTariff)} ریال'),
+            TextField(
+              controller: discount,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.right,
+              inputFormatters: [ThousandsFormatter()],
+              decoration: const InputDecoration(labelText: 'تخفیف کل (ریال)'),
+            ),
+            TextField(controller: notes, textAlign: TextAlign.right,
+              decoration: const InputDecoration(labelText: 'توضیحات (اختیاری)')),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text('قابل پرداخت: ${money(payable)} ریال',
+                style: Theme.of(context).textTheme.titleLarge),
+            ),
+            FilledButton(
+              onPressed: saving ? null : save,
+              child: Text(saving ? 'در حال ثبت...' : 'صدور فاکتور'),
+            ),
+          ], key: itemsSectionKey),
+        ],
+      ),
+    ),
+  );
 }
 
 class PersianDigitsOnlyFormatter extends TextInputFormatter {
@@ -396,9 +654,10 @@ class PersianDigitsOnlyFormatter extends TextInputFormatter {
 }
 
 class _QuantityControl extends StatefulWidget {
-  const _QuantityControl({required this.value, required this.onChanged});
+  const _QuantityControl({required this.value, required this.onChanged, required this.focusNode});
   final double value;
   final ValueChanged<double> onChanged;
+  final FocusNode focusNode;
   @override
   State<_QuantityControl> createState() => _QuantityControlState();
 }
@@ -422,7 +681,12 @@ class _QuantityControlState extends State<_QuantityControl> {
   @override
   Widget build(BuildContext context) => TextField(
     controller: controller,
+    focusNode: widget.focusNode,
     textAlign: TextAlign.center,
+    onChanged: (text) {
+      final value = double.tryParse(normalizePersianDigitsToEnglish(text));
+      if (value != null && value > 0) widget.onChanged(value);
+    },
     keyboardType: const TextInputType.numberWithOptions(decimal: true),
     onTap: () => controller.selection = TextSelection(baseOffset: 0, extentOffset: controller.text.length),
     onSubmitted: (text) {
@@ -547,13 +811,21 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
       final bytes = await captureImage();
       final name = 'sales_invoice_${invoice.invoiceNumber ?? invoice.id}.png';
       if (share) {
-        final file = File(p.join((await getTemporaryDirectory()).path, name));
-        await file.writeAsBytes(bytes, flush: true);
-        await SharePlus.instance.share(ShareParams(
-          files: [XFile(file.path, mimeType: 'image/png')],
-          fileNameOverrides: [name],
-          text: 'فاکتور فروش ${invoice.invoiceNumber ?? ''}',
-        ));
+        if (kIsWeb) {
+          await SharePlus.instance.share(ShareParams(
+            files: [XFile.fromData(bytes, mimeType: 'image/png', name: name)],
+            fileNameOverrides: [name],
+            text: 'فاکتور فروش ${invoice.invoiceNumber ?? ''}',
+          ));
+        } else {
+          final file = File(p.join((await getTemporaryDirectory()).path, name));
+          await file.writeAsBytes(bytes, flush: true);
+          await SharePlus.instance.share(ShareParams(
+            files: [XFile(file.path, mimeType: 'image/png')],
+            fileNameOverrides: [name],
+            text: 'فاکتور فروش ${invoice.invoiceNumber ?? ''}',
+          ));
+        }
       } else {
         await FilePicker.platform.saveFile(
           dialogTitle: 'ذخیره تصویر فاکتور', fileName: name,
@@ -572,18 +844,17 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('مشاهده فاکتور فروش'), actions: [TextButton.icon(onPressed: () => Navigator.pop(context, 'new'), icon: const Icon(Icons.add), label: const Text('صدور فاکتور جدید'))]),
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('فاکتور صادرشده')),
       body: FutureBuilder<SalesInvoiceDetails>(future: invoiceFuture, builder: (context, snapshot) {
         if (!snapshot.hasData) return Center(child: Text(snapshot.hasError ? '${snapshot.error}' : 'در حال دریافت فاکتور...'));
         final invoice = snapshot.data!;
-        final exporter = SalesInvoiceExportService();
         return ListView(padding: const EdgeInsets.all(12), children: [
           RepaintBoundary(key: captureKey, child: Directionality(textDirection: TextDirection.rtl,
               child: Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Image.asset('assets/branding/logo.png', height: 70),
             Text(invoice.sellerName, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleLarge),
             ...[('تاریخ فاکتور:', jalali(invoice.issueDate)), ('شماره فاکتور:', invoice.invoiceNumber ?? '-'),
-                ('نوع نسخه:', invoice.invoiceType == 'FREE' ? 'فروش آزاد' : invoice.invoiceType == 'MANUAL' ? 'فروش دستی' : 'قدیمی'), ('نام و نام خانوادگی:', invoice.buyerName)].map((row) =>
+                ('نوع نسخه:', invoice.invoiceType == 'FREE' ? 'نسخه آزاد' : (invoice.invoiceType == 'OTC' || invoice.invoiceType == 'MANUAL') ? 'فروش OTC' : invoice.invoiceType == 'GOODS' ? 'فروش کالا' : 'قدیمی'), ('نام و نام خانوادگی:', invoice.buyerName)].map((row) =>
                 invoiceRow(row.$1, row.$2)),
             const Divider(),
             ...invoice.items.map((item) => ListTile(title: Text(item.itemName),
@@ -599,18 +870,31 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
             if (invoice.sellerAddress != null) Text(invoice.sellerAddress!),
             if (invoice.sellerPhone != null) Text(invoice.sellerPhone!),
           ]))))),
-          Wrap(spacing: 8, children: [
-            if (!kIsWeb) FilledButton.icon(icon: const Icon(Icons.picture_as_pdf), label: const Text('اشتراک PDF'),
-                onPressed: working ? null : () => exporter.sharePdf(invoice)),
-            OutlinedButton.icon(icon: const Icon(Icons.download), label: const Text('ذخیره / چاپ PDF'),
-                onPressed: working ? null : () => exporter.savePdf(invoice)),
-            if (!kIsWeb) FilledButton.tonalIcon(icon: const Icon(Icons.image_outlined),
-                label: const Text('اشتراک تصویر'),
-                onPressed: working ? null : () => exportImage(invoice, share: true)),
-            OutlinedButton.icon(icon: const Icon(Icons.save_alt_outlined),
-                label: const Text('ذخیره تصویر'),
-                onPressed: working ? null : () => exportImage(invoice, share: false)),
-          ]),
+          if (working)
+            const Center(child: Padding(
+              padding: EdgeInsets.all(12),
+              child: CircularProgressIndicator(),
+            )),
+          FilledButton.icon(
+            icon: const Icon(Icons.save_alt),
+            label: const Text('ذخیره در گالری'),
+            onPressed: working ? null : () => exportImage(invoice, share: false),
+          ),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.share),
+            label: const Text('اشتراک گذاری'),
+            onPressed: working ? null : () => exportImage(invoice, share: true),
+          ),
+          FilledButton.tonalIcon(
+            icon: const Icon(Icons.add),
+            label: const Text('فاکتور جدید'),
+            onPressed: working ? null : () => Navigator.pop(context, 'new'),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.home_outlined),
+            label: const Text('خروج'),
+            onPressed: working ? null : () => Navigator.pop(context, 'home'),
+          ),
         ]);
       }));
 }

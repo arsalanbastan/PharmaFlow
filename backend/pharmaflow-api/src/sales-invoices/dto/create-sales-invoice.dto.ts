@@ -40,8 +40,8 @@ export class CreateSalesInvoiceDto {
   issueDate: string;
 
   @IsOptional()
-  @IsIn(['MANUAL', 'FREE'])
-  invoiceType?: 'MANUAL' | 'FREE';
+  @IsIn(['GOODS', 'OTC', 'FREE', 'MANUAL'])
+  invoiceType?: 'GOODS' | 'OTC' | 'FREE' | 'MANUAL';
 
   @IsString()
   @MaxLength(250)

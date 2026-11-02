@@ -188,6 +188,7 @@ class StaffHomePage extends StatefulWidget {
 
 class _StaffHomePageState extends State<StaffHomePage> {
   final _dashboardKey = GlobalKey<StaffOrdersDashboardState>();
+  final _salesPageKey = GlobalKey<StaffSalesPageState>();
   final _updateRunner = StaffUpdateRunner();
 
   bool _checking = false;
@@ -219,6 +220,8 @@ class _StaffHomePageState extends State<StaffHomePage> {
         unawaited(
           _dashboardKey.currentState?.refresh() ?? Future<void>.value(),
         );
+      } else if (index == 2) {
+        unawaited(_salesPageKey.currentState?.openCreate() ?? Future<void>.value());
       }
       return;
     }
@@ -226,6 +229,13 @@ class _StaffHomePageState extends State<StaffHomePage> {
     setState(() {
       _selectedIndex = index;
     });
+    if (index == 2) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_salesPageKey.currentState?.openCreate() ?? Future<void>.value());
+        }
+      });
+    }
   }
 
   void _onOrderCreated() {
@@ -364,7 +374,7 @@ class _StaffHomePageState extends State<StaffHomePage> {
         child: StaffOrdersDashboard(key: _dashboardKey, user: widget.user),
       ),
       StaffOrderFormPage(embedded: true, onOrderCreated: _onOrderCreated),
-      const StaffSalesPage(),
+      StaffSalesPage(key: _salesPageKey, onReturnHome: () => _selectPage(0)),
     ];
 
     return Directionality(
