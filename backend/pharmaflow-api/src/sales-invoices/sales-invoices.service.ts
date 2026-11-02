@@ -183,11 +183,15 @@ export class SalesInvoicesService {
       }
       const lineTotal = gross.minus(lineDiscount);
       subtotal = subtotal.plus(lineTotal);
-      const itemName =
-        catalog.persianName?.trim() ||
-        catalog.genericName?.trim() ||
-        catalog.persianBrandName?.trim() ||
-        `Arsen #${catalog.arsenDrugId.toString()}`;
+      const genericName = catalog.genericName?.trim() || catalog.persianName?.trim() ||
+        catalog.persianBrandName?.trim() || `Arsen #${catalog.arsenDrugId.toString()}`;
+      const brandName = catalog.persianBrandName?.trim() || catalog.brandName?.trim();
+      const itemName = [
+        genericName,
+        catalog.shapeName?.trim(),
+        catalog.unit?.trim(),
+        brandName,
+      ].filter((value, index, values) => Boolean(value) && values.indexOf(value) === index).join(' • ');
 
       return {
         catalogItemId: catalog.id,

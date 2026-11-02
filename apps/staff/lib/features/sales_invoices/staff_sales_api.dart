@@ -69,14 +69,14 @@ class StaffSalesApi {
   Future<SalesInvoiceDetails> create(Map<String, dynamic> body) async => SalesInvoiceDetails.fromJson(
       await _request('/sales-invoices', body: body));
   Future<List<StaffCatalogItem>> search(String query) async {
-    final items = <StaffCatalogItem>[];
-    var page = 1;
-    while (true) {
-      final data = await _request('/catalog/staff-search?q=${Uri.encodeQueryComponent(query)}&page=$page');
-      items.addAll((data['items'] as List).map((row) =>
-          StaffCatalogItem(Map<String, dynamic>.from(row as Map))));
-      if (page >= (data['totalPages'] as int)) return items;
-      page++;
-    }
+    // The API already ranks the complete match set and returns the best 100.
+    // Fetching every page repeated the same expensive ranking query for each
+    // page, causing multi-request 10–20 second delays while typing.
+    final data = await _request(
+      '/catalog/staff-search?q=${Uri.encodeQueryComponent(query)}&page=1',
+    );
+    return (data['items'] as List)
+        .map((row) => StaffCatalogItem(Map<String, dynamic>.from(row as Map)))
+        .toList(growable: false);
   }
 }

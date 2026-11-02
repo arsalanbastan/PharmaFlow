@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -800,20 +801,22 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
         as RenderRepaintBoundary?;
     if (boundary == null) throw StateError('فاکتور برای ذخیره تصویر آماده نیست.');
     final image = await boundary.toImage(pixelRatio: 2);
-    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-    if (bytes == null) throw StateError('ساخت تصویر فاکتور ممکن نشد.');
-    return bytes.buffer.asUint8List();
+    final pngBytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (pngBytes == null) throw StateError('ساخت تصویر فاکتور ممکن نشد.');
+    final decoded = img.decodePng(pngBytes.buffer.asUint8List());
+    if (decoded == null) throw StateError('تبدیل تصویر فاکتور به JPEG ممکن نشد.');
+    return Uint8List.fromList(img.encodeJpg(decoded, quality: 92));
   }
 
   Future<void> exportImage(SalesInvoiceDetails invoice, {required bool share}) async {
     setState(() => working = true);
     try {
       final bytes = await captureImage();
-      final name = 'sales_invoice_${invoice.invoiceNumber ?? invoice.id}.png';
+      final name = 'sales_invoice_${invoice.invoiceNumber ?? invoice.id}.jpg';
       if (share) {
         if (kIsWeb) {
           await SharePlus.instance.share(ShareParams(
-            files: [XFile.fromData(bytes, mimeType: 'image/png', name: name)],
+            files: [XFile.fromData(bytes, mimeType: 'image/jpeg', name: name)],
             fileNameOverrides: [name],
             text: 'فاکتور فروش ${invoice.invoiceNumber ?? ''}',
           ));
@@ -821,7 +824,7 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
           final file = File(p.join((await getTemporaryDirectory()).path, name));
           await file.writeAsBytes(bytes, flush: true);
           await SharePlus.instance.share(ShareParams(
-            files: [XFile(file.path, mimeType: 'image/png')],
+            files: [XFile(file.path, mimeType: 'image/jpeg')],
             fileNameOverrides: [name],
             text: 'فاکتور فروش ${invoice.invoiceNumber ?? ''}',
           ));
@@ -829,7 +832,7 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
       } else {
         await FilePicker.platform.saveFile(
           dialogTitle: 'ذخیره تصویر فاکتور', fileName: name,
-          type: FileType.custom, allowedExtensions: const ['png'], bytes: bytes,
+          type: FileType.custom, allowedExtensions: const ['jpg', 'jpeg'], bytes: bytes,
         );
       }
     } catch (error) {
