@@ -144,13 +144,12 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   FocusNode _quantityFocusNode(String id) =>
       quantityFocusNodes.putIfAbsent(id, FocusNode.new);
   final MobileScannerController scannerController = MobileScannerController(
-    // Start after the first frame, once MobileScanner is attached to the tree.
-    autoStart: false,
+    // Let the MobileScanner widget initialize the camera exactly once.
+    autoStart: true,
     facing: CameraFacing.back,
     detectionSpeed: DetectionSpeed.noDuplicates,
   );
   bool _cameraStarting = false;
-  bool _cameraReady = false;
   String? _cameraStartError;
   bool scannerBusy = false;
   String? lastScannedCode;
@@ -197,34 +196,23 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     discount.addListener(refresh);
     _loadTariffs();
     widget.api.canManage().then((value) { if (mounted) setState(() => canManage = value); });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _startInvoiceCamera();
-    });
   }
 
-  Future<void> _startInvoiceCamera({bool restart = false}) async {
-    if (!mounted || _cameraStarting) return;
+  // Initial start belongs to MobileScanner (autoStart: true). Only retries
+  // invoke start() manually, after the previous startup has finished.
+  Future<void> _restartInvoiceCamera() async {
+    if (!mounted || _cameraStarting || scannerController.value.isStarting) return;
     setState(() {
       _cameraStarting = true;
-      _cameraReady = false;
       _cameraStartError = null;
     });
     try {
-      if (restart) {
-        // Releasing the previous stream helps after a web navigation/camera stall.
-        // A previous failed start can also make stop() throw; still try start().
-        try {
-          await scannerController.stop();
-        } catch (error) {
-          debugPrint('Staff invoice camera stop before retry failed: $error');
-        }
-      }
+      // Release an existing camera stream before requesting a new one.
+      await scannerController.stop();
       if (!mounted) return;
       await scannerController.start();
-      if (!mounted) return;
-      setState(() => _cameraReady = true);
     } catch (error, stack) {
-      debugPrint('Staff invoice camera start failed: $error\n$stack');
+      debugPrint('Staff invoice camera restart failed: $error\n$stack');
       if (mounted) setState(() => _cameraStartError = error.toString());
     } finally {
       if (mounted) setState(() => _cameraStarting = false);
@@ -564,7 +552,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
                             ),
                             const SizedBox(height: 8),
                             TextButton.icon(
-                              onPressed: _cameraStarting ? null : () => _startInvoiceCamera(restart: true),
+                              onPressed: _cameraStarting ? null : _restartInvoiceCamera,
                               icon: const Icon(Icons.refresh),
                               label: const Text('تلاش مجدد'),
                             ),
@@ -599,7 +587,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
                                     style: Theme.of(context).textTheme.bodySmall,
                                   ),
                                   TextButton.icon(
-                                    onPressed: () => _startInvoiceCamera(restart: true),
+                                    onPressed: _restartInvoiceCamera,
                                     icon: const Icon(Icons.refresh),
                                     label: const Text('تلاش مجدد'),
                                   ),
@@ -610,13 +598,13 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
                         ),
                       ),
                     ),
-                  if (_cameraReady && !_cameraStarting)
+                  if (!_cameraStarting)
                     Positioned(
                       top: 6,
                       left: 6,
                       child: IconButton.filledTonal(
                         tooltip: 'راه‌اندازی مجدد دوربین',
-                        onPressed: () => _startInvoiceCamera(restart: true),
+                        onPressed: _restartInvoiceCamera,
                         icon: const Icon(Icons.refresh, size: 20),
                       ),
                     ),
