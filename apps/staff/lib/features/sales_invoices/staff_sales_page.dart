@@ -523,15 +523,20 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   Widget _invoiceSection(String title, List<Widget> children,
       {Key? key, IconData icon = Icons.widgets_outlined}) {
     final colors = Theme.of(context).colorScheme;
+    final isDetails = title == 'مشخصات فاکتور';
+    final isScanner = title == 'اسکن سریع کالا و دارو';
+    final accent = isDetails ? const Color(0xFF147B8C)
+        : isScanner ? const Color(0xFF158F73) : const Color(0xFF8B6CBE);
     return Container(
       key: key,
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: colors.surface,
+        color: isDetails ? const Color(0xFFF9FCFF)
+            : isScanner ? const Color(0xFFF6FFFA) : colors.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: colors.outlineVariant.withValues(alpha: .75)),
+        border: Border.all(color: accent.withValues(alpha: .22)),
         boxShadow: [
-          BoxShadow(color: const Color(0xFF123D33).withValues(alpha: .045),
+          BoxShadow(color: accent.withValues(alpha: .07),
             blurRadius: 18, offset: const Offset(0, 5)),
         ],
       ),
@@ -540,18 +545,23 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [
             Container(
-              width: 34, height: 34,
+              width: 36, height: 36,
               decoration: BoxDecoration(
-                color: colors.primaryContainer,
-                borderRadius: BorderRadius.circular(11),
+                color: accent.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, size: 19, color: colors.onPrimaryContainer),
+              child: Icon(icon, size: 20, color: accent),
             ),
             const SizedBox(width: 10),
             Expanded(child: Text(title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800))),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800, color: const Color(0xFF21483F)))),
+            Container(width: 5, height: 24, decoration: BoxDecoration(
+              color: accent, borderRadius: BorderRadius.circular(8))),
           ]),
-          const SizedBox(height: 14),
+          const SizedBox(height: 11),
+          Divider(color: accent.withValues(alpha: .13), height: 1),
+          const SizedBox(height: 12),
           ...children,
         ]),
       ),
@@ -560,7 +570,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
 
   Widget _invoiceHeader() => Container(
     margin: const EdgeInsets.only(bottom: 14),
-    padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 18),
+    padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
     decoration: BoxDecoration(
       gradient: const LinearGradient(colors: [Color(0xFF176B5B), Color(0xFF0F9986)]),
       borderRadius: BorderRadius.circular(20),
@@ -634,6 +644,45 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
         padding: const EdgeInsets.all(12),
         children: [
           _invoiceHeader(),
+          _invoiceSection('مشخصات فاکتور', [
+            DropdownButtonFormField<String>(
+              value: invoiceType,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'نوع فروش'),
+              items: const [
+                DropdownMenuItem(value: 'GOODS', child: Text('فروش کالا')),
+                DropdownMenuItem(value: 'OTC', child: Text('فروش OTC')),
+                DropdownMenuItem(value: 'FREE', child: Text('نسخه آزاد')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => invoiceType = value);
+              },
+            ),
+            TextField(controller: buyer, textAlign: TextAlign.right,
+              decoration: const InputDecoration(labelText: 'نام و نام خانوادگی خریدار (اختیاری)')),
+            TextField(controller: nationalId, textAlign: TextAlign.right,
+              keyboardType: TextInputType.number,
+              inputFormatters: [PersianDigitsOnlyFormatter()],
+              decoration: const InputDecoration(labelText: 'کد/شناسه ملی (اختیاری)')),
+            TextField(controller: phone, textAlign: TextAlign.right,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'تلفن (اختیاری)')),
+            TextField(controller: address, textAlign: TextAlign.right,
+              decoration: const InputDecoration(labelText: 'نشانی خریدار (اختیاری)')),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final picked = await PharmaFlowDatePicker.show(
+                  context: context,
+                  initialDate: date,
+                  firstDate: Jalali(1390, 1, 1),
+                  lastDate: Jalali(1450, 12, 29),
+                );
+                if (picked != null) setState(() => date = picked);
+              },
+              icon: const Icon(Icons.calendar_month),
+              label: Text('تاریخ فاکتور: ${jalali(date.toDateTime())}'),
+            ),
+          ], icon: Icons.receipt_long_outlined),
           _invoiceSection('اسکن سریع کالا و دارو', [
             Row(children: [
               const Icon(Icons.verified_outlined, color: Color(0xFF176B5B), size: 18),
@@ -860,45 +909,6 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.primary)),
           ], key: itemsSectionKey, icon: Icons.shopping_bag_outlined),
-          _invoiceSection('مشخصات فاکتور', [
-            DropdownButtonFormField<String>(
-              value: invoiceType,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'نوع فروش'),
-              items: const [
-                DropdownMenuItem(value: 'GOODS', child: Text('فروش کالا')),
-                DropdownMenuItem(value: 'OTC', child: Text('فروش OTC')),
-                DropdownMenuItem(value: 'FREE', child: Text('نسخه آزاد')),
-              ],
-              onChanged: (value) {
-                if (value != null) setState(() => invoiceType = value);
-              },
-            ),
-            TextField(controller: buyer, textAlign: TextAlign.right,
-              decoration: const InputDecoration(labelText: 'نام و نام خانوادگی خریدار (اختیاری)')),
-            TextField(controller: nationalId, textAlign: TextAlign.right,
-              keyboardType: TextInputType.number,
-              inputFormatters: [PersianDigitsOnlyFormatter()],
-              decoration: const InputDecoration(labelText: 'کد/شناسه ملی (اختیاری)')),
-            TextField(controller: phone, textAlign: TextAlign.right,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: 'تلفن (اختیاری)')),
-            TextField(controller: address, textAlign: TextAlign.right,
-              decoration: const InputDecoration(labelText: 'نشانی خریدار (اختیاری)')),
-            OutlinedButton.icon(
-              onPressed: () async {
-                final picked = await PharmaFlowDatePicker.show(
-                  context: context,
-                  initialDate: date,
-                  firstDate: Jalali(1390, 1, 1),
-                  lastDate: Jalali(1450, 12, 29),
-                );
-                if (picked != null) setState(() => date = picked);
-              },
-              icon: const Icon(Icons.calendar_month),
-              label: Text('تاریخ فاکتور: ${jalali(date.toDateTime())}'),
-            ),
-          ], icon: Icons.receipt_long_outlined),
         ],
       ),
     ),

@@ -7,7 +7,7 @@ import { CatalogService } from './catalog.service';
 
 describe('CatalogService', () => {
   const prisma = {
-    arsenInvoiceItem: { groupBy: jest.fn() },
+    arsenInvoiceItem: { groupBy: jest.fn(), findMany: jest.fn() },
     arsenCatalogItem: {
       count: jest.fn(),
       findMany: jest.fn(),
@@ -66,8 +66,61 @@ describe('CatalogService', () => {
 
   it('does not guess an identity for an unknown barcode', async () => {
     prisma.arsenInvoiceItem.groupBy.mockResolvedValue([]);
+    prisma.arsenCatalogItem.findMany.mockResolvedValue([]);
+    prisma.arsenInvoiceItem.findMany.mockResolvedValue([]);
     expect((await service.staffBarcode(['6267429502049'])).items).toEqual([]);
-    expect(prisma.arsenCatalogItem.findMany).not.toHaveBeenCalled();
+  });
+
+  it('finds catalog items by arsenDrugId, as manual staff search does', async () => {
+    prisma.arsenInvoiceItem.groupBy.mockResolvedValue([]);
+    prisma.arsenCatalogItem.findMany.mockResolvedValueOnce([row({ arsenDrugId: 6261976603112n })]);
+
+    const result = await service.staffBarcode(['6261976603112']);
+
+    expect(result.items).toHaveLength(1);
+    expect(prisma.arsenCatalogItem.findMany).toHaveBeenCalledWith({
+      where: { arsenDrugId: { in: [6261976603112n] }, isActive: true },
+      take: 3,
+    });
+    expect(prisma.arsenInvoiceItem.findMany).not.toHaveBeenCalled();
+  });
+
+  it('falls back to invoice barcodes containing the full code, like manual search', async () => {
+    prisma.arsenInvoiceItem.groupBy.mockResolvedValue([]);
+    prisma.arsenCatalogItem.findMany
+      .mockResolvedValueOnce([]) // Not a direct arsenDrugId.
+      .mockResolvedValueOnce([row()]);
+    prisma.arsenInvoiceItem.findMany.mockResolvedValue([
+      { barcode: '0106261976603112-serial', arsenDrugId: 123n },
+    ]);
+
+    const result = await service.staffBarcode(['6261976603112', '06261976603112']);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toEqual(expect.objectContaining({ persianName: 'داروی تست' }));
+    expect(prisma.arsenInvoiceItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { barcode: { contains: '6261976603112', mode: 'insensitive' } },
+            { barcode: { contains: '06261976603112', mode: 'insensitive' } },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('does not auto-select when an embedded code relates to multiple products', async () => {
+    prisma.arsenInvoiceItem.groupBy.mockResolvedValue([]);
+    prisma.arsenCatalogItem.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([row(), row({ id: '22222222-2222-4222-8222-222222222222', arsenDrugId: 456n })]);
+    prisma.arsenInvoiceItem.findMany.mockResolvedValue([
+      { barcode: '6261976603112', arsenDrugId: 123n },
+      { barcode: '6261976603112', arsenDrugId: 456n },
+    ]);
+
+    expect((await service.staffBarcode(['6261976603112'])).items).toHaveLength(2);
   });
 
   it('rejects malformed barcode input', async () => {

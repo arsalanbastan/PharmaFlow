@@ -132,9 +132,11 @@ export class CatalogService {
     return { ...result, items: merged.slice(0, 100), totalCount: Math.max(result.totalCount, merged.length) };
   }
 
-  /** Fast, exact barcode resolution; uses the indexed arsen_invoice_items.barcode.
-   * Unlike staffSearch, this route does not run a full-text catalog search or
-   * paginate through unrelated matches. Ambiguities are returned explicitly.
+  /** Resolve scanner codes against the SAME sources as staff-search.
+   * Start with the indexed exact lookup; only use the legacy substring
+   * barcode bridge when the barcode is stored inside a longer string.
+   * Returning multiple distinct catalog rows deliberately prevents automatic
+   * selection of an ambiguous barcode.
    */
   async staffBarcode(codes: string[]) {
     const normalized = [...new Set(codes.map((code) => code.trim()))].filter(
@@ -144,28 +146,64 @@ export class CatalogService {
       throw new BadRequestException('Invalid barcode.');
     }
 
-    const matches = await this.prisma.arsenInvoiceItem.groupBy({
+    const serialize = (rows: SearchableCatalogRow[]) => ({
+      items: rows.map((row) => ({
+        ...this.serializeSummary(row),
+        matchedBarcode: null,
+      })),
+    });
+    const catalogForIds = async (ids: bigint[]) => {
+      if (ids.length === 0) return [];
+      return this.prisma.arsenCatalogItem.findMany({
+        where: { arsenDrugId: { in: [...new Set(ids)] }, isActive: true },
+        take: 3, // 2+ distinct active products means do not select automatically.
+      });
+    };
+
+    // Fast path: an invoice item's barcode is an exact EAN/GTIN match.
+    const exact = await this.prisma.arsenInvoiceItem.groupBy({
       by: ['arsenDrugId'],
       where: {
         barcode: { in: normalized },
         arsenDrugId: { not: null },
       },
     });
-    const drugIds = matches
+    const exactItems = await catalogForIds(exact
       .map((entry) => entry.arsenDrugId)
-      .filter((id): id is bigint => id != null);
-    if (drugIds.length === 0) return { items: [] };
+      .filter((id): id is bigint => id != null));
+    if (exactItems.length > 0) return serialize(exactItems);
 
-    const catalogItems = await this.prisma.arsenCatalogItem.findMany({
-      where: { arsenDrugId: { in: drugIds }, isActive: true },
-      take: 3, // Two or more active matches means manual resolution is required.
+    // staff-search also resolves numeric queries by arsenDrugId. Keep this
+    // indexed path so a valid catalog ID works in scanner and manual search.
+    const numericIds = normalized.map((code) => BigInt(code));
+    const directItems = await catalogForIds(numericIds);
+    if (directItems.length > 0) return serialize(directItems);
+
+    // In historical Arsen invoices, barcode sometimes contains the GTIN as
+    // part of a longer value. staff-search uses `contains`; the fast exact
+    // route previously omitted this bridge, causing scanner-only "not found".
+    // Restrict to full 8-14 digit candidates and verify the returned strings.
+    const embedded = await this.prisma.arsenInvoiceItem.findMany({
+      where: {
+        arsenDrugId: { not: null },
+        OR: normalized.map((code) => ({
+          barcode: { contains: code, mode: 'insensitive' as const },
+        })),
+      },
+      select: { barcode: true, arsenDrugId: true },
+      take: 201,
+      orderBy: { createdAt: 'desc' },
     });
-    return {
-      items: catalogItems.map((row) => ({
-        ...this.serializeSummary(row),
-        matchedBarcode: null,
-      })),
-    };
+
+    if (embedded.length > 200) {
+      // A truncated result cannot establish uniqueness safely.
+      throw new BadRequestException('Barcode is ambiguous; search manually.');
+    }
+    const embeddedIds = [...new Set(embedded
+      .filter((row) => row.arsenDrugId != null && row.barcode != null &&
+        normalized.some((code) => row.barcode!.includes(code)))
+      .map((row) => row.arsenDrugId!))];
+    return serialize(await catalogForIds(embeddedIds));
   }
 
   async findOne(id: string) {
