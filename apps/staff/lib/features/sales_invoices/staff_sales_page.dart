@@ -134,17 +134,128 @@ class StaffInvoiceForm extends StatefulWidget {
   @override
   State<StaffInvoiceForm> createState() => _StaffInvoiceFormState();
 }
-class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
+class _StaffInvoiceFormState extends State<StaffInvoiceForm> with WidgetsBindingObserver {
   final buyer = TextEditingController();
   final nationalId = TextEditingController();
   final phone = TextEditingController();
   final address = TextEditingController();
   final query = TextEditingController();
   final searchFocus = FocusNode();
+  final ScrollController _formScrollController = ScrollController();
   final Map<String, FocusNode> quantityFocusNodes = {};
+  final Map<String, GlobalKey> _quantityFieldKeys = {};
   final itemsSectionKey = GlobalKey();
-  FocusNode _quantityFocusNode(String id) =>
-      quantityFocusNodes.putIfAbsent(id, FocusNode.new);
+  Timer? _quantityVisibilityTimer;
+  Timer? _keyboardDismissTimer;
+  String? _focusedQuantityId;
+  double? _scrollPositionBeforeKeyboard;
+  double? _screenHeightBeforeKeyboard;
+  bool _quantityKeyboardOpened = false;
+
+  FocusNode _quantityFocusNode(String id) => quantityFocusNodes.putIfAbsent(id, () {
+    final node = FocusNode();
+    node.addListener(() {
+      if (!mounted) return;
+      if (node.hasFocus) {
+        _prepareQuantityFocus(id);
+      } else if (_focusedQuantityId == id) {
+        _focusedQuantityId = null;
+      }
+    });
+    return node;
+  });
+
+  void _rememberScrollBeforeKeyboard() {
+    if (_scrollPositionBeforeKeyboard != null || !_formScrollController.hasClients) return;
+    _scrollPositionBeforeKeyboard = _formScrollController.offset;
+    _screenHeightBeforeKeyboard = MediaQuery.sizeOf(context).height;
+  }
+
+  bool get _keyboardIsVisible {
+    if (!mounted) return false;
+    final media = MediaQuery.of(context);
+    // Some Android browsers resize the viewport instead of reporting viewInsets.
+    return media.viewInsets.bottom > 80 ||
+        (_screenHeightBeforeKeyboard != null &&
+            _screenHeightBeforeKeyboard! - media.size.height > 140);
+  }
+
+  void _prepareQuantityFocus(String id) {
+    _keyboardDismissTimer?.cancel();
+    _rememberScrollBeforeKeyboard();
+    _focusedQuantityId = id;
+    // This can happen when the user selects a catalog suggestion while the
+    // search keyboard is already open (no new keyboard metrics event follows).
+    if (_keyboardIsVisible && !_quantityKeyboardOpened) {
+      setState(() => _quantityKeyboardOpened = true);
+    }
+    _scheduleQuantityVisibility();
+  }
+
+  void _scheduleQuantityVisibility() {
+    _quantityVisibilityTimer?.cancel();
+    _quantityVisibilityTimer = Timer(const Duration(milliseconds: 160), () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _focusedQuantityId == null) return;
+        final fieldContext = _quantityFieldKeys[_focusedQuantityId]?.currentContext;
+        if (fieldContext == null || !fieldContext.mounted) return;
+        // Run AFTER the viewport has shrunk for the keyboard. Using the field
+        // rather than the whole invoice card keeps the quantity fully visible.
+        Scrollable.ensureVisible(
+          fieldContext,
+          alignment: 0.40,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        );
+      });
+    });
+  }
+
+  @override
+  void didChangeMetrics() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_keyboardIsVisible) {
+        _keyboardDismissTimer?.cancel();
+        if (_scrollPositionBeforeKeyboard != null) {
+          if (!_quantityKeyboardOpened) {
+            setState(() => _quantityKeyboardOpened = true);
+          }
+          if (_focusedQuantityId != null) _scheduleQuantityVisibility();
+        }
+      } else if (_quantityKeyboardOpened) {
+        // Keyboard animations may briefly report zero inset; wait until the
+        // final dimensions settle before restoring the previous scroll offset.
+        _keyboardDismissTimer?.cancel();
+        _keyboardDismissTimer = Timer(const Duration(milliseconds: 180), () {
+          if (mounted && !_keyboardIsVisible) _restoreScrollAfterKeyboard();
+        });
+      }
+    });
+  }
+
+  void _restoreScrollAfterKeyboard() {
+    _quantityVisibilityTimer?.cancel();
+    final previousOffset = _scrollPositionBeforeKeyboard;
+    final focusedId = _focusedQuantityId;
+    _scrollPositionBeforeKeyboard = null;
+    _screenHeightBeforeKeyboard = null;
+    _focusedQuantityId = null;
+    // Android Web can leave the TextField focused after Back hides the IME;
+    // release only the quantity focus so it does not fight the restored scroll.
+    if (focusedId != null) quantityFocusNodes[focusedId]?.unfocus();
+    if (mounted) setState(() => _quantityKeyboardOpened = false);
+    if (previousOffset == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_formScrollController.hasClients) return;
+      final position = _formScrollController.position;
+      _formScrollController.animateTo(
+        previousOffset.clamp(position.minScrollExtent, position.maxScrollExtent).toDouble(),
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
   final MobileScannerController scannerController = MobileScannerController(
     // Let the MobileScanner widget initialize the camera exactly once.
     autoStart: true,
@@ -210,6 +321,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // The default native BarcodeDetector misses these local pharmaceutical
     // labels on Chrome Android. Select the known-working WASM decoder before
     // MobileScanner starts for the very first time (no stop/start cycle).
@@ -296,6 +408,12 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     }
   }
   void _resetForm() {
+    _quantityVisibilityTimer?.cancel();
+    _keyboardDismissTimer?.cancel();
+    _scrollPositionBeforeKeyboard = null;
+    _screenHeightBeforeKeyboard = null;
+    _focusedQuantityId = null;
+    _quantityKeyboardOpened = false;
     for (final c in [buyer, nationalId, phone, address, query, discount, notes]) { c.clear(); }
     setState(() {
       lines.clear();
@@ -311,6 +429,11 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     _barcodeOutOfFrameTimer?.cancel();
     _barcodeHitCache.clear();
     _lineCardKeys.clear();
+    _quantityFieldKeys.clear();
+    _quantityVisibilityTimer?.cancel();
+    _keyboardDismissTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _formScrollController.dispose();
     for (final c in [buyer, nationalId, phone, address, query, discount, notes]) { c.dispose(); }
     searchFocus.dispose();
     scannerController.dispose();
@@ -424,14 +547,12 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   }
 
   void _focusQuantityForItem(String id) {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    // Capture the position before any automatic scroll, including scans.
+    _prepareQuantityFocus(id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final itemContext = _lineCardKeys[id]?.currentContext;
-      if (itemContext != null && itemContext.mounted) {
-        await Scrollable.ensureVisible(itemContext,
-          alignment: 0.36, duration: const Duration(milliseconds: 160));
-      }
-      if (mounted) _quantityFocusNode(id).requestFocus();
+      _quantityFocusNode(id).requestFocus();
+      _scheduleQuantityVisibility();
     });
   }
 
@@ -555,7 +676,8 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
             const SizedBox(width: 10),
             Expanded(child: Text(title,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800, color: const Color(0xFF21483F)))),
+                fontWeight: FontWeight.w800, fontSize: 18,
+                color: const Color(0xFF21483F)))),
             Container(width: 5, height: 24, decoration: BoxDecoration(
               color: accent, borderRadius: BorderRadius.circular(8))),
           ]),
@@ -579,9 +701,9 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
       const Icon(Icons.receipt_long_rounded, color: Colors.white, size: 30),
       const SizedBox(width: 12),
       const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('فاکتور جدید', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+        Text('فاکتور جدید', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
         SizedBox(height: 3),
-        Text('اسکن بارکد، تنظیم تعداد و ثبت سریع', style: TextStyle(color: Color(0xFFD8F6EA), fontSize: 12)),
+        Text('اسکن بارکد، تنظیم تعداد و ثبت سریع', style: TextStyle(color: Color(0xFFD8F6EA), fontSize: 14)),
       ])),
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -603,9 +725,9 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
       ),
       child: Row(children: [
         Expanded(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('قابل پرداخت', style: Theme.of(context).textTheme.labelMedium),
+          Text('قابل پرداخت', style: Theme.of(context).textTheme.labelMedium?.copyWith(fontSize: 14)),
           Text('${money(payable)} ریال', style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: colors.primary, fontWeight: FontWeight.w900)),
+            color: colors.primary, fontWeight: FontWeight.w900, fontSize: 18)),
         ])),
         const SizedBox(width: 12),
         FilledButton.icon(
@@ -618,9 +740,15 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   }
 
   @override
-  Widget build(BuildContext context) => Directionality(
-    textDirection: TextDirection.rtl,
-    child: Scaffold(
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Theme(
+        // Increase readability only on the invoice form; other Staff pages
+        // retain their current typography and system text scaling still works.
+        data: theme.copyWith(textTheme: theme.textTheme.apply(fontSizeFactor: 1.14)),
+        child: Scaffold(
       appBar: AppBar(
         title: const Text('صدور فاکتور فروش'),
         actions: [
@@ -640,8 +768,11 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
       resizeToAvoidBottomInset: true,
       bottomNavigationBar: _invoiceFooter(),
       body: ListView(
+        controller: _formScrollController,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.all(12),
+        // Extra scroll range keeps the last quantity field clear of Android's
+        // keyboard while avoiding a large blank area after it closes.
+        padding: EdgeInsets.fromLTRB(12, 12, 12, _quantityKeyboardOpened ? 150 : 12),
         children: [
           _invoiceHeader(),
           _invoiceSection('مشخصات فاکتور', [
@@ -688,7 +819,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
               const Icon(Icons.verified_outlined, color: Color(0xFF176B5B), size: 18),
               const SizedBox(width: 6),
               const Expanded(child: Text('اسکن دقیق GS1 و EAN فعال است',
-                style: TextStyle(color: Color(0xFF176B5B), fontSize: 12, fontWeight: FontWeight.w700))),
+                style: TextStyle(color: Color(0xFF176B5B), fontSize: 14, fontWeight: FontWeight.w700))),
               TextButton.icon(
                 onPressed: _testSuccessSound,
                 icon: Icon(_soundTested ? Icons.volume_up : Icons.volume_up_outlined, size: 18),
@@ -767,7 +898,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
                         decoration: BoxDecoration(color: const Color(0xB8000000),
                           borderRadius: BorderRadius.circular(20)),
                         child: const Text('بارکد را داخل کادر قرار دهید',
-                          style: TextStyle(color: Colors.white, fontSize: 12)),
+                          style: TextStyle(color: Colors.white, fontSize: 14)),
                       )),
                     ),
                   ]),
@@ -786,7 +917,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
                   color: _scanWasSuccessful ? const Color(0xFF217347) : const Color(0xFF176B5B), size: 19),
                 const SizedBox(width: 8),
                 Expanded(child: Text(_scanFeedback,
-                  style: TextStyle(fontSize: 12,
+                  style: TextStyle(fontSize: 14,
                     color: _scanWasSuccessful ? const Color(0xFF17633D) : const Color(0xFF2E574B)))),
               ]),
             ),
@@ -854,10 +985,10 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
                       Expanded(child: InkWell(
                         onTap: () => edit(item, index: entry.key),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(item.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                          Text(item.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
                           const SizedBox(height: 3),
                           Text(item.details, maxLines: 2, overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall),
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 14)),
                         ]),
                       )),
                       IconButton(tooltip: 'حذف قلم', icon: const Icon(Icons.delete_outline),
@@ -879,9 +1010,11 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
                         onPressed: () => setQuantity(entry.key,
                           (entry.value.quantity - 1).clamp(1, double.infinity).toDouble()),
                         icon: const Icon(Icons.remove_circle_outline)),
-                      SizedBox(width: 68, child: _QuantityControl(
+                      SizedBox(width: 78, child: _QuantityControl(
                         value: entry.value.quantity,
                         focusNode: _quantityFocusNode(item.id),
+                        fieldKey: _quantityFieldKeys.putIfAbsent(item.id, () => GlobalKey()),
+                        onTap: () => _prepareQuantityFocus(item.id),
                         onChanged: (value) => setQuantity(entry.key, value),
                       )),
                       IconButton(tooltip: 'افزایش تعداد', visualDensity: VisualDensity.compact,
@@ -911,8 +1044,10 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
           ], key: itemsSectionKey, icon: Icons.shopping_bag_outlined),
         ],
       ),
-    ),
-  );
+        ),
+      ),
+    );
+  }
 }
 
 class PersianDigitsOnlyFormatter extends TextInputFormatter {
@@ -924,10 +1059,13 @@ class PersianDigitsOnlyFormatter extends TextInputFormatter {
 }
 
 class _QuantityControl extends StatefulWidget {
-  const _QuantityControl({required this.value, required this.onChanged, required this.focusNode});
+  const _QuantityControl({required this.value, required this.onChanged, required this.focusNode,
+    this.fieldKey, this.onTap});
   final double value;
   final ValueChanged<double> onChanged;
   final FocusNode focusNode;
+  final Key? fieldKey;
+  final VoidCallback? onTap;
   @override
   State<_QuantityControl> createState() => _QuantityControlState();
 }
@@ -960,6 +1098,7 @@ class _QuantityControlState extends State<_QuantityControl> {
   }
   @override
   Widget build(BuildContext context) => TextField(
+    key: widget.fieldKey,
     controller: controller,
     focusNode: widget.focusNode,
     textAlign: TextAlign.center,
@@ -968,7 +1107,10 @@ class _QuantityControlState extends State<_QuantityControl> {
       if (value != null && value > 0) widget.onChanged(value);
     },
     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-    onTap: () => controller.selection = TextSelection(baseOffset: 0, extentOffset: controller.text.length),
+    onTap: () {
+      widget.onTap?.call();
+      controller.selection = TextSelection(baseOffset: 0, extentOffset: controller.text.length);
+    },
     onSubmitted: (text) {
       final value = double.tryParse(normalizePersianDigitsToEnglish(text));
       if (value != null && value > 0) widget.onChanged(value);
