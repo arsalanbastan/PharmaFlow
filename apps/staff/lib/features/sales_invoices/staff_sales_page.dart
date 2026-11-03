@@ -144,9 +144,14 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   FocusNode _quantityFocusNode(String id) =>
       quantityFocusNodes.putIfAbsent(id, FocusNode.new);
   final MobileScannerController scannerController = MobileScannerController(
+    // Start after the first frame, once MobileScanner is attached to the tree.
+    autoStart: false,
     facing: CameraFacing.back,
     detectionSpeed: DetectionSpeed.noDuplicates,
   );
+  bool _cameraStarting = false;
+  bool _cameraReady = false;
+  String? _cameraStartError;
   bool scannerBusy = false;
   String? lastScannedCode;
   final searchFieldKey = GlobalKey();
@@ -192,7 +197,40 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     discount.addListener(refresh);
     _loadTariffs();
     widget.api.canManage().then((value) { if (mounted) setState(() => canManage = value); });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _startInvoiceCamera();
+    });
   }
+
+  Future<void> _startInvoiceCamera({bool restart = false}) async {
+    if (!mounted || _cameraStarting) return;
+    setState(() {
+      _cameraStarting = true;
+      _cameraReady = false;
+      _cameraStartError = null;
+    });
+    try {
+      if (restart) {
+        // Releasing the previous stream helps after a web navigation/camera stall.
+        // A previous failed start can also make stop() throw; still try start().
+        try {
+          await scannerController.stop();
+        } catch (error) {
+          debugPrint('Staff invoice camera stop before retry failed: $error');
+        }
+      }
+      if (!mounted) return;
+      await scannerController.start();
+      if (!mounted) return;
+      setState(() => _cameraReady = true);
+    } catch (error, stack) {
+      debugPrint('Staff invoice camera start failed: $error\n$stack');
+      if (mounted) setState(() => _cameraStartError = error.toString());
+    } finally {
+      if (mounted) setState(() => _cameraStarting = false);
+    }
+  }
+
   Future<void> _editTariffs() async {
     try {
       final profile = await widget.api.profile();
@@ -524,11 +562,64 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
                               textAlign: TextAlign.center,
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: _cameraStarting ? null : () => _startInvoiceCamera(restart: true),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('تلاش مجدد'),
+                            ),
                           ],
                         ),
                       ),
                     ),
                   ),
+                  if (_cameraStarting || _cameraStartError != null)
+                    Positioned.fill(
+                      child: ColoredBox(
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_cameraStarting) const CircularProgressIndicator(),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _cameraStarting
+                                      ? 'در حال فعال‌سازی دوربین پشت...'
+                                      : 'راه‌اندازی دوربین انجام نشد',
+                                  textAlign: TextAlign.center,
+                                ),
+                                if (_cameraStartError != null) ...[
+                                  const SizedBox(height: 6),
+                                  SelectableText(
+                                    _cameraStartError!,
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: () => _startInvoiceCamera(restart: true),
+                                    icon: const Icon(Icons.refresh),
+                                    label: const Text('تلاش مجدد'),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_cameraReady && !_cameraStarting)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: IconButton.filledTonal(
+                        tooltip: 'راه‌اندازی مجدد دوربین',
+                        onPressed: () => _startInvoiceCamera(restart: true),
+                        icon: const Icon(Icons.refresh, size: 20),
+                      ),
+                    ),
                   Align(
                     alignment: Alignment.bottomCenter,
                     child: Container(
