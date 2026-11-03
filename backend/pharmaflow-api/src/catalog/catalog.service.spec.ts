@@ -8,6 +8,7 @@ import { CatalogService } from './catalog.service';
 describe('CatalogService', () => {
   const prisma = {
     arsenInvoiceItem: { groupBy: jest.fn(), findMany: jest.fn() },
+    arsenCatalogBarcode: { findMany: jest.fn() },
     arsenCatalogItem: {
       count: jest.fn(),
       findMany: jest.fn(),
@@ -19,6 +20,7 @@ describe('CatalogService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    prisma.arsenCatalogBarcode.findMany.mockResolvedValue([]);
 
     service =
       new CatalogService(prisma as never);
@@ -62,6 +64,24 @@ describe('CatalogService', () => {
       where: { barcode: { in: ['6267429502049', '06267429502049'] }, arsenDrugId: { not: null } },
     });
     expect(prisma.arsenCatalogItem.count).not.toHaveBeenCalled();
+  });
+
+  it('resolves any synced catalog barcode after removing Arsen padding zeros', async () => {
+    prisma.arsenCatalogBarcode.findMany.mockResolvedValue([
+      { catalogItem: row(), barcode: '000006267429502049' },
+    ]);
+
+    const result = await service.staffBarcode(['6267429502049', '06267429502049']);
+
+    expect(result.items).toHaveLength(1);
+    expect(prisma.arsenCatalogBarcode.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          lookupKey: { in: ['6267429502049'] },
+        }),
+      }),
+    );
+    expect(prisma.arsenInvoiceItem.groupBy).not.toHaveBeenCalled();
   });
 
   it('does not guess an identity for an unknown barcode', async () => {

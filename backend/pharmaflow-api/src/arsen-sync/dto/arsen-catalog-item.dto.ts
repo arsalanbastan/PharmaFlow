@@ -1,5 +1,8 @@
 import { Type } from 'class-transformer';
+import { ArsenCatalogBarcodeDto } from './arsen-catalog-barcode.dto';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsInt,
   IsOptional,
@@ -8,6 +11,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 
 const BIGINT_TEXT = /^\d{1,20}$/;
@@ -70,6 +74,13 @@ export class ArsenCatalogItemDto {
 
   @IsBoolean()
   isActive!: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => ArsenCatalogBarcodeDto)
+  barcodes?: ArsenCatalogBarcodeDto[];
 
   @IsOptional()
   @IsString()

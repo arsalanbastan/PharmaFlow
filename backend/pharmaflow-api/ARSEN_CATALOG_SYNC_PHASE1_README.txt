@@ -16,6 +16,8 @@ brandName, unit, shapeName, packetQuantity, salesPrice,
 lastPurchasePrice, isActive, description.
 
 Explicitly excluded:
-NationalCode/IRC, barcodes, producer, group/subgroup, tax flag.
+NationalCode/IRC, producer, group/subgroup, tax flag.
+
+Barcodes were excluded from Phase 1 and were added later by ARSEN_CATALOG_BARCODE_SYNC_20261103.txt.
 
 This patch does not create the backfill/Windows bridge yet.

@@ -177,9 +177,34 @@ model ArsenCatalogItem {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  barcodes ArsenCatalogBarcode[]
+
   @@index([category, isActive, ingestSequence(sort: Desc)])
   @@index([isActive, ingestSequence(sort: Desc)])
   @@map("arsen_catalog_items")
+}
+
+model ArsenCatalogBarcode {
+  id String @id @default(uuid()) @db.Uuid
+
+  catalogItemId String @db.Uuid
+  arsenBarcodeId BigInt @unique
+
+  barcode           String
+  barcodeNormalized String?
+  lookupKey         String @unique
+  defQnt            Int?
+
+  sourceSyncedAt DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  catalogItem ArsenCatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+
+  @@index([catalogItemId])
+  @@index([barcode])
+  @@index([barcodeNormalized])
+  @@map("arsen_catalog_barcodes")
 }
 
 model SalesInvoiceProfile {

@@ -1,0 +1,37 @@
+PharmaFlow Arsen Catalog Barcode Sync
+Date: 2026-11-03
+
+Source of truth in Arsen:
+- Database: drPharmacy
+- Item table: dbo.dr_Drugs
+- Multi-barcode table: dbo.dr_DrugBarCode
+- Relationship: dr_DrugBarCode.DrugID -> dr_Drugs.ID
+- One product can have many barcodes; each normalized barcode is expected to identify one product.
+
+Transferred barcode fields:
+- arsenBarcodeId <- dr_DrugBarCode.ID
+- barcode <- dr_DrugBarCode.BarCode (trimmed, otherwise preserved)
+- barcodeNormalized <- dr_DrugBarCode.BarCodeNormalized
+- defQnt <- dr_DrugBarCode.DefQnt
+
+PharmaFlow storage:
+- arsen_catalog_items remains one row per Arsen DrugID.
+- arsen_catalog_barcodes is a child table with zero-to-many rows per catalog item.
+- lookupKey is indexed/unique and is derived by removing leading zero padding from an all-digit normalized/raw barcode.
+- raw and Arsen-normalized values are retained separately.
+
+Incremental behavior:
+- dr_DrugBarCode has no source trigger/log and SQL Server Change Tracking is disabled.
+- The existing catalog bridge therefore reads the small barcode table read-only on every catalog run and includes the sorted barcode set in the per-DrugID signature.
+- Add, edit, move, and delete changes are detected by signature comparison even when Dr_DrugsLog does not change.
+- Existing signature compatibility is preserved for products with no barcodes, avoiding an unnecessary full-catalog replay on rollout.
+- A duplicate normalized lookup key in Arsen fails the bridge before checkpoint advancement.
+
+Compatibility:
+- The API accepts legacy catalog payloads that omit the barcodes property. Such payloads update catalog fields without deleting already-synced barcode children.
+- Once the updated bridge sends barcodes (including an explicit empty array), the barcode list is authoritative for that catalog item.
+
+Staff lookup:
+- /api/v1/catalog/staff-barcode checks arsen_catalog_barcodes first using indexed lookupKey matching.
+- Manual staff search also checks the same source first.
+- Historical arsen_invoice_items barcode lookup remains only as a compatibility fallback.

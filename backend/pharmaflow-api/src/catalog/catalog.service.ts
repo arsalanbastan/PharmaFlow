@@ -48,6 +48,12 @@ const ALLOWED_PAGE_SIZES = new Set([25, 50, 100]);
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function barcodeLookupKey(value: string): string | null {
+  const compact = value.trim().replace(/\s+/g, '');
+  if (!/^\d+$/.test(compact)) return null;
+  return compact.replace(/^0+(?=\d)/, '');
+}
+
 @Injectable()
 export class CatalogService {
   constructor(private readonly prisma: PrismaService) {}
@@ -89,11 +95,48 @@ export class CatalogService {
       return { ...result, items: result.items.map((item) => ({ ...item, matchedBarcode: null })) };
     }
 
-    // Arsen purchase invoice details retain scanned barcodes; use them as a
-    // lookup bridge because the catalog feed currently has no barcode column.
+    const lookupKey = barcodeLookupKey(query);
+    const catalogBarcodeRows = lookupKey
+      ? await this.prisma.arsenCatalogBarcode.findMany({
+          where: {
+            lookupKey,
+            catalogItem: { isActive: true },
+          },
+          select: {
+            barcode: true,
+            catalogItem: true,
+          },
+          take: 3,
+        })
+      : [];
+
+    const exactCatalogItems = catalogBarcodeRows.map((row) => ({
+      ...this.serializeSummary(row.catalogItem),
+      matchedBarcode: row.barcode,
+    }));
+    if (exactCatalogItems.length > 0) {
+      const normalItems = result.items.map((item) => ({
+        ...item,
+        matchedBarcode: null,
+      }));
+      const seen = new Set<string>();
+      const merged = [...exactCatalogItems, ...normalItems].filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
+      return {
+        ...result,
+        items: merged.slice(0, 100),
+        totalCount: Math.max(result.totalCount, merged.length),
+      };
+    }
+
+    // Historical purchase invoice details remain as a compatibility fallback
+    // for legacy data that has not yet been populated into catalog barcodes.
     const barcodeRows = await this.prisma.arsenInvoiceItem.findMany({
       where: {
-        barcode: /^\\d+$/.test(query)
+        barcode: /^\d+$/.test(query)
           ? query
           : { contains: query, mode: 'insensitive' },
         arsenDrugId: { not: null },
@@ -109,7 +152,7 @@ export class CatalogService {
         if (!barcodeByDrug.has(id)) barcodeByDrug.set(id, row.barcode);
       }
     }
-    if (barcodeByDrug.size === 0) {
+    if (barcodeByDrug.size === 0 && exactCatalogItems.length === 0) {
       return { ...result, items: result.items.map((item) => ({ ...item, matchedBarcode: null })) };
     }
 
@@ -124,7 +167,7 @@ export class CatalogService {
     }));
     const normalItems = result.items.map((item) => ({ ...item, matchedBarcode: null }));
     const seen = new Set<string>();
-    const merged = [...barcodeItems, ...normalItems].filter((item) => {
+    const merged = [...exactCatalogItems, ...barcodeItems, ...normalItems].filter((item) => {
       if (seen.has(item.id)) return false;
       seen.add(item.id);
       return true;
@@ -160,7 +203,26 @@ export class CatalogService {
       });
     };
 
-    // Fast path: an invoice item's barcode is an exact EAN/GTIN match.
+    const lookupKeys = [...new Set(
+      normalized
+        .map((code) => barcodeLookupKey(code))
+        .filter((key): key is string => key != null),
+    )];
+
+    const catalogBarcodeRows = await this.prisma.arsenCatalogBarcode.findMany({
+      where: {
+        lookupKey: { in: lookupKeys },
+        catalogItem: { isActive: true },
+      },
+      select: { catalogItem: true },
+      take: 3,
+    });
+    const catalogBarcodeItems = [...new Map(
+      catalogBarcodeRows.map((row) => [row.catalogItem.id, row.catalogItem]),
+    ).values()];
+    if (catalogBarcodeItems.length > 0) return serialize(catalogBarcodeItems);
+
+    // Compatibility path for barcodes that only exist on historical invoices.
     const exact = await this.prisma.arsenInvoiceItem.groupBy({
       by: ['arsenDrugId'],
       where: {

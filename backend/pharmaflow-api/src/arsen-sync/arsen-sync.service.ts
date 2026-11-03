@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 
@@ -36,6 +37,17 @@ function nullableText(value: string | null | undefined): string | null {
 
 function nullableDate(value: string | null | undefined): Date | null {
   return value ? new Date(value) : null;
+}
+
+function barcodeLookupKey(value: string | null | undefined): string | null {
+  const compact = String(value ?? '').trim().replace(/\s+/g, '');
+  if (!compact) return null;
+
+  if (/^\d+$/.test(compact)) {
+    return compact.replace(/^0+(?=\d)/, '');
+  }
+
+  return compact.toUpperCase();
 }
 
 @Injectable()
@@ -95,6 +107,81 @@ export class ArsenSyncService {
       );
     }
 
+    const normalizedItems = items.map((item) => {
+      const barcodes = (item.barcodes ?? [])
+        .map((source) => {
+          const barcode = nullableText(source.barcode);
+          if (!barcode) {
+            throw new BadRequestException(
+              `Arsen DrugID ${item.arsenDrugId} contains an empty barcode.`,
+            );
+          }
+
+          const barcodeNormalized = nullableText(source.barcodeNormalized);
+          const lookupKey = barcodeLookupKey(barcodeNormalized ?? barcode);
+          if (!lookupKey) {
+            throw new BadRequestException(
+              `Arsen DrugID ${item.arsenDrugId} contains an invalid barcode.`,
+            );
+          }
+
+          return {
+            arsenBarcodeId: source.arsenBarcodeId,
+            barcode,
+            barcodeNormalized,
+            lookupKey,
+            defQnt: source.defQnt ?? null,
+          };
+        })
+        .sort((a, b) => {
+          const left = BigInt(a.arsenBarcodeId);
+          const right = BigInt(b.arsenBarcodeId);
+          return left < right ? -1 : left > right ? 1 : 0;
+        });
+
+      const barcodeIds = barcodes.map((barcode) => barcode.arsenBarcodeId);
+      if (new Set(barcodeIds).size !== barcodeIds.length) {
+        throw new BadRequestException(
+          `Arsen DrugID ${item.arsenDrugId} contains duplicate arsenBarcodeId values.`,
+        );
+      }
+
+      const lookupKeys = barcodes.map((barcode) => barcode.lookupKey);
+      if (new Set(lookupKeys).size !== lookupKeys.length) {
+        throw new BadRequestException(
+          `Arsen DrugID ${item.arsenDrugId} contains duplicate barcode values.`,
+        );
+      }
+
+      return {
+        ...item,
+        barcodes,
+        barcodesProvided: item.barcodes !== undefined,
+      };
+    });
+
+    const barcodeOwnerByLookupKey = new Map<string, string>();
+    const barcodeOwnerByArsenId = new Map<string, string>();
+    for (const item of normalizedItems) {
+      for (const barcode of item.barcodes) {
+        const priorLookupOwner = barcodeOwnerByLookupKey.get(barcode.lookupKey);
+        if (priorLookupOwner && priorLookupOwner !== item.arsenDrugId) {
+          throw new BadRequestException(
+            `Barcode ${barcode.lookupKey} belongs to multiple Arsen DrugIDs in the same batch.`,
+          );
+        }
+        barcodeOwnerByLookupKey.set(barcode.lookupKey, item.arsenDrugId);
+
+        const priorIdOwner = barcodeOwnerByArsenId.get(barcode.arsenBarcodeId);
+        if (priorIdOwner && priorIdOwner !== item.arsenDrugId) {
+          throw new BadRequestException(
+            `Arsen barcode ID ${barcode.arsenBarcodeId} belongs to multiple DrugIDs in the same batch.`,
+          );
+        }
+        barcodeOwnerByArsenId.set(barcode.arsenBarcodeId, item.arsenDrugId);
+      }
+    }
+
     const beforeRows = await this.prisma.arsenCatalogItem.findMany({
       where: {
         arsenDrugId: {
@@ -106,6 +193,16 @@ export class ArsenSyncService {
         arsenDrugId: true,
         category: true,
         sourceFingerprint: true,
+        barcodes: {
+          select: {
+            arsenBarcodeId: true,
+            barcode: true,
+            barcodeNormalized: true,
+            lookupKey: true,
+            defQnt: true,
+          },
+          orderBy: { arsenBarcodeId: 'asc' },
+        },
       },
     });
 
@@ -113,13 +210,27 @@ export class ArsenSyncService {
       beforeRows.map((row) => [row.arsenDrugId.toString(), row]),
     );
 
-    const prepared = items.map((item) => {
+    const prepared = normalizedItems.map((item) => {
       const category = item.isDrug ? 'DRUG' : 'GOODS';
-      const sourceFingerprint = fingerprint(item);
       const before = beforeByArsenDrugId.get(item.arsenDrugId) ?? null;
+      const effectiveBarcodes = item.barcodesProvided
+        ? item.barcodes
+        : (before?.barcodes ?? []).map((barcode) => ({
+            arsenBarcodeId: barcode.arsenBarcodeId.toString(),
+            barcode: barcode.barcode,
+            barcodeNormalized: barcode.barcodeNormalized,
+            lookupKey: barcode.lookupKey,
+            defQnt: barcode.defQnt,
+          }));
+      const { barcodesProvided: _barcodesProvided, ...fingerprintItem } = item;
+      const sourceFingerprint = fingerprint({
+        ...fingerprintItem,
+        barcodes: effectiveBarcodes,
+      });
 
       return {
         item,
+        effectiveBarcodes,
         category,
         sourceFingerprint,
         before,
@@ -133,9 +244,17 @@ export class ArsenSyncService {
     const savedIds = new Map<string, string>();
 
     if (changed.length > 0) {
+      const barcodeChanged = changed.filter((entry) => entry.item.barcodesProvided);
+      const incomingLookupKeys = barcodeChanged.flatMap((entry) =>
+        entry.item.barcodes.map((barcode) => barcode.lookupKey),
+      );
+      const incomingBarcodeIds = barcodeChanged.flatMap((entry) =>
+        entry.item.barcodes.map((barcode) => BigInt(barcode.arsenBarcodeId)),
+      );
+
       await this.prisma.$transaction(async (tx) => {
         for (const entry of changed) {
-          const { item, category, sourceFingerprint, before } = entry;
+          const { item, category, sourceFingerprint } = entry;
           const data = {
             category,
             persianName: nullableText(item.persianName),
@@ -164,6 +283,49 @@ export class ArsenSyncService {
           });
 
           savedIds.set(item.arsenDrugId, saved.id);
+        }
+
+        const barcodeCatalogItemIds = barcodeChanged.map((entry) =>
+          savedIds.get(entry.item.arsenDrugId)!,
+        );
+        const barcodeDeleteOr: Prisma.ArsenCatalogBarcodeWhereInput[] = [
+          ...(barcodeCatalogItemIds.length > 0
+            ? [{ catalogItemId: { in: barcodeCatalogItemIds } }]
+            : []),
+          ...(incomingLookupKeys.length > 0
+            ? [{ lookupKey: { in: incomingLookupKeys } }]
+            : []),
+          ...(incomingBarcodeIds.length > 0
+            ? [{ arsenBarcodeId: { in: incomingBarcodeIds } }]
+            : []),
+        ];
+        if (barcodeDeleteOr.length > 0) {
+          await tx.arsenCatalogBarcode.deleteMany({
+            where: { OR: barcodeDeleteOr },
+          });
+        }
+
+        const barcodeRows = barcodeChanged.flatMap((entry) => {
+          const catalogItemId = savedIds.get(entry.item.arsenDrugId)!;
+          return entry.item.barcodes.map((barcode) => ({
+            catalogItemId,
+            arsenBarcodeId: BigInt(barcode.arsenBarcodeId),
+            barcode: barcode.barcode,
+            barcodeNormalized: barcode.barcodeNormalized,
+            lookupKey: barcode.lookupKey,
+            defQnt: barcode.defQnt,
+            sourceSyncedAt: new Date(),
+            updatedAt: new Date(),
+          }));
+        });
+
+        if (barcodeRows.length > 0) {
+          await tx.arsenCatalogBarcode.createMany({ data: barcodeRows });
+        }
+
+        for (const entry of changed) {
+          const { item, category, sourceFingerprint, before } = entry;
+          const savedId = savedIds.get(item.arsenDrugId)!;
 
           await this.auditLog.record(
             {
@@ -171,13 +333,20 @@ export class ArsenSyncService {
                 ? 'ARSEN_CATALOG_ITEM_SYNC_UPDATE'
                 : 'ARSEN_CATALOG_ITEM_SYNC_CREATE',
               entityType: 'ARSEN_CATALOG_ITEM',
-              entityId: saved.id,
+              entityId: savedId,
               before: before
                 ? {
                     id: before.id,
                     arsenDrugId: before.arsenDrugId.toString(),
                     category: before.category,
                     sourceFingerprint: before.sourceFingerprint,
+                    barcodes: before.barcodes.map((barcode) => ({
+                      arsenBarcodeId: barcode.arsenBarcodeId.toString(),
+                      barcode: barcode.barcode,
+                      barcodeNormalized: barcode.barcodeNormalized,
+                      lookupKey: barcode.lookupKey,
+                      defQnt: barcode.defQnt,
+                    })),
                   }
                 : null,
               after: {
@@ -194,6 +363,13 @@ export class ArsenSyncService {
                 lastPurchasePrice: item.lastPurchasePrice ?? null,
                 isActive: item.isActive,
                 description: item.description ?? null,
+                barcodes: entry.effectiveBarcodes.map((barcode) => ({
+                  arsenBarcodeId: barcode.arsenBarcodeId,
+                  barcode: barcode.barcode,
+                  barcodeNormalized: barcode.barcodeNormalized,
+                  lookupKey: barcode.lookupKey,
+                  defQnt: barcode.defQnt,
+                })),
                 sourceFingerprint,
               },
             },
