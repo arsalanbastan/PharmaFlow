@@ -152,7 +152,14 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     // Report the same symbol while it remains visible. This lets us unlock
     // the product only after the package is removed from the camera frame.
     detectionSpeed: DetectionSpeed.normal,
-    detectionTimeoutMs: 350,
+    detectionTimeoutMs: 280,
+    formats: const [
+      BarcodeFormat.ean13,
+      BarcodeFormat.ean8,
+      BarcodeFormat.dataMatrix,
+      BarcodeFormat.qrCode,
+      BarcodeFormat.code128,
+    ],
   );
   bool _cameraStarting = false;
   String? _cameraStartError;
@@ -161,8 +168,9 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   Timer? _barcodeOutOfFrameTimer;
   String _scanFeedback = 'منتظر شناسایی بارکد...';
   bool _scanWasSuccessful = false;
-  bool _scanSoundEnabled = false;
-  bool _usePreciseWebReader = false;
+  bool _soundTested = false;
+  final Map<String, StaffCatalogItem> _barcodeHitCache = {};
+  final Map<String, GlobalKey> _lineCardKeys = {};
   final searchFieldKey = GlobalKey();
   void showSearchAboveKeyboard() {
     Future<void>.delayed(const Duration(milliseconds: 280), () {
@@ -202,6 +210,12 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   @override
   void initState() {
     super.initState();
+    // The default native BarcodeDetector misses these local pharmaceutical
+    // labels on Chrome Android. Select the known-working WASM decoder before
+    // MobileScanner starts for the very first time (no stop/start cycle).
+    if (kIsWeb) {
+      MobileScannerPlatform.instance.setWebBarcodeReader(WebBarcodeReader.zxingWasm);
+    }
     query.addListener(search);
     discount.addListener(refresh);
     _loadTariffs();
@@ -224,42 +238,6 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     } catch (error, stack) {
       debugPrint('Staff invoice camera restart failed: $error\n$stack');
       if (mounted) setState(() => _cameraStartError = error.toString());
-    } finally {
-      if (mounted) setState(() => _cameraStarting = false);
-    }
-  }
-
-  Future<void> _toggleWebScannerReader() async {
-    if (!kIsWeb || !mounted || _cameraStarting || scannerController.value.isStarting) return;
-    final next = !_usePreciseWebReader;
-    setState(() {
-      _cameraStarting = true;
-      _cameraStartError = null;
-    });
-    try {
-      await scannerController.stop();
-      MobileScannerPlatform.instance.setWebBarcodeReader(
-        next ? WebBarcodeReader.zxingWasm : WebBarcodeReader.auto,
-      );
-      await scannerController.start();
-      if (!mounted) return;
-      setState(() => _usePreciseWebReader = next);
-      _showScanFeedback(next
-          ? 'اسکن دقیق فعال شد؛ بارکد را ثابت مقابل دوربین نگه دارید.'
-          : 'حالت عادی اسکن فعال شد.');
-    } catch (error, stack) {
-      debugPrint('Staff Web scanner reader switch failed: $error\n$stack');
-      // Restore the previous decoder if an external WASM script cannot load.
-      MobileScannerPlatform.instance.setWebBarcodeReader(
-        _usePreciseWebReader ? WebBarcodeReader.zxingWasm : WebBarcodeReader.auto,
-      );
-      try {
-        await scannerController.stop();
-        await scannerController.start();
-      } catch (_) {
-        if (mounted) setState(() => _cameraStartError = error.toString());
-      }
-      if (mounted) _showScanFeedback('تغییر حالت اسکن ناموفق بود: $error');
     } finally {
       if (mounted) setState(() => _cameraStarting = false);
     }
@@ -331,6 +309,8 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   void dispose() {
     debounce?.cancel();
     _barcodeOutOfFrameTimer?.cancel();
+    _barcodeHitCache.clear();
+    _lineCardKeys.clear();
     for (final c in [buyer, nationalId, phone, address, query, discount, notes]) { c.dispose(); }
     searchFocus.dispose();
     scannerController.dispose();
@@ -344,44 +324,51 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     });
   }
 
-  Future<StaffCatalogItem?> _findExactlyOneBarcodeMatch(BarcodeLookup lookup) async {
-    for (final code in lookup.candidates) {
-      final results = await widget.api.search(code);
-      if (!mounted) return null;
-      final exact = results.where((item) => item.matchedBarcode == code).toList();
-      if (exact.length == 1) return exact.single;
-      if (exact.length > 1) {
-        _showScanFeedback('بارکد ${lookup.displayCode} به چند کالا مرتبط است؛ دستی انتخاب کنید.');
-        query.text = code;
-        setState(() => suggestions = exact);
-        return null;
-      }
+  Future<List<StaffCatalogItem>> _findExactBarcodeMatches(BarcodeLookup lookup) async {
+    final cached = _barcodeHitCache[lookup.displayCode];
+    if (cached != null) return [cached];
+
+    // A single indexed backend lookup replaces fetching all catalog pages
+    // and searching the 13-digit/14-digit forms in separate API requests.
+    final matches = await widget.api.searchBarcodeExact(lookup.candidates);
+    if (matches.length == 1) {
+      if (_barcodeHitCache.length >= 100) _barcodeHitCache.clear();
+      _barcodeHitCache[lookup.displayCode] = matches.single;
     }
-    return null;
+    return matches;
   }
 
   Future<void> scanBarcode() async {
-    final raw = query.text.trim();
-    if (raw.isEmpty) return;
+    final input = query.text.trim();
+    if (input.isEmpty) return;
     debounce?.cancel();
-    final lookup = parseBarcodeLookup(raw);
+    final lookup = parseBarcodeLookup(input);
     if (lookup == null) {
       notify('شناسه کالا از این کد استخراج نشد.');
       return;
     }
+    // Text queries keep their existing suggestion-based catalog search.
+    if (!RegExp(r'^\d{8,14}$').hasMatch(lookup.displayCode)) {
+      try {
+        final results = await widget.api.search(input);
+        if (mounted && query.text.trim() == input) setState(() => suggestions = results);
+      } catch (error) {
+        if (mounted) notify('جستجوی کالا ناموفق بود: $error');
+      }
+      return;
+    }
     try {
-      final item = await _findExactlyOneBarcodeMatch(lookup);
-      if (!mounted || query.text.trim() != raw) return;
-      if (item != null) {
-        addItem(item);
-      } else if (suggestions.isEmpty) {
-        final result = await widget.api.search(lookup.displayCode);
-        if (!mounted) return;
-        setState(() => suggestions = result);
-        notify('بارکد ${lookup.displayCode} تطابق دقیق ندارد؛ کالا را از نتایج انتخاب کنید.');
+      final matches = await _findExactBarcodeMatches(lookup);
+      if (!mounted || query.text.trim() != input) return;
+      if (matches.length == 1) {
+        addItem(matches.single);
+        final audible = playScanSuccessSound();
+        _showScanFeedback('✓ ${matches.single.name} انتخاب شد${audible ? '' : ' • برای بوق روی تست صدا بزنید'}', success: true);
+      } else {
+        notify(matches.isEmpty ? 'کالای متناظر پیدا نشد.' : 'این بارکد به چند کالا مرتبط است؛ انتخاب خودکار ممکن نیست.');
       }
     } catch (error) {
-      if (mounted) notify('جستجوی بارکد انجام نشد: $error');
+      if (mounted) notify('جستجوی بارکد ناموفق بود: $error');
     }
   }
 
@@ -391,19 +378,16 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
       if (raw == null || raw.trim().isEmpty) continue;
       final lookup = parseBarcodeLookup(raw);
       if (lookup == null) {
-        if (!scannerBusy) {
-          _showScanFeedback('کد دیده شد، اما شناسه GTIN قابل استخراج نیست.');
-        }
+        // Avoid rebuilding the entire invoice on every undecodable frame.
         continue;
       }
-
-      // Each detection refreshes the timer. The same product can be scanned
-      // again only after it has been out of the camera's view for a moment.
       _barcodeOutOfFrameTimer?.cancel();
-      _barcodeOutOfFrameTimer = Timer(const Duration(milliseconds: 1300), () {
+      _barcodeOutOfFrameTimer = Timer(const Duration(milliseconds: 1200), () {
         lastScannedCode = null;
       });
-      handleScannedBarcode(lookup);
+      if (!scannerBusy && lookup.displayCode != lastScannedCode) {
+        handleScannedBarcode(lookup);
+      }
       break;
     }
   }
@@ -413,26 +397,51 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     if (scannerBusy || code == lastScannedCode) return;
     scannerBusy = true;
     lastScannedCode = code;
-    _showScanFeedback('بارکد $code خوانده شد؛ در حال جستجوی کالا...');
+    // Confirm the scan immediately, not after a network request. An unknown
+    // catalog item still produces one short beep and then a clear error.
+    final audible = playScanSuccessSound();
+    _showScanFeedback('بارکد $code خوانده شد؛ در حال بررسی کالا...');
+    final stopwatch = Stopwatch()..start();
     try {
-      final item = await _findExactlyOneBarcodeMatch(lookup);
+      final matches = await _findExactBarcodeMatches(lookup);
       if (!mounted) return;
-      if (item != null) {
-        addItem(item, fromScanner: true);
-        _showScanFeedback('✓ ${item.name} به فاکتور اضافه شد ($code)', success: true);
-        if (_scanSoundEnabled) playScanSuccessSound();
-      } else if (suggestions.isEmpty) {
-        query.text = code;
-        final results = await widget.api.search(code);
-        if (!mounted) return;
-        setState(() => suggestions = results);
-        _showScanFeedback('بارکد $code خوانده شد، اما کالای متناظر پیدا نشد.');
+      if (matches.length == 1) {
+        final item = matches.single;
+        addItem(item);
+        _showScanFeedback('✓ ${item.name} به فاکتور اضافه شد${audible ? '' : ' • برای بوق روی تست صدا بزنید'}', success: true);
+      } else if (matches.isEmpty) {
+        _showScanFeedback('کالای متناظر با بارکد $code پیدا نشد.${audible ? '' : ' برای بوق روی تست صدا بزنید.'}');
+      } else {
+        _showScanFeedback('بارکد $code به چند کالا مرتبط است؛ انتخاب خودکار ایمن نیست.');
       }
     } catch (error) {
-      _showScanFeedback('بارکد خوانده شد، اما جستجو ناموفق بود: $error');
+      _showScanFeedback('جستجوی کالا با خطا مواجه شد: $error');
     } finally {
+      stopwatch.stop();
+      debugPrint('PharmaFlow barcode resolution (${lookup.displayCode}): ${stopwatch.elapsedMilliseconds} ms');
       scannerBusy = false;
     }
+  }
+
+  void _focusQuantityForItem(String id) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final itemContext = _lineCardKeys[id]?.currentContext;
+      if (itemContext != null && itemContext.mounted) {
+        await Scrollable.ensureVisible(itemContext,
+          alignment: 0.36, duration: const Duration(milliseconds: 160));
+      }
+      if (mounted) _quantityFocusNode(id).requestFocus();
+    });
+  }
+
+  void _testSuccessSound() {
+    final supported = enableScanSuccessSound();
+    if (!supported) {
+      notify('مرورگر اجازه فعال‌سازی صدا را نداد؛ صدای سایت و تنظیمات گوشی را بررسی کنید.');
+      return;
+    }
+    setState(() => _soundTested = true);
   }
 
   void search() {
@@ -447,7 +456,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   }
   double get subtotal => lines.fold(0, (double sum, line) => sum + line.total);
   void notify(String message) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-  void addItem(StaffCatalogItem item, {bool fromScanner = false}) {
+  void addItem(StaffCatalogItem item) {
     final index = lines.indexWhere((line) => line.item.id == item.id);
     setState(() {
       if (index >= 0) {
@@ -460,24 +469,11 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
       suggestions = [];
       query.clear();
     });
-    if (fromScanner) return; // Keep the camera in view, do not open the keyboard.
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      final sectionContext = itemsSectionKey.currentContext;
-      if (sectionContext != null) {
-        await Scrollable.ensureVisible(
-          sectionContext,
-          alignment: 0.15,
-          duration: const Duration(milliseconds: 220),
-        );
-      }
-      if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _quantityFocusNode(item.id).requestFocus();
-        });
-      }
-    });
+    // A unique barcode immediately selects its catalog item; the operator
+    // continues directly in the quantity field, without choosing a result.
+    _focusQuantityForItem(item.id);
   }
+
   void setQuantity(int index, double quantity) {
     if (quantity <= 0) return;
     final old = lines[index];
@@ -524,26 +520,92 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     } catch (e) { if (mounted) notify('صدور فاکتور انجام نشد: $e'); }
     finally { if (mounted) setState(() => saving = false); }
   }
-  Widget _invoiceSection(String title, List<Widget> children, {Key? key}) => Card(
-    key: key,
-    margin: const EdgeInsets.only(bottom: 14),
-    elevation: 1,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(16),
-      side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 12),
-          ...children,
+  Widget _invoiceSection(String title, List<Widget> children,
+      {Key? key, IconData icon = Icons.widgets_outlined}) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      key: key,
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: .75)),
+        boxShadow: [
+          BoxShadow(color: const Color(0xFF123D33).withValues(alpha: .045),
+            blurRadius: 18, offset: const Offset(0, 5)),
         ],
       ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Container(
+              width: 34, height: 34,
+              decoration: BoxDecoration(
+                color: colors.primaryContainer,
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(icon, size: 19, color: colors.onPrimaryContainer),
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: Text(title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800))),
+          ]),
+          const SizedBox(height: 14),
+          ...children,
+        ]),
+      ),
+    );
+  }
+
+  Widget _invoiceHeader() => Container(
+    margin: const EdgeInsets.only(bottom: 14),
+    padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 18),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(colors: [Color(0xFF176B5B), Color(0xFF0F9986)]),
+      borderRadius: BorderRadius.circular(20),
     ),
+    child: Row(children: [
+      const Icon(Icons.receipt_long_rounded, color: Colors.white, size: 30),
+      const SizedBox(width: 12),
+      const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('فاکتور جدید', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+        SizedBox(height: 3),
+        Text('اسکن بارکد، تنظیم تعداد و ثبت سریع', style: TextStyle(color: Color(0xFFD8F6EA), fontSize: 12)),
+      ])),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: .16), borderRadius: BorderRadius.circular(14)),
+        child: Text('${lines.length} قلم', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+      ),
+    ]),
   );
+
+  Widget _invoiceFooter() {
+    if (MediaQuery.viewInsetsOf(context).bottom > 0) return const SizedBox.shrink();
+    final colors = Theme.of(context).colorScheme;
+    return SafeArea(top: false, child: Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border(top: BorderSide(color: colors.outlineVariant)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .07), blurRadius: 20, offset: const Offset(0, -4))],
+      ),
+      child: Row(children: [
+        Expanded(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('قابل پرداخت', style: Theme.of(context).textTheme.labelMedium),
+          Text('${money(payable)} ریال', style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: colors.primary, fontWeight: FontWeight.w900)),
+        ])),
+        const SizedBox(width: 12),
+        FilledButton.icon(
+          onPressed: saving ? null : save,
+          icon: Icon(saving ? Icons.hourglass_top : Icons.check_circle_outline),
+          label: Text(saving ? 'در حال ثبت...' : 'صدور فاکتور'),
+        ),
+      ]),
+    ));
+  }
 
   @override
   Widget build(BuildContext context) => Directionality(
@@ -566,10 +628,238 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
         ],
       ),
       resizeToAvoidBottomInset: true,
+      bottomNavigationBar: _invoiceFooter(),
       body: ListView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.all(12),
         children: [
+          _invoiceHeader(),
+          _invoiceSection('اسکن سریع کالا و دارو', [
+            Row(children: [
+              const Icon(Icons.verified_outlined, color: Color(0xFF176B5B), size: 18),
+              const SizedBox(width: 6),
+              const Expanded(child: Text('اسکن دقیق GS1 و EAN فعال است',
+                style: TextStyle(color: Color(0xFF176B5B), fontSize: 12, fontWeight: FontWeight.w700))),
+              TextButton.icon(
+                onPressed: _testSuccessSound,
+                icon: Icon(_soundTested ? Icons.volume_up : Icons.volume_up_outlined, size: 18),
+                label: const Text('تست بوق'),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            Center(child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: AspectRatio(
+                aspectRatio: 4 / 3,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Stack(fit: StackFit.expand, children: [
+                    ColoredBox(
+                      color: const Color(0xFF102720),
+                      child: MobileScanner(
+                        controller: scannerController,
+                        fit: BoxFit.cover,
+                        onDetect: _onDetectedBarcodes,
+                        errorBuilder: (context, error) => Center(child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(mainAxisSize: MainAxisSize.min, children: [
+                            const Icon(Icons.videocam_off_outlined, color: Colors.white, size: 32),
+                            const SizedBox(height: 8),
+                            const Text('دوربین در دسترس نیست؛ مجوز Chrome را بررسی کنید.',
+                              textAlign: TextAlign.center, style: TextStyle(color: Colors.white)),
+                            const SizedBox(height: 6),
+                            SelectableText(error.toString(), textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                            TextButton.icon(onPressed: _cameraStarting ? null : _restartInvoiceCamera,
+                              icon: const Icon(Icons.refresh), label: const Text('تلاش مجدد')),
+                          ]),
+                        )),
+                      ),
+                    ),
+                    // Centered viewfinder; the preview itself fills its 4:3 frame.
+                    IgnorePointer(child: Center(child: FractionallySizedBox(
+                      widthFactor: .77, heightFactor: .48,
+                      child: Container(decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFB7F7D9), width: 2.2),
+                        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 4)],
+                      )),
+                    ))),
+                    if (_cameraStarting || _cameraStartError != null)
+                      Positioned.fill(child: ColoredBox(
+                        color: const Color(0xEE102720),
+                        child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          if (_cameraStarting) const CircularProgressIndicator(color: Colors.white),
+                          const SizedBox(height: 10),
+                          Text(_cameraStarting ? 'در حال راه‌اندازی دوربین...' : 'دوربین متوقف شد',
+                            style: const TextStyle(color: Colors.white)),
+                          if (_cameraStartError != null) ...[
+                            const SizedBox(height: 6),
+                            Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: SelectableText(_cameraStartError!,
+                                textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70))),
+                            TextButton.icon(onPressed: _restartInvoiceCamera,
+                              icon: const Icon(Icons.refresh), label: const Text('تلاش مجدد')),
+                          ],
+                        ])),
+                      )),
+                    Positioned(
+                      left: 8, top: 8,
+                      child: IconButton.filledTonal(
+                        tooltip: 'راه‌اندازی مجدد دوربین',
+                        onPressed: _cameraStarting ? null : _restartInvoiceCamera,
+                        icon: const Icon(Icons.refresh_rounded, size: 20),
+                      ),
+                    ),
+                    Positioned(
+                      left: 8, right: 8, bottom: 10,
+                      child: Center(child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(color: const Color(0xB8000000),
+                          borderRadius: BorderRadius.circular(20)),
+                        child: const Text('بارکد را داخل کادر قرار دهید',
+                          style: TextStyle(color: Colors.white, fontSize: 12)),
+                      )),
+                    ),
+                  ]),
+                ),
+              ),
+            )),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: _scanWasSuccessful ? const Color(0xFFE3F6EA) : const Color(0xFFF0F5F3),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(children: [
+                Icon(_scanWasSuccessful ? Icons.check_circle_rounded : Icons.info_outline,
+                  color: _scanWasSuccessful ? const Color(0xFF217347) : const Color(0xFF176B5B), size: 19),
+                const SizedBox(width: 8),
+                Expanded(child: Text(_scanFeedback,
+                  style: TextStyle(fontSize: 12,
+                    color: _scanWasSuccessful ? const Color(0xFF17633D) : const Color(0xFF2E574B)))),
+              ]),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              key: searchFieldKey,
+              focusNode: searchFocus,
+              controller: query,
+              textAlign: TextAlign.right,
+              onTap: showSearchAboveKeyboard,
+              onSubmitted: (_) => scanBarcode(),
+              decoration: const InputDecoration(
+                labelText: 'جستجوی متنی یا ورود بارکد',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (suggestions.isNotEmpty) Row(children: [
+              TextButton(onPressed: () => toggleSort(CatalogSortField.relevance), child: const Text('ارتباط')),
+              TextButton(onPressed: () => toggleSort(CatalogSortField.dose),
+                child: Text('دوز/حجم ${catalogSort == CatalogSortField.dose ? (sortDescending ? '↓' : '↑') : ''}')),
+              TextButton(onPressed: () => toggleSort(CatalogSortField.shape),
+                child: Text('شکل ${catalogSort == CatalogSortField.shape ? (sortDescending ? '↓' : '↑') : ''}')),
+            ]),
+            if (suggestions.isNotEmpty)
+              SizedBox(
+                height: 260,
+                child: ListView.builder(
+                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                  itemCount: sortedSuggestions.length,
+                  itemBuilder: (context, index) {
+                    final item = sortedSuggestions[index];
+                    return ListTile(
+                      title: Text(item.name),
+                      subtitle: Text('${item.details}\nقیمت فروش ثبت‌شده: ${money(item.price)} ریال${item.packetQuantity != null && item.packetQuantity! > 1 ? ' • تعداد در بسته: ${item.packetQuantity}' : ''}'),
+                      isThreeLine: true,
+                      onTap: () => addItem(item),
+                    );
+                  },
+                ),
+              ),
+          ], icon: Icons.qr_code_scanner_rounded),
+          _invoiceSection('اقلام فاکتور و مبالغ', [
+            if (lines.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('هنوز کالایی به فاکتور اضافه نشده است.',
+                  textAlign: TextAlign.center),
+              ),
+            ...lines.asMap().entries.map((entry) {
+              final item = entry.value.item;
+              return Card(
+                key: _lineCardKeys.putIfAbsent(item.id, () => GlobalKey()),
+                margin: const EdgeInsets.only(bottom: 9),
+                elevation: 0,
+                color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    Row(children: [
+                      Expanded(child: InkWell(
+                        onTap: () => edit(item, index: entry.key),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(item.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 3),
+                          Text(item.details, maxLines: 2, overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall),
+                        ]),
+                      )),
+                      IconButton(tooltip: 'حذف قلم', icon: const Icon(Icons.delete_outline),
+                        onPressed: () => setState(() {
+                          lines.removeAt(entry.key);
+                          _lineCardKeys.remove(item.id);
+                        })),
+                    ]),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('${money(entry.value.total)} ریال',
+                          style: TextStyle(fontWeight: FontWeight.w800,
+                            color: Theme.of(context).colorScheme.primary)),
+                        Text('قیمت واحد: ${money(entry.value.price)}',
+                          style: Theme.of(context).textTheme.bodySmall),
+                      ])),
+                      IconButton(tooltip: 'کاهش تعداد', visualDensity: VisualDensity.compact,
+                        onPressed: () => setQuantity(entry.key,
+                          (entry.value.quantity - 1).clamp(1, double.infinity).toDouble()),
+                        icon: const Icon(Icons.remove_circle_outline)),
+                      SizedBox(width: 68, child: _QuantityControl(
+                        value: entry.value.quantity,
+                        focusNode: _quantityFocusNode(item.id),
+                        onChanged: (value) => setQuantity(entry.key, value),
+                      )),
+                      IconButton(tooltip: 'افزایش تعداد', visualDensity: VisualDensity.compact,
+                        onPressed: () => setQuantity(entry.key, entry.value.quantity + 1),
+                        icon: const Icon(Icons.add_circle_outline)),
+                    ]),
+                  ]),
+                ),
+              );
+            }),
+            const SizedBox(height: 8),
+            Text('جمع اقلام: ${money(subtotal)} ریال'),
+            Text('تعرفه خدمات دارویی${containsDrug ? '' : ' (بدون دارو: صفر)'}: ${money(serviceTariff)} ریال'),
+            TextField(
+              controller: discount,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.right,
+              inputFormatters: [ThousandsFormatter()],
+              decoration: const InputDecoration(labelText: 'تخفیف کل (ریال)'),
+            ),
+            TextField(controller: notes, textAlign: TextAlign.right,
+              decoration: const InputDecoration(labelText: 'توضیحات (اختیاری)')),
+            const SizedBox(height: 6),
+            Text('جمع نهایی: ${money(payable)} ریال',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.primary)),
+          ], key: itemsSectionKey, icon: Icons.shopping_bag_outlined),
           _invoiceSection('مشخصات فاکتور', [
             DropdownButtonFormField<String>(
               value: invoiceType,
@@ -608,255 +898,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
               icon: const Icon(Icons.calendar_month),
               label: Text('تاریخ فاکتور: ${jalali(date.toDateTime())}'),
             ),
-          ]),
-          _invoiceSection('انتخاب کالا و دارو', [
-            Container(
-              height: 190,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-              ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  MobileScanner(
-                    controller: scannerController,
-                    onDetect: _onDetectedBarcodes,
-                    errorBuilder: (context, error) => Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.no_photography_outlined, size: 34),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'پیش‌نمایش دوربین اجرا نشد. دسترسی دوربین Chrome و مجوز سایت را بررسی کنید؛ جستجوی متنی فعال است.',
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 6),
-                            SelectableText(
-                              error.toString(),
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                            const SizedBox(height: 8),
-                            TextButton.icon(
-                              onPressed: _cameraStarting ? null : _restartInvoiceCamera,
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('تلاش مجدد'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (_cameraStarting || _cameraStartError != null)
-                    Positioned.fill(
-                      child: ColoredBox(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                        child: Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (_cameraStarting) const CircularProgressIndicator(),
-                                const SizedBox(height: 8),
-                                Text(
-                                  _cameraStarting
-                                      ? 'در حال فعال‌سازی دوربین پشت...'
-                                      : 'راه‌اندازی دوربین انجام نشد',
-                                  textAlign: TextAlign.center,
-                                ),
-                                if (_cameraStartError != null) ...[
-                                  const SizedBox(height: 6),
-                                  SelectableText(
-                                    _cameraStartError!,
-                                    textAlign: TextAlign.center,
-                                    style: Theme.of(context).textTheme.bodySmall,
-                                  ),
-                                  TextButton.icon(
-                                    onPressed: _restartInvoiceCamera,
-                                    icon: const Icon(Icons.refresh),
-                                    label: const Text('تلاش مجدد'),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  if (!_cameraStarting)
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      child: IconButton.filledTonal(
-                        tooltip: 'راه‌اندازی مجدد دوربین',
-                        onPressed: _restartInvoiceCamera,
-                        icon: const Icon(Icons.refresh, size: 20),
-                      ),
-                    ),
-                  Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: .55),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text('بارکد را مقابل دوربین پشت قرار دهید',
-                        style: TextStyle(color: Colors.white, fontSize: 12)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _scanFeedback,
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _scanWasSuccessful ? Colors.green.shade800 : Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: _scanSoundEnabled ? null : () {
-                    final enabled = enableScanSuccessSound();
-                    if (enabled) {
-                      setState(() => _scanSoundEnabled = true);
-                    } else {
-                      notify('پخش صدا در این مرورگر در دسترس نیست.');
-                    }
-                  },
-                  icon: Icon(_scanSoundEnabled ? Icons.volume_up : Icons.volume_off, size: 18),
-                  label: Text(_scanSoundEnabled ? 'بوق فعال' : 'فعال‌سازی بوق'),
-                ),
-              ],
-            ),
-            if (kIsWeb)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: _cameraStarting ? null : _toggleWebScannerReader,
-                  icon: const Icon(Icons.qr_code_scanner, size: 18),
-                  label: Text(_usePreciseWebReader
-                      ? 'بازگشت به اسکن عادی' : 'اسکن دقیق DataMatrix'),
-                ),
-              ),
-            const SizedBox(height: 12),
-            TextField(
-              key: searchFieldKey,
-              focusNode: searchFocus,
-              controller: query,
-              textAlign: TextAlign.right,
-              onTap: showSearchAboveKeyboard,
-              onSubmitted: (_) => scanBarcode(),
-              decoration: const InputDecoration(
-                labelText: 'جستجوی متنی یا ورود بارکد',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            if (suggestions.isNotEmpty) Row(children: [
-              TextButton(onPressed: () => toggleSort(CatalogSortField.relevance), child: const Text('ارتباط')),
-              TextButton(onPressed: () => toggleSort(CatalogSortField.dose),
-                child: Text('دوز/حجم ${catalogSort == CatalogSortField.dose ? (sortDescending ? '↓' : '↑') : ''}')),
-              TextButton(onPressed: () => toggleSort(CatalogSortField.shape),
-                child: Text('شکل ${catalogSort == CatalogSortField.shape ? (sortDescending ? '↓' : '↑') : ''}')),
-            ]),
-            if (suggestions.isNotEmpty)
-              SizedBox(
-                height: 260,
-                child: ListView.builder(
-                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                  itemCount: sortedSuggestions.length,
-                  itemBuilder: (context, index) {
-                    final item = sortedSuggestions[index];
-                    return ListTile(
-                      title: Text(item.name),
-                      subtitle: Text('${item.details}\nقیمت فروش ثبت‌شده: ${money(item.price)} ریال${item.packetQuantity != null && item.packetQuantity! > 1 ? ' • تعداد در بسته: ${item.packetQuantity}' : ''}'),
-                      isThreeLine: true,
-                      onTap: () => addItem(item),
-                    );
-                  },
-                ),
-              ),
-          ]),
-          _invoiceSection('اقلام فاکتور و مبالغ', [
-            if (lines.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('هنوز کالایی به فاکتور اضافه نشده است.',
-                  textAlign: TextAlign.center),
-              ),
-            ...lines.asMap().entries.map((entry) {
-              final item = entry.value.item;
-              return Card(
-                child: ListTile(
-                  title: Text(item.name),
-                  subtitle: Text('${money(entry.value.price)} ریال × ${entry.value.quantity} — جمع ${money(entry.value.total)} ریال'),
-                  onTap: () => edit(item, index: entry.key),
-                  trailing: SizedBox(
-                    width: 250,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(tooltip: 'افزایش تعداد',
-                          onPressed: () => setQuantity(entry.key, entry.value.quantity + 1),
-                          icon: const Icon(Icons.add_circle_outline)),
-                        SizedBox(
-                          width: 58,
-                          child: _QuantityControl(
-                            value: entry.value.quantity,
-                            focusNode: _quantityFocusNode(item.id),
-                            onChanged: (value) => setQuantity(entry.key, value),
-                          ),
-                        ),
-                        IconButton(tooltip: 'کاهش تعداد',
-                          onPressed: () => setQuantity(entry.key,
-                            (entry.value.quantity - 1).clamp(1, double.infinity).toDouble()),
-                          icon: const Icon(Icons.remove_circle_outline)),
-                        IconButton(tooltip: 'حذف قلم',
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => setState(() => lines.removeAt(entry.key))),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }),
-            const SizedBox(height: 8),
-            Text('جمع اقلام: ${money(subtotal)} ریال'),
-            Text('تعرفه خدمات دارویی${containsDrug ? '' : ' (بدون دارو: صفر)'}: ${money(serviceTariff)} ریال'),
-            TextField(
-              controller: discount,
-              keyboardType: TextInputType.number,
-              textAlign: TextAlign.right,
-              inputFormatters: [ThousandsFormatter()],
-              decoration: const InputDecoration(labelText: 'تخفیف کل (ریال)'),
-            ),
-            TextField(controller: notes, textAlign: TextAlign.right,
-              decoration: const InputDecoration(labelText: 'توضیحات (اختیاری)')),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text('قابل پرداخت: ${money(payable)} ریال',
-                style: Theme.of(context).textTheme.titleLarge),
-            ),
-            FilledButton(
-              onPressed: saving ? null : save,
-              child: Text(saving ? 'در حال ثبت...' : 'صدور فاکتور'),
-            ),
-          ], key: itemsSectionKey),
+          ], icon: Icons.receipt_long_outlined),
         ],
       ),
     ),
@@ -885,6 +927,7 @@ class _QuantityControlState extends State<_QuantityControl> {
   void initState() {
     super.initState();
     controller = TextEditingController(text: _text(widget.value));
+    widget.focusNode.addListener(_selectOnFocus);
   }
   @override
   void didUpdateWidget(covariant _QuantityControl oldWidget) {
@@ -894,8 +937,17 @@ class _QuantityControlState extends State<_QuantityControl> {
     }
   }
   String _text(double value) => value == value.roundToDouble() ? '${value.toInt()}' : '$value';
+  void _selectOnFocus() {
+    if (widget.focusNode.hasFocus) {
+      controller.selection = TextSelection(baseOffset: 0, extentOffset: controller.text.length);
+    }
+  }
   @override
-  void dispose() { controller.dispose(); super.dispose(); }
+  void dispose() {
+    widget.focusNode.removeListener(_selectOnFocus);
+    controller.dispose();
+    super.dispose();
+  }
   @override
   Widget build(BuildContext context) => TextField(
     controller: controller,

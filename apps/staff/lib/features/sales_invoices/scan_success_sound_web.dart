@@ -4,7 +4,7 @@ import 'dart:js_interop';
 external JSBoolean _enableWebBeep();
 
 @JS('PharmaFlowScanBeep.play')
-external void _playWebBeep();
+external JSBoolean _playWebBeep();
 
 /// Must be called from a user's tap to satisfy mobile browser audio policies.
 bool enableScanSuccessSound() {
@@ -15,10 +15,11 @@ bool enableScanSuccessSound() {
   }
 }
 
-void playScanSuccessSound() {
+bool playScanSuccessSound() {
   try {
-    _playWebBeep();
+    return _playWebBeep().toDart;
   } catch (_) {
     // Sound is optional; it must never prevent an invoice item being added.
+    return false;
   }
 }

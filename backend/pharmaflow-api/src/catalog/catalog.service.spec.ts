@@ -7,6 +7,7 @@ import { CatalogService } from './catalog.service';
 
 describe('CatalogService', () => {
   const prisma = {
+    arsenInvoiceItem: { groupBy: jest.fn() },
     arsenCatalogItem: {
       count: jest.fn(),
       findMany: jest.fn(),
@@ -47,6 +48,31 @@ describe('CatalogService', () => {
       ...overrides,
     };
   }
+
+  it('resolves a scanned GTIN in one indexed lookup without full text search', async () => {
+    prisma.arsenInvoiceItem.groupBy.mockResolvedValue([{ arsenDrugId: 123n }]);
+    prisma.arsenCatalogItem.findMany.mockResolvedValue([row()]);
+
+    const result = await service.staffBarcode(['6267429502049', '06267429502049']);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toEqual(expect.objectContaining({ persianName: 'داروی تست' }));
+    expect(prisma.arsenInvoiceItem.groupBy).toHaveBeenCalledWith({
+      by: ['arsenDrugId'],
+      where: { barcode: { in: ['6267429502049', '06267429502049'] }, arsenDrugId: { not: null } },
+    });
+    expect(prisma.arsenCatalogItem.count).not.toHaveBeenCalled();
+  });
+
+  it('does not guess an identity for an unknown barcode', async () => {
+    prisma.arsenInvoiceItem.groupBy.mockResolvedValue([]);
+    expect((await service.staffBarcode(['6267429502049'])).items).toEqual([]);
+    expect(prisma.arsenCatalogItem.findMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed barcode input', async () => {
+    await expect(service.staffBarcode(['INVALID-ID'])).rejects.toBeInstanceOf(BadRequestException);
+  });
 
   it('returns paginated catalog rows without a search query', async () => {
     prisma.arsenCatalogItem.count

@@ -132,6 +132,42 @@ export class CatalogService {
     return { ...result, items: merged.slice(0, 100), totalCount: Math.max(result.totalCount, merged.length) };
   }
 
+  /** Fast, exact barcode resolution; uses the indexed arsen_invoice_items.barcode.
+   * Unlike staffSearch, this route does not run a full-text catalog search or
+   * paginate through unrelated matches. Ambiguities are returned explicitly.
+   */
+  async staffBarcode(codes: string[]) {
+    const normalized = [...new Set(codes.map((code) => code.trim()))].filter(
+      (code) => /^\d{8,14}$/.test(code),
+    );
+    if (normalized.length === 0 || normalized.length > 4) {
+      throw new BadRequestException('Invalid barcode.');
+    }
+
+    const matches = await this.prisma.arsenInvoiceItem.groupBy({
+      by: ['arsenDrugId'],
+      where: {
+        barcode: { in: normalized },
+        arsenDrugId: { not: null },
+      },
+    });
+    const drugIds = matches
+      .map((entry) => entry.arsenDrugId)
+      .filter((id): id is bigint => id != null);
+    if (drugIds.length === 0) return { items: [] };
+
+    const catalogItems = await this.prisma.arsenCatalogItem.findMany({
+      where: { arsenDrugId: { in: drugIds }, isActive: true },
+      take: 3, // Two or more active matches means manual resolution is required.
+    });
+    return {
+      items: catalogItems.map((row) => ({
+        ...this.serializeSummary(row),
+        matchedBarcode: null,
+      })),
+    };
+  }
+
   async findOne(id: string) {
     const normalizedId = id.trim();
 

@@ -42,6 +42,12 @@ export class CatalogController {
       ({ id, category, persianName, genericName, persianBrandName, brandName, unit, shapeName, packetQuantity, salesPrice, matchedBarcode })) };
   }
 
+  @Roles('STAFF', 'MANAGER')
+  @Get('staff-barcode')
+  staffBarcode(@Query('codes') codes?: string) {
+    return this.catalog.staffBarcode(codes?.split(',') ?? []);
+  }
+
   @Roles('MANAGER')
   @Get(':id')
   findOne(@Param('id') id: string) {

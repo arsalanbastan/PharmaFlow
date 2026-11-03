@@ -68,6 +68,16 @@ class StaffSalesApi {
       await _request('/sales-invoices/${Uri.encodeComponent(id)}'));
   Future<SalesInvoiceDetails> create(Map<String, dynamic> body) async => SalesInvoiceDetails.fromJson(
       await _request('/sales-invoices', body: body));
+  Future<List<StaffCatalogItem>> searchBarcodeExact(List<String> candidates) async {
+    final codes = candidates.toSet().toList();
+    final response = await _request(
+      '/catalog/staff-barcode?codes=${Uri.encodeQueryComponent(codes.join(','))}',
+    );
+    return (response['items'] as List)
+        .map((row) => StaffCatalogItem(Map<String, dynamic>.from(row as Map)))
+        .toList();
+  }
+
   Future<List<StaffCatalogItem>> search(String query) async {
     // The API already ranks the complete match set and returns the best 100.
     // Fetching every page repeated the same expensive ranking query for each
