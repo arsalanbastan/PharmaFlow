@@ -28,13 +28,37 @@
     osc.frequency.setValueAtTime(1040, start);
     osc.frequency.exponentialRampToValueAtTime(870, start + 0.11);
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.16, start + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.24, start + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.13);
     osc.connect(gain);
     gain.connect(context.destination);
     osc.onended = () => { osc.disconnect(); gain.disconnect(); };
     osc.start(start);
     osc.stop(start + 0.14);
+    return true;
+  }
+  function errorBeep() {
+    if (!context || context.state !== 'running') return false;
+    const start = context.currentTime;
+
+    const pulse = (when, frequency, duration) => {
+      const osc = context.createOscillator();
+      const gain = context.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(frequency, when);
+      gain.gain.setValueAtTime(0.0001, when);
+      gain.gain.exponentialRampToValueAtTime(0.22, when + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, when + duration);
+      osc.connect(gain);
+      gain.connect(context.destination);
+      osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+      osc.start(when);
+      osc.stop(when + duration + 0.01);
+    };
+
+    // Clearly different from the success chirp: two descending warning pulses.
+    pulse(start, 520, 0.13);
+    pulse(start + 0.17, 310, 0.18);
     return true;
   }
   // Works for tapping the "new invoice" button as well as the sound test.
@@ -52,5 +76,6 @@
       return true;
     },
     play() { return beep(); },
+    error() { return errorBeep(); },
   };
 })();

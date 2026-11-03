@@ -7,3 +7,9 @@ bool playScanSuccessSound() {
   SystemSound.play(SystemSoundType.click);
   return true;
 }
+
+bool playScanErrorSound() {
+  // Keep the failure signal clearly different from the success click.
+  SystemSound.play(SystemSoundType.alert);
+  return true;
+}

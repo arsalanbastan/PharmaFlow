@@ -535,9 +535,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> with WidgetsBinding
     if (scannerBusy || code == lastScannedCode) return;
     scannerBusy = true;
     lastScannedCode = code;
-    // Confirm the scan immediately, not after a network request. An unknown
-    // catalog item still produces one short beep and then a clear error.
-    final audible = playScanSuccessSound();
+    // Read the barcode first; the lookup result decides which distinct sound plays.
     _showScanFeedback('بارکد $code خوانده شد؛ در حال بررسی کالا...');
     final stopwatch = Stopwatch()..start();
     try {
@@ -546,8 +544,10 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> with WidgetsBinding
       if (matches.length == 1) {
         final item = matches.single;
         addItem(item);
+        final audible = playScanSuccessSound();
         _showScanFeedback('✓ ${item.name} به فاکتور اضافه شد${audible ? '' : ' • برای بوق روی تست صدا بزنید'}', success: true);
       } else if (matches.isEmpty) {
+        final audible = playScanErrorSound();
         _showScanFeedback('کالای متناظر با بارکد $code پیدا نشد.${audible ? '' : ' برای بوق روی تست صدا بزنید.'}');
       } else {
         _showScanFeedback('بارکد $code به چند کالا مرتبط است؛ انتخاب خودکار ایمن نیست.');
