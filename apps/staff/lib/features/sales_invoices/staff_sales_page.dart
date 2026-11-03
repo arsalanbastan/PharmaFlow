@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -507,14 +508,22 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
                     },
                     errorBuilder: (context, error) => Center(
                       child: Padding(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(12),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.no_photography_outlined, size: 34),
-                            SizedBox(height: 8),
-                            Text('دوربین در دسترس نیست؛ جستجوی متنی همچنان فعال است.',
-                              textAlign: TextAlign.center),
+                          children: [
+                            const Icon(Icons.no_photography_outlined, size: 34),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'پیش‌نمایش دوربین اجرا نشد. دسترسی دوربین Chrome و مجوز سایت را بررسی کنید؛ جستجوی متنی فعال است.',
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 6),
+                            SelectableText(
+                              error.toString(),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
                           ],
                         ),
                       ),
@@ -801,9 +810,9 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
         as RenderRepaintBoundary?;
     if (boundary == null) throw StateError('فاکتور برای ذخیره تصویر آماده نیست.');
     final image = await boundary.toImage(pixelRatio: 2);
-    final pngBytes = await image.toByteData(format: ui.ImageByteFormat.png);
-    if (pngBytes == null) throw StateError('ساخت تصویر فاکتور ممکن نشد.');
-    final decoded = img.decodePng(pngBytes.buffer.asUint8List());
+    final pngData = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (pngData == null) throw StateError('ساخت تصویر فاکتور ممکن نشد.');
+    final decoded = img.decodePng(pngData.buffer.asUint8List());
     if (decoded == null) throw StateError('تبدیل تصویر فاکتور به JPEG ممکن نشد.');
     return Uint8List.fromList(img.encodeJpg(decoded, quality: 92));
   }
