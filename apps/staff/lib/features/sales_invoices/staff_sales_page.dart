@@ -18,6 +18,8 @@ import 'amount_words.dart';
 import 'sales_invoice.dart';
 import 'staff_sales_api.dart';
 import 'catalog_item_details.dart';
+import 'barcode_lookup.dart';
+import 'scan_success_sound.dart';
 
 String money(num value) => value.round().toString().replaceAllMapped(
     RegExp(r'\B(?=(\d{3})+(?!\d))'), (match) => ',');
@@ -147,12 +149,20 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     // Let the MobileScanner widget initialize the camera exactly once.
     autoStart: true,
     facing: CameraFacing.back,
-    detectionSpeed: DetectionSpeed.noDuplicates,
+    // Report the same symbol while it remains visible. This lets us unlock
+    // the product only after the package is removed from the camera frame.
+    detectionSpeed: DetectionSpeed.normal,
+    detectionTimeoutMs: 350,
   );
   bool _cameraStarting = false;
   String? _cameraStartError;
   bool scannerBusy = false;
   String? lastScannedCode;
+  Timer? _barcodeOutOfFrameTimer;
+  String _scanFeedback = 'منتظر شناسایی بارکد...';
+  bool _scanWasSuccessful = false;
+  bool _scanSoundEnabled = false;
+  bool _usePreciseWebReader = false;
   final searchFieldKey = GlobalKey();
   void showSearchAboveKeyboard() {
     Future<void>.delayed(const Duration(milliseconds: 280), () {
@@ -214,6 +224,42 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
     } catch (error, stack) {
       debugPrint('Staff invoice camera restart failed: $error\n$stack');
       if (mounted) setState(() => _cameraStartError = error.toString());
+    } finally {
+      if (mounted) setState(() => _cameraStarting = false);
+    }
+  }
+
+  Future<void> _toggleWebScannerReader() async {
+    if (!kIsWeb || !mounted || _cameraStarting || scannerController.value.isStarting) return;
+    final next = !_usePreciseWebReader;
+    setState(() {
+      _cameraStarting = true;
+      _cameraStartError = null;
+    });
+    try {
+      await scannerController.stop();
+      MobileScannerPlatform.instance.setWebBarcodeReader(
+        next ? WebBarcodeReader.zxingWasm : WebBarcodeReader.auto,
+      );
+      await scannerController.start();
+      if (!mounted) return;
+      setState(() => _usePreciseWebReader = next);
+      _showScanFeedback(next
+          ? 'اسکن دقیق فعال شد؛ بارکد را ثابت مقابل دوربین نگه دارید.'
+          : 'حالت عادی اسکن فعال شد.');
+    } catch (error, stack) {
+      debugPrint('Staff Web scanner reader switch failed: $error\n$stack');
+      // Restore the previous decoder if an external WASM script cannot load.
+      MobileScannerPlatform.instance.setWebBarcodeReader(
+        _usePreciseWebReader ? WebBarcodeReader.zxingWasm : WebBarcodeReader.auto,
+      );
+      try {
+        await scannerController.stop();
+        await scannerController.start();
+      } catch (_) {
+        if (mounted) setState(() => _cameraStartError = error.toString());
+      }
+      if (mounted) _showScanFeedback('تغییر حالت اسکن ناموفق بود: $error');
     } finally {
       if (mounted) setState(() => _cameraStarting = false);
     }
@@ -283,51 +329,108 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   void refresh() { if (mounted) setState(() {}); }
   @override
   void dispose() {
-    debounce?.cancel(); for (final c in [buyer, nationalId, phone, address, query, discount, notes]) { c.dispose(); }
+    debounce?.cancel();
+    _barcodeOutOfFrameTimer?.cancel();
+    for (final c in [buyer, nationalId, phone, address, query, discount, notes]) { c.dispose(); }
     searchFocus.dispose();
     scannerController.dispose();
     for (final node in quantityFocusNodes.values) { node.dispose(); }
     super.dispose();
   }
-  Future<void> scanBarcode() async {
-    final scanned = query.text.trim();
-    if (scanned.isEmpty) return;
-    debounce?.cancel();
-    try {
-      final result = await widget.api.search(scanned);
-      if (!mounted || query.text.trim() != scanned) return;
-      final exact = result.where((item) => item.matchedBarcode == scanned).toList();
-      if (exact.length == 1) {
-        addItem(exact.single);
-      } else {
-        setState(() => suggestions = result);
-        if (exact.isEmpty) notify('بارکد دقیق پیدا نشد؛ از نتایج جستجو کالا را انتخاب کنید.');
+  void _showScanFeedback(String message, {bool success = false}) {
+    if (mounted) setState(() {
+      _scanFeedback = message;
+      _scanWasSuccessful = success;
+    });
+  }
+
+  Future<StaffCatalogItem?> _findExactlyOneBarcodeMatch(BarcodeLookup lookup) async {
+    for (final code in lookup.candidates) {
+      final results = await widget.api.search(code);
+      if (!mounted) return null;
+      final exact = results.where((item) => item.matchedBarcode == code).toList();
+      if (exact.length == 1) return exact.single;
+      if (exact.length > 1) {
+        _showScanFeedback('بارکد ${lookup.displayCode} به چند کالا مرتبط است؛ دستی انتخاب کنید.');
+        query.text = code;
+        setState(() => suggestions = exact);
+        return null;
       }
-    } catch (e) {
-      if (mounted) notify('جستجوی بارکد انجام نشد: $e');
+    }
+    return null;
+  }
+
+  Future<void> scanBarcode() async {
+    final raw = query.text.trim();
+    if (raw.isEmpty) return;
+    debounce?.cancel();
+    final lookup = parseBarcodeLookup(raw);
+    if (lookup == null) {
+      notify('شناسه کالا از این کد استخراج نشد.');
+      return;
+    }
+    try {
+      final item = await _findExactlyOneBarcodeMatch(lookup);
+      if (!mounted || query.text.trim() != raw) return;
+      if (item != null) {
+        addItem(item);
+      } else if (suggestions.isEmpty) {
+        final result = await widget.api.search(lookup.displayCode);
+        if (!mounted) return;
+        setState(() => suggestions = result);
+        notify('بارکد ${lookup.displayCode} تطابق دقیق ندارد؛ کالا را از نتایج انتخاب کنید.');
+      }
+    } catch (error) {
+      if (mounted) notify('جستجوی بارکد انجام نشد: $error');
     }
   }
-  Future<void> handleScannedBarcode(String rawCode) async {
-    final code = rawCode.trim();
-    if (code.isEmpty || scannerBusy || code == lastScannedCode) return;
+
+  void _onDetectedBarcodes(BarcodeCapture capture) {
+    for (final barcode in capture.barcodes) {
+      final raw = barcode.rawValue;
+      if (raw == null || raw.trim().isEmpty) continue;
+      final lookup = parseBarcodeLookup(raw);
+      if (lookup == null) {
+        if (!scannerBusy) {
+          _showScanFeedback('کد دیده شد، اما شناسه GTIN قابل استخراج نیست.');
+        }
+        continue;
+      }
+
+      // Each detection refreshes the timer. The same product can be scanned
+      // again only after it has been out of the camera's view for a moment.
+      _barcodeOutOfFrameTimer?.cancel();
+      _barcodeOutOfFrameTimer = Timer(const Duration(milliseconds: 1300), () {
+        lastScannedCode = null;
+      });
+      handleScannedBarcode(lookup);
+      break;
+    }
+  }
+
+  Future<void> handleScannedBarcode(BarcodeLookup lookup) async {
+    final code = lookup.displayCode;
+    if (scannerBusy || code == lastScannedCode) return;
     scannerBusy = true;
     lastScannedCode = code;
+    _showScanFeedback('بارکد $code خوانده شد؛ در حال جستجوی کالا...');
     try {
-      final result = await widget.api.search(code);
+      final item = await _findExactlyOneBarcodeMatch(lookup);
       if (!mounted) return;
-      final exact = result.where((item) => item.matchedBarcode == code).toList();
-      if (exact.length == 1) {
-        addItem(exact.single);
-      } else {
+      if (item != null) {
+        addItem(item, fromScanner: true);
+        _showScanFeedback('✓ ${item.name} به فاکتور اضافه شد ($code)', success: true);
+        if (_scanSoundEnabled) playScanSuccessSound();
+      } else if (suggestions.isEmpty) {
         query.text = code;
-        setState(() => suggestions = result);
-        if (exact.isEmpty) notify('بارکد دقیق پیدا نشد؛ از نتایج جستجو کالا را انتخاب کنید.');
+        final results = await widget.api.search(code);
+        if (!mounted) return;
+        setState(() => suggestions = results);
+        _showScanFeedback('بارکد $code خوانده شد، اما کالای متناظر پیدا نشد.');
       }
-    } catch (e) {
-      if (mounted) notify('خواندن بارکد انجام نشد: $e');
+    } catch (error) {
+      _showScanFeedback('بارکد خوانده شد، اما جستجو ناموفق بود: $error');
     } finally {
-      // Keep this barcode locked while it remains in the camera frame.
-      // onDetect releases the lock when no barcode is visible.
       scannerBusy = false;
     }
   }
@@ -344,7 +447,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
   }
   double get subtotal => lines.fold(0, (double sum, line) => sum + line.total);
   void notify(String message) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-  void addItem(StaffCatalogItem item) {
+  void addItem(StaffCatalogItem item, {bool fromScanner = false}) {
     final index = lines.indexWhere((line) => line.item.id == item.id);
     setState(() {
       if (index >= 0) {
@@ -357,6 +460,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
       suggestions = [];
       query.clear();
     });
+    if (fromScanner) return; // Keep the camera in view, do not open the keyboard.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final sectionContext = itemsSectionKey.currentContext;
@@ -519,19 +623,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
                 children: [
                   MobileScanner(
                     controller: scannerController,
-                    onDetect: (capture) {
-                      if (capture.barcodes.isEmpty) {
-                        lastScannedCode = null;
-                        return;
-                      }
-                      for (final barcode in capture.barcodes) {
-                        final value = barcode.rawValue;
-                        if (value != null && value.trim().isNotEmpty) {
-                          handleScannedBarcode(value);
-                          break;
-                        }
-                      }
-                    },
+                    onDetect: _onDetectedBarcodes,
                     errorBuilder: (context, error) => Center(
                       child: Padding(
                         padding: const EdgeInsets.all(12),
@@ -624,6 +716,43 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> {
                 ],
               ),
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _scanFeedback,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _scanWasSuccessful ? Colors.green.shade800 : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _scanSoundEnabled ? null : () {
+                    final enabled = enableScanSuccessSound();
+                    if (enabled) {
+                      setState(() => _scanSoundEnabled = true);
+                    } else {
+                      notify('پخش صدا در این مرورگر در دسترس نیست.');
+                    }
+                  },
+                  icon: Icon(_scanSoundEnabled ? Icons.volume_up : Icons.volume_off, size: 18),
+                  label: Text(_scanSoundEnabled ? 'بوق فعال' : 'فعال‌سازی بوق'),
+                ),
+              ],
+            ),
+            if (kIsWeb)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _cameraStarting ? null : _toggleWebScannerReader,
+                  icon: const Icon(Icons.qr_code_scanner, size: 18),
+                  label: Text(_usePreciseWebReader
+                      ? 'بازگشت به اسکن عادی' : 'اسکن دقیق DataMatrix'),
+                ),
+              ),
             const SizedBox(height: 12),
             TextField(
               key: searchFieldKey,
