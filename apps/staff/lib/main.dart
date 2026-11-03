@@ -23,13 +23,25 @@ class PharmaFlowStaffApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final staffTheme = ThemeData(
+      useMaterial3: true,
+      colorSchemeSeed: const Color(0xFF176B5B),
+    );
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'PharmaFlow Staff',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF176B5B),
+      theme: staffTheme.copyWith(
+        textTheme: staffTheme.textTheme.apply(fontSizeFactor: 1.14),
       ),
+      builder: (context, child) {
+        final media = MediaQuery.of(context);
+        final textScale = (media.textScaler.scale(16) / 16) * 1.5;
+        return MediaQuery(
+          data: media.copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: const StaffAuthGate(),
     );
   }

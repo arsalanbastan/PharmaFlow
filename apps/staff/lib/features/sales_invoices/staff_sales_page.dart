@@ -771,18 +771,16 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> with WidgetsBinding
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final media = MediaQuery.of(context);
-    // Scale the entire invoice by 50% relative to v4. TextTheme-only scaling
-    // missed TextStyles with explicit fontSize (scanner labels, header, etc.).
-    // The device's existing accessibility preference is also respected.
-    final textScale = (media.textScaler.scale(16) / 16) * 1.5;
+    // Staff typography is scaled globally in main.dart.
+    // Preserve the already-scaled MediaQuery here so the invoice page does not
+    // receive the same 50% increase a second time.
+    final textScale = media.textScaler.scale(16) / 16;
     return MediaQuery(
       data: media.copyWith(textScaler: TextScaler.linear(textScale)),
       child: Directionality(
       textDirection: TextDirection.rtl,
       child: Theme(
-        // Increase readability only on the invoice form; other Staff pages
-        // retain their current typography and system text scaling still works.
-        data: theme.copyWith(textTheme: theme.textTheme.apply(fontSizeFactor: 1.14)),
+        data: theme.copyWith(textTheme: theme.textTheme.apply(fontSizeFactor: 1.0)),
         child: Scaffold(
       appBar: AppBar(
         title: const Text('صدور فاکتور فروش'),
