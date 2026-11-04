@@ -22,6 +22,8 @@ import 'staff_sales_api.dart';
 import 'catalog_item_details.dart';
 import 'barcode_lookup.dart';
 import 'scan_success_sound.dart';
+import 'camera_preview_stub.dart'
+    if (dart.library.html) 'camera_preview_web.dart' as camera_preview;
 
 String money(num value) => value.round().toString().replaceAllMapped(
     RegExp(r'\B(?=(\d{3})+(?!\d))'), (match) => ',');
@@ -1126,6 +1128,10 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> with WidgetsBinding
                         )),
                       ),
                     ),
+                    // Web-only HTML preview reuses mobile_scanner's MediaStream.
+                    // Keeps barcode decoding and all native mobile UI unchanged.
+                    if (kIsWeb)
+                      IgnorePointer(child: camera_preview.buildCameraPreview()),
                     // Centered viewfinder; the preview itself fills its 4:3 frame.
                     IgnorePointer(child: Center(child: FractionallySizedBox(
                       widthFactor: .77, heightFactor: .48,
