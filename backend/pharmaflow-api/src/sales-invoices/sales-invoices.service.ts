@@ -8,6 +8,7 @@ import {
 import { AuditLogService } from '../audit/audit-log.service';
 import { PrismaService } from '../database/prisma/prisma.service';
 import { CreateSalesInvoiceDto } from './dto/create-sales-invoice.dto';
+import { verifyPosReceipt } from '../staff-settings/pos-crypto';
 import { UpdateSalesInvoiceProfileDto } from './dto/update-sales-invoice-profile.dto';
 
 const UUID_PATTERN =
@@ -211,6 +212,57 @@ export class SalesInvoicesService {
     }
     const payableAmount = subtotal.plus(serviceTariff).minus(discount);
 
+    let posPayment: null | {
+      requestId: string;
+      status: string;
+      deviceId: string;
+      deviceName: string;
+      terminalId: string;
+      traceNumber: string | null;
+      rrn: string | null;
+      responseCode: string;
+      responseDescription: string | null;
+      paidAmount: Prisma.Decimal;
+      paidAt: Date;
+    } = null;
+
+    if (dto.posPayment != null) {
+      const receipt = verifyPosReceipt(dto.posPayment.receipt);
+      if (receipt.deviceId !== dto.posPayment.deviceId.trim() ||
+          receipt.terminalId !== dto.posPayment.terminalId.trim() ||
+          receipt.amount !== dto.posPayment.paidAmount) {
+        throw new BadRequestException('POS receipt does not match the invoice payment.');
+      }
+      const configuredDevices = await this.prisma.staffWebSettings.findUnique({ where: { id: 'default' } });
+      const saved = configuredDevices?.posDevices;
+      const deviceIsKnown = Array.isArray(saved) && saved.some((item) => {
+        if (item == null || typeof item !== 'object' || Array.isArray(item)) return false;
+        const entry = item as Prisma.JsonObject;
+        return String(entry.id ?? '') === receipt.deviceId &&
+          String(entry.terminalId ?? '') === receipt.terminalId;
+      });
+      if (!deviceIsKnown) {
+        throw new BadRequestException('POS receipt device is not registered.');
+      }
+      const paidAmount = new Prisma.Decimal(receipt.amount);
+      if (!paidAmount.equals(payableAmount)) {
+        throw new BadRequestException('POS paid amount must equal the invoice payable amount.');
+      }
+      posPayment = {
+        requestId: receipt.requestId,
+        status: 'SUCCESS',
+        deviceId: dto.posPayment.deviceId.trim(),
+        deviceName: dto.posPayment.deviceName.trim(),
+        terminalId: dto.posPayment.terminalId.trim(),
+        traceNumber: this.optional(receipt.traceNumber),
+        rrn: this.optional(receipt.rrn),
+        responseCode: receipt.responseCode,
+        responseDescription: this.optional(receipt.responseDescription),
+        paidAmount,
+        paidAt: new Date(receipt.paidAt),
+      };
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.salesInvoice.create({
         data: {
@@ -232,6 +284,21 @@ export class SalesInvoicesService {
           discount,
           payableAmount,
           notes: this.optional(dto.notes),
+          ...(posPayment == null
+            ? {}
+            : {
+                posPaymentRequestId: posPayment.requestId,
+                posPaymentStatus: posPayment.status,
+                posPaymentDeviceId: posPayment.deviceId,
+                posPaymentDeviceName: posPayment.deviceName,
+                posPaymentTerminalId: posPayment.terminalId,
+                posPaymentTraceNumber: posPayment.traceNumber,
+                posPaymentRrn: posPayment.rrn,
+                posPaymentResponseCode: posPayment.responseCode,
+                posPaymentResponseDescription: posPayment.responseDescription,
+                posPaymentPaidAmount: posPayment.paidAmount,
+                posPaymentAt: posPayment.paidAt,
+              }),
           items: { create: items },
         },
         include: { items: { orderBy: { createdAt: 'asc' } } },
@@ -252,6 +319,17 @@ export class SalesInvoicesService {
             buyerName,
             payableAmount: payableAmount.toString(),
             itemCount: items.length,
+            ...(posPayment == null
+              ? {}
+              : {
+                  posPayment: {
+                    deviceName: posPayment.deviceName,
+                    terminalId: posPayment.terminalId,
+                    traceNumber: posPayment.traceNumber,
+                    rrn: posPayment.rrn,
+                    paidAmount: posPayment.paidAmount.toString(),
+                  },
+                }),
           },
         },
         tx,
@@ -282,6 +360,17 @@ export class SalesInvoicesService {
     discount: Prisma.Decimal;
     payableAmount: Prisma.Decimal;
     notes: string | null;
+    posPaymentRequestId: string | null;
+    posPaymentStatus: string | null;
+    posPaymentDeviceId: string | null;
+    posPaymentDeviceName: string | null;
+    posPaymentTerminalId: string | null;
+    posPaymentTraceNumber: string | null;
+    posPaymentRrn: string | null;
+    posPaymentResponseCode: string | null;
+    posPaymentResponseDescription: string | null;
+    posPaymentPaidAmount: Prisma.Decimal | null;
+    posPaymentAt: Date | null;
     status: string;
     createdAt: Date;
     updatedAt: Date;
@@ -306,6 +395,7 @@ export class SalesInvoicesService {
       discount: invoice.discount.toString(),
       payableAmount: invoice.payableAmount.toString(),
       serviceTariff: (invoice.serviceTariff ?? new Prisma.Decimal(0)).toString(),
+      posPaymentPaidAmount: invoice.posPaymentPaidAmount?.toString() ?? null,
       items: invoice.items.map((item) => ({
         ...item,
         arsenDrugId: item.arsenDrugId?.toString() ?? null,

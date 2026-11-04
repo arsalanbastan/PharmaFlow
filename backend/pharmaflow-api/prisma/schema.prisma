@@ -207,6 +207,18 @@ model ArsenCatalogBarcode {
   @@map("arsen_catalog_barcodes")
 }
 
+
+model StaffWebSettings {
+  id String @id @default("default")
+  posBridgeHost String?
+  posBridgePort Int @default(17905)
+  posDevices Json @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("staff_web_settings")
+}
+
 model SalesInvoiceProfile {
   id String @id @default("default")
   sellerName String @default("داروخانه دکتر خسروانی")
@@ -249,6 +261,19 @@ model SalesInvoice {
   discount Decimal @default(0) @db.Decimal(20, 4)
   payableAmount Decimal @db.Decimal(20, 4)
   notes String?
+
+  posPaymentRequestId String? @unique
+  posPaymentStatus String?
+  posPaymentDeviceId String?
+  posPaymentDeviceName String?
+  posPaymentTerminalId String?
+  posPaymentTraceNumber String?
+  posPaymentRrn String?
+  posPaymentResponseCode String?
+  posPaymentResponseDescription String?
+  posPaymentPaidAmount Decimal? @db.Decimal(20, 4)
+  posPaymentAt DateTime?
+
   status String @default("ISSUED")
 
   createdAt DateTime @default(now())

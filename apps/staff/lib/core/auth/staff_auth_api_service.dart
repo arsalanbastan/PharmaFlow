@@ -94,6 +94,47 @@ class StaffAuthApiService {
     return StaffAuthUser.fromJson(userJson);
   }
 
+  Future<StaffAuthUser> updateProfile({required String displayName}) async {
+    final token = await _storage.readToken();
+    if (token == null) {
+      throw const StaffAuthApiException(
+        statusCode: 401,
+        message: 'نشست کاربری موجود نیست.',
+      );
+    }
+
+    final response = await _requestJson(
+      method: 'PUT',
+      path: '/auth/me/profile',
+      bearerToken: token,
+      body: {'displayName': displayName.trim()},
+    );
+    return StaffAuthUser.fromJson(response);
+  }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final token = await _storage.readToken();
+    if (token == null) {
+      throw const StaffAuthApiException(
+        statusCode: 401,
+        message: 'نشست کاربری موجود نیست.',
+      );
+    }
+
+    await _requestJson(
+      method: 'POST',
+      path: '/auth/me/change-password',
+      bearerToken: token,
+      body: {
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+      },
+    );
+  }
+
   Future<void> logout() async {
     final token = await _storage.readToken();
 
@@ -133,9 +174,15 @@ class StaffAuthApiService {
           .timeout(const Duration(seconds: 20));
     } else {
       headers['Content-Type'] = 'application/json; charset=utf-8';
-      response = await _httpClient
-          .post(uri, headers: headers, body: jsonEncode(body ?? const {}))
-          .timeout(const Duration(seconds: 20));
+      if (method == 'PUT') {
+        response = await _httpClient
+            .put(uri, headers: headers, body: jsonEncode(body ?? const {}))
+            .timeout(const Duration(seconds: 20));
+      } else {
+        response = await _httpClient
+            .post(uri, headers: headers, body: jsonEncode(body ?? const {}))
+            .timeout(const Duration(seconds: 20));
+      }
     }
 
     final responseBody = utf8.decode(response.bodyBytes);

@@ -5,6 +5,7 @@ import {
   Headers,
   Param,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -17,6 +18,8 @@ import { LoginDto } from './dto/login.dto';
 import { ResetAppUserPasswordDto } from './dto/reset-app-user-password.dto';
 import { SetAppUserActiveDto } from './dto/set-app-user-active.dto';
 import { SetAppUserPermissionsDto } from './dto/set-app-user-permissions.dto';
+import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
+import { ChangeOwnPasswordDto } from './dto/change-own-password.dto';
 import { Roles } from './roles.decorator';
 import { RolesGuard } from './roles.guard';
 import type { AuthPrincipal } from './auth.types';
@@ -49,6 +52,30 @@ export class AuthController {
     return {
       ok: true,
     };
+  }
+
+  @Put('me/profile')
+  @UseGuards(AuthGuard)
+  updateOwnProfile(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() dto: UpdateOwnProfileDto,
+  ) {
+    return this.authService.updateOwnProfile(user.userId, dto);
+  }
+
+  @Post('me/change-password')
+  @UseGuards(AuthGuard)
+  async changeOwnPassword(
+    @CurrentUser() user: AuthPrincipal,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() dto: ChangeOwnPasswordDto,
+  ) {
+    await this.authService.changeOwnPassword(
+      user.userId,
+      authorization,
+      dto,
+    );
+    return { ok: true };
   }
 
   @Get('users')

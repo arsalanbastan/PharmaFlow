@@ -14,6 +14,8 @@ import { LoginDto } from './dto/login.dto';
 import { ResetAppUserPasswordDto } from './dto/reset-app-user-password.dto';
 import { SetAppUserActiveDto } from './dto/set-app-user-active.dto';
 import { SetAppUserPermissionsDto } from './dto/set-app-user-permissions.dto';
+import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
+import { ChangeOwnPasswordDto } from './dto/change-own-password.dto';
 import { hashPassword, verifyPassword } from './auth-password';
 import { createOpaqueSessionToken, hashSessionToken } from './auth-token';
 import {
@@ -140,6 +142,76 @@ export class AuthService implements OnModuleInit {
       data: {
         revokedAt: new Date(),
       },
+    });
+  }
+
+  async updateOwnProfile(
+    userId: string,
+    dto: UpdateOwnProfileDto,
+  ): Promise<PublicAppUser> {
+    const displayName = dto.displayName.trim();
+    if (!displayName) {
+      throw new BadRequestException('Display name cannot be empty.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.appUser.update({
+        where: { id: userId },
+        data: { displayName },
+      });
+
+      await this.auditLog.record(
+        {
+          action: 'USER_PROFILE_UPDATED',
+          entityType: 'APP_USER',
+          entityId: user.id,
+          after: { displayName },
+        },
+        tx,
+      );
+
+      return this.toPublicUser(user);
+    });
+  }
+
+  async changeOwnPassword(
+    userId: string,
+    authorization: string | undefined,
+    dto: ChangeOwnPasswordDto,
+  ): Promise<void> {
+    const user = await this.prisma.appUser.findUnique({
+      where: { id: userId },
+    });
+    if (user == null || !verifyPassword(dto.currentPassword, user.passwordHash)) {
+      throw new UnauthorizedException('Current password is incorrect.');
+    }
+
+    const currentTokenHash = hashSessionToken(this.readBearerToken(authorization));
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.appUser.update({
+        where: { id: userId },
+        data: { passwordHash: hashPassword(dto.newPassword) },
+      });
+
+      await tx.authSession.updateMany({
+        where: {
+          userId,
+          revokedAt: null,
+          NOT: { tokenHash: currentTokenHash },
+        },
+        data: { revokedAt: new Date() },
+      });
+
+      await this.auditLog.record(
+        {
+          action: 'PASSWORD_CHANGED',
+          entityType: 'APP_USER',
+          entityId: userId,
+          after: { otherSessionsRevoked: true },
+        },
+        tx,
+      );
     });
   }
 

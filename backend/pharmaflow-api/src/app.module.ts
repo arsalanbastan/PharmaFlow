@@ -19,6 +19,7 @@ import { SalesInvoicesModule } from './sales-invoices/sales-invoices.module';
 import { StaffAppUpdateModule } from './staff-app-update/staff-app-update.module';
 import { AuthModule } from './auth/auth.module';
 import { ArsenSyncModule } from './arsen-sync/arsen-sync.module';
+import { StaffSettingsModule } from './staff-settings/staff-settings.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ArsenSyncModule } from './arsen-sync/arsen-sync.module';
     StaffAppUpdateModule,
     AuthModule,
     ArsenSyncModule,
+    StaffSettingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

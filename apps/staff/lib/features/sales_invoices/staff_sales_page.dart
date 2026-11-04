@@ -14,6 +14,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 import '../../shared/widgets/date_picker/pharmaflow_date_picker.dart';
+import '../../core/settings/staff_settings_api.dart';
+import '../../core/pos/staff_pos_bridge.dart';
 import 'amount_words.dart';
 import 'sales_invoice.dart';
 import 'staff_sales_api.dart';
@@ -126,6 +128,43 @@ class _Line {
   final StaffCatalogItem item;
   final double quantity, price, discount;
   double get total => quantity * price - discount;
+}
+
+class _SuccessfulPosPayment {
+  const _SuccessfulPosPayment({
+    required this.device,
+    required this.amount,
+    required this.responseCode,
+    required this.responseDescription,
+    required this.traceNumber,
+    required this.rrn,
+    required this.terminalId,
+    required this.paidAt,
+    required this.receipt,
+  });
+
+  final StaffPosDevice device;
+  final int amount;
+  final String responseCode;
+  final String responseDescription;
+  final String traceNumber;
+  final String rrn;
+  final String terminalId;
+  final DateTime paidAt;
+  final String receipt;
+
+  Map<String, dynamic> toJson() => {
+        'deviceId': device.id,
+        'deviceName': device.name,
+        'terminalId': terminalId.isEmpty ? device.terminalId : terminalId,
+        if (traceNumber.isNotEmpty) 'traceNumber': traceNumber,
+        if (rrn.isNotEmpty) 'rrn': rrn,
+        'responseCode': responseCode,
+        if (responseDescription.isNotEmpty) 'responseDescription': responseDescription,
+        'paidAmount': amount,
+        'paidAt': paidAt.toUtc().toIso8601String(),
+        'receipt': receipt,
+      };
 }
 
 class StaffInvoiceForm extends StatefulWidget {
@@ -309,6 +348,10 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> with WidgetsBinding
   final discount = TextEditingController();
   final notes = TextEditingController();
   final lines = <_Line>[];
+  final settingsApi = StaffSettingsApi();
+  bool _posSending = false;
+  bool _posOutcomeUnknown = false;
+  _SuccessfulPosPayment? _posPayment;
   List<StaffCatalogItem> suggestions = [];
   CatalogSortField catalogSort = CatalogSortField.relevance;
   bool sortDescending = false;
@@ -433,6 +476,8 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> with WidgetsBinding
     setState(() {
       lines.clear();
       suggestions = [];
+      _posPayment = null;
+      _posOutcomeUnknown = false;
       date = Jalali.now();
       invoiceType = 'OTC';
     });
@@ -452,6 +497,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> with WidgetsBinding
     for (final c in [buyer, nationalId, phone, address, query, discount, notes]) { c.dispose(); }
     searchFocus.dispose();
     scannerController.dispose();
+    settingsApi.close();
     for (final node in quantityFocusNodes.values) { node.dispose(); }
     super.dispose();
   }
@@ -622,9 +668,171 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> with WidgetsBinding
     if (line == null || !mounted) return;
     setState(() => lines[index] = line);
   }
+  Future<StaffPosDevice?> _choosePosDevice(List<StaffPosDevice> devices) async {
+    return showDialog<StaffPosDevice>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('ارسال مبلغ به کدام پوز؟'),
+          content: SizedBox(
+            width: 420,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: devices.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, index) {
+                final device = devices[index];
+                return ListTile(
+                  leading: const Icon(Icons.point_of_sale_outlined),
+                  title: Text(device.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text('${device.ip} • Terminal ${device.terminalId}', textDirection: TextDirection.ltr),
+                  trailing: const Icon(Icons.chevron_left),
+                  onTap: () => Navigator.pop(dialogContext, device),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('انصراف')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendAmountToPos() async {
+    if (_posSending || _posPayment != null || _posOutcomeUnknown) return;
+    final payableRial = payable.round();
+    if (payableRial < 1000) {
+      notify('مبلغ قابل پرداخت باید حداقل ۱٬۰۰۰ ریال باشد.');
+      return;
+    }
+
+    setState(() => _posSending = true);
+    try {
+      final settings = await settingsApi.posSettings();
+      if (!mounted) return;
+      final devices = settings.devices.where((device) => device.enabled).toList(growable: false);
+      if (settings.bridgeHost.isEmpty || devices.isEmpty) {
+        notify('تنظیمات پوز کامل نیست. از صفحه تنظیمات، POS Bridge و دستگاه‌ها را تعریف کنید.');
+        return;
+      }
+
+      final health = await staffPosBridgeRequest(
+        baseUrl: settings.bridgeBaseUrl,
+        path: '/health',
+        timeoutMs: 3500,
+      );
+      if (!mounted) return;
+      if (!health.ok || health.data['pharmaFlowLan'] != true) {
+        notify('به شبکه داروخانه متصل نیستید.');
+        return;
+      }
+
+      // Release the busy state while the user chooses a terminal, then lock it
+      // again immediately after selection. No purchase request is sent yet.
+      setState(() => _posSending = false);
+      final device = await _choosePosDevice(devices);
+      if (!mounted || device == null || _posPayment != null) return;
+      setState(() => _posSending = true);
+      final requestId = 'pf-${DateTime.now().microsecondsSinceEpoch}-${device.id}';
+
+      // The backend signs a single-use, short-lived grant for this device and
+      // exact amount. No shared POS secret is delivered to the browser.
+      final grant = await settingsApi.requestPosGrant(
+        operation: 'purchase',
+        deviceId: device.id,
+        requestId: requestId,
+        amount: payableRial,
+      );
+      final result = await staffPosBridgeRequest(
+        grant: grant,
+        baseUrl: settings.bridgeBaseUrl,
+        path: '/pos/purchase',
+        method: 'POST',
+        body: {
+          'requestId': requestId,
+          'posId': device.id,
+          'posName': device.name,
+          'ip': device.ip,
+          'terminalId': device.terminalId,
+          'timeout': device.timeout,
+          'amount': payableRial,
+        },
+        timeoutMs: device.timeout * 1000 + 15000,
+      );
+      if (!mounted) return;
+
+      if (result.ok && result.responseCode == '00') {
+        final data = result.data;
+        final receipt = '${data['receipt'] ?? ''}';
+        if (!receipt.startsWith('r1.')) {
+          setState(() => _posOutcomeUnknown = true);
+          notify('پوز پرداخت موفق گزارش کرد اما رسید امضاشده دریافت نشد؛ نتیجه را بررسی کنید و دوباره پرداخت نزنید.');
+          return;
+        }
+        // An unauthenticated HTTP LAN response is not sufficient proof of
+        // payment. Validate the signed receipt over HTTPS before confirming.
+        late final Map<String, dynamic> verified;
+        try {
+          verified = await settingsApi.verifyPosReceipt(
+            receipt: receipt,
+            deviceId: device.id,
+            amount: payableRial,
+          );
+        } catch (_) {
+          if (mounted) {
+            setState(() => _posOutcomeUnknown = true);
+            notify('نتیجه پوز دریافت شد اما اصالت رسید تأیید نشد؛ قبل از هر اقدام نتیجه دستگاه را بررسی کنید.');
+          }
+          return;
+        }
+        if (!mounted) return;
+        final payment = _SuccessfulPosPayment(
+          device: device,
+          amount: payableRial,
+          responseCode: result.responseCode,
+          responseDescription: '${verified['responseDescription'] ?? ''}'.trim(),
+          traceNumber: '${verified['traceNumber'] ?? ''}'.trim(),
+          rrn: '${verified['rrn'] ?? ''}'.trim(),
+          terminalId: '${verified['terminalId'] ?? device.terminalId}'.trim(),
+          paidAt: DateTime.now(),
+          receipt: receipt,
+        );
+        setState(() => _posPayment = payment);
+        playScanSuccessSound();
+        final trace = payment.traceNumber.isEmpty ? '' : ' • پیگیری ${payment.traceNumber}';
+        notify('پرداخت موفق بود$trace');
+        return;
+      }
+
+      final code = '${result.data['code'] ?? ''}';
+      if (code == 'BRIDGE_TIMEOUT' || code == 'BRIDGE_OFFLINE' ||
+          code == 'RECEIPT_SIGNING_FAILED' || code == 'TERMINAL_MISMATCH' ||
+          code == 'INVALID_BRIDGE_RESPONSE') {
+        setState(() => _posOutcomeUnknown = true);
+        notify('وضعیت تراکنش نامشخص است. قبل از هر تلاش مجدد، نتیجه روی دستگاه پوز یا رسید را بررسی کنید.');
+        return;
+      }
+
+      playScanErrorSound();
+      final codeLabel = result.responseCode.isEmpty ? '' : '${result.responseCode} — ';
+      notify('تراکنش ناموفق بود: $codeLabel${result.description.isEmpty ? 'خطای پوز' : result.description}');
+    } catch (error) {
+      if (mounted) notify('ارسال مبلغ به پوز انجام نشد: $error');
+    } finally {
+      if (mounted) setState(() => _posSending = false);
+    }
+  }
+
   Future<void> save() async {
     if (lines.isEmpty) { notify('حداقل یک قلم لازم است.'); return; }
     if (amount(discount.text) > subtotal + serviceTariff) { notify('تخفیف از جمع فاکتور بیشتر است.'); return; }
+    if (_posPayment != null && _posPayment!.amount != payable.round()) {
+      notify('مبلغ فاکتور بعد از پرداخت پوز تغییر کرده است. برای جلوگیری از ثبت مبلغ اشتباه، مبلغ فاکتور را به مبلغ پرداخت‌شده برگردانید.');
+      return;
+    }
     setState(() => saving = true);
     try {
       final invoice = await widget.api.create({
@@ -636,6 +844,7 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> with WidgetsBinding
         if (address.text.trim().isNotEmpty) 'buyerAddress': address.text.trim(),
         'discount': amount(discount.text),
         if (notes.text.trim().isNotEmpty) 'notes': notes.text.trim(),
+        if (_posPayment != null) 'posPayment': _posPayment!.toJson(),
         'items': lines.map((line) => {'catalogItemId': line.item.id,
             'quantity': line.quantity, 'unitPrice': line.price, 'lineDiscount': line.discount}).toList(),
       });
@@ -750,10 +959,33 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> with WidgetsBinding
           icon: Icon(saving ? Icons.hourglass_top : Icons.check_circle_outline),
           label: Text(saving ? 'در حال ثبت...' : 'صدور فاکتور'),
         );
+        final posButton = FilledButton.tonalIcon(
+          onPressed: saving || _posSending || _posPayment != null || _posOutcomeUnknown ? null : _sendAmountToPos,
+          icon: Icon(
+            _posPayment != null
+                ? Icons.verified_outlined
+                : _posOutcomeUnknown
+                    ? Icons.warning_amber_rounded
+                    : _posSending
+                        ? Icons.hourglass_top
+                        : Icons.point_of_sale_outlined,
+          ),
+          label: Text(
+            _posPayment != null
+                ? 'پرداخت موفق'
+                : _posOutcomeUnknown
+                    ? 'وضعیت پرداخت نامشخص'
+                    : _posSending
+                        ? 'در حال ارتباط...'
+                        : 'ارسال مبلغ به پوز',
+          ),
+        );
         if (constraints.maxWidth < 440) {
           return Column(mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               total,
+              const SizedBox(height: 8),
+              SizedBox(width: double.infinity, child: posButton),
               const SizedBox(height: 8),
               SizedBox(width: double.infinity, child: submit),
             ]);
@@ -761,6 +993,8 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm> with WidgetsBinding
         return Row(children: [
           Expanded(child: total),
           const SizedBox(width: 12),
+          posButton,
+          const SizedBox(width: 8),
           submit,
         ]);
       }),
@@ -1330,6 +1564,13 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
             if (amount(invoice.serviceTariff) > 0) invoiceRow('تعرفه خدمات دارویی:', '${money(amount(invoice.serviceTariff))} ریال'),
             if (amount(invoice.discount) > 0) invoiceRow('تخفیف:', '${money(amount(invoice.discount))} ریال'),
             invoiceRow('قابل پرداخت:', '${money(amount(invoice.payableAmount))} ریال', emphasized: true),
+            if (invoice.posPaymentStatus == 'SUCCESS') ...[
+              const Divider(),
+              invoiceRow('پرداخت:', 'موفق از طریق پوز'),
+              if (invoice.posPaymentDeviceName != null) invoiceRow('دستگاه پوز:', invoice.posPaymentDeviceName!),
+              if (invoice.posPaymentTraceNumber != null) invoiceRow('شماره پیگیری:', invoice.posPaymentTraceNumber!),
+              if (invoice.posPaymentRrn != null) invoiceRow('RRN:', invoice.posPaymentRrn!),
+            ],
             Text(amountToPersianWords(amount(invoice.payableAmount).round()) ?? ''),
             if (invoice.notes != null) Text('توضیحات: ${invoice.notes}'),
             if (invoice.sellerAddress != null) Text(invoice.sellerAddress!),

@@ -12,6 +12,7 @@ import 'core/update/staff_update_runner.dart';
 import 'features/orders/presentation/staff_order_form_page.dart';
 import 'features/orders/presentation/staff_orders_dashboard.dart';
 import 'features/sales_invoices/staff_sales_page.dart';
+import 'features/settings/staff_settings_page.dart';
 import 'core/auth/staff_login_page.dart';
 
 void main() {
@@ -149,6 +150,19 @@ class _StaffAuthGateState extends State<StaffAuthGate> {
     });
   }
 
+  Future<void> _onUserUpdated(StaffAuthUser user) async {
+    final current = _session;
+    if (current == null) return;
+    final updated = StaffAuthSession(
+      token: current.token,
+      user: user,
+      expiresAt: current.expiresAt,
+    );
+    await _storage.save(updated);
+    if (!mounted) return;
+    setState(() => _session = updated);
+  }
+
   Future<void> _logout() async {
     final service = StaffAuthApiService(storage: _storage);
 
@@ -184,15 +198,25 @@ class _StaffAuthGateState extends State<StaffAuthGate> {
       return StaffLoginPage(onAuthenticated: _onAuthenticated);
     }
 
-    return StaffHomePage(user: session.user, onLogout: _logout);
+    return StaffHomePage(
+      user: session.user,
+      onLogout: _logout,
+      onUserUpdated: _onUserUpdated,
+    );
   }
 }
 
 class StaffHomePage extends StatefulWidget {
-  const StaffHomePage({super.key, required this.user, required this.onLogout});
+  const StaffHomePage({
+    super.key,
+    required this.user,
+    required this.onLogout,
+    required this.onUserUpdated,
+  });
 
   final StaffAuthUser user;
   final Future<void> Function() onLogout;
+  final Future<void> Function(StaffAuthUser user) onUserUpdated;
 
   @override
   State<StaffHomePage> createState() => _StaffHomePageState();
@@ -253,6 +277,19 @@ class _StaffHomePageState extends State<StaffHomePage> {
   void _onOrderCreated() {
     unawaited(
       _dashboardKey.currentState?.refresh(silent: true) ?? Future<void>.value(),
+    );
+  }
+
+  Future<void> _openSettings() async {
+    await Navigator.of(context, rootNavigator: true).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => StaffSettingsPage(
+          user: widget.user,
+          onUserUpdated: (user) {
+            unawaited(widget.onUserUpdated(user));
+          },
+        ),
+      ),
     );
   }
 
@@ -383,7 +420,11 @@ class _StaffHomePageState extends State<StaffHomePage> {
     final pages = <Widget>[
       SafeArea(
         bottom: false,
-        child: StaffOrdersDashboard(key: _dashboardKey, user: widget.user),
+        child: StaffOrdersDashboard(
+          key: _dashboardKey,
+          user: widget.user,
+          onSettings: _openSettings,
+        ),
       ),
       StaffOrderFormPage(embedded: true, onOrderCreated: _onOrderCreated),
       StaffSalesPage(key: _salesPageKey, onReturnHome: () => _selectPage(0)),

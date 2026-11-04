@@ -23,6 +23,7 @@ typedef StaffOrderDeleteAction = Future<void> Function(String orderId);
 class StaffOrdersDashboard extends StatefulWidget {
   const StaffOrdersDashboard({
     required this.user,
+    this.onSettings,
     this.ordersLoader,
     this.receiveAction,
     this.editAction,
@@ -31,6 +32,7 @@ class StaffOrdersDashboard extends StatefulWidget {
   });
 
   final StaffAuthUser user;
+  final VoidCallback? onSettings;
   final StaffActiveOrdersLoader? ordersLoader;
   final StaffOrderReceiveAction? receiveAction;
   final StaffOrderEditAction? editAction;
@@ -471,7 +473,7 @@ class StaffOrdersDashboardState extends State<StaffOrdersDashboard> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(12, 4, 12, 18),
         children: [
-          _GreetingCard(user: widget.user),
+          _GreetingCard(user: widget.user, onSettings: widget.onSettings),
           const SizedBox(height: 8),
           _OrdersSummaryCard(
             pendingCount: pendingCount,
@@ -549,9 +551,10 @@ class StaffOrdersDashboardState extends State<StaffOrdersDashboard> {
 }
 
 class _GreetingCard extends StatelessWidget {
-  const _GreetingCard({required this.user});
+  const _GreetingCard({required this.user, this.onSettings});
 
   final StaffAuthUser user;
+  final VoidCallback? onSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -636,6 +639,11 @@ class _GreetingCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'تنظیمات',
+                    onPressed: onSettings,
+                    icon: const Icon(Icons.settings_outlined, color: green),
                   ),
                 ],
               ),

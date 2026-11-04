@@ -162,6 +162,14 @@ class SalesInvoiceDetails {
     required this.discount,
     required this.payableAmount,
     required this.notes,
+    required this.posPaymentStatus,
+    required this.posPaymentDeviceName,
+    required this.posPaymentTerminalId,
+    required this.posPaymentTraceNumber,
+    required this.posPaymentRrn,
+    required this.posPaymentResponseCode,
+    required this.posPaymentPaidAmount,
+    required this.posPaymentAt,
     required this.items,
   });
 
@@ -185,6 +193,14 @@ class SalesInvoiceDetails {
   final String discount;
   final String payableAmount;
   final String? notes;
+  final String? posPaymentStatus;
+  final String? posPaymentDeviceName;
+  final String? posPaymentTerminalId;
+  final String? posPaymentTraceNumber;
+  final String? posPaymentRrn;
+  final String? posPaymentResponseCode;
+  final String? posPaymentPaidAmount;
+  final DateTime? posPaymentAt;
   final List<SalesInvoiceItem> items;
 
   factory SalesInvoiceDetails.fromJson(Map<String, dynamic> json) {
@@ -213,6 +229,16 @@ class SalesInvoiceDetails {
       discount: _requiredText(json['discount'], 'discount'),
       payableAmount: _requiredText(json['payableAmount'], 'payableAmount'),
       notes: _optionalText(json['notes']),
+      posPaymentStatus: _optionalText(json['posPaymentStatus']),
+      posPaymentDeviceName: _optionalText(json['posPaymentDeviceName']),
+      posPaymentTerminalId: _optionalText(json['posPaymentTerminalId']),
+      posPaymentTraceNumber: _optionalText(json['posPaymentTraceNumber']),
+      posPaymentRrn: _optionalText(json['posPaymentRrn']),
+      posPaymentResponseCode: _optionalText(json['posPaymentResponseCode']),
+      posPaymentPaidAmount: _optionalText(json['posPaymentPaidAmount']),
+      posPaymentAt: _optionalText(json['posPaymentAt']) == null
+          ? null
+          : DateTime.tryParse(_optionalText(json['posPaymentAt'])!),
       items: rawItems
           .map((raw) => SalesInvoiceItem.fromJson(raw as Map<String, dynamic>))
           .toList(growable: false),

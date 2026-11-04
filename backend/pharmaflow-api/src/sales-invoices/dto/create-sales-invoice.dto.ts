@@ -35,6 +35,52 @@ class CreateSalesInvoiceItemDto {
   lineDiscount?: number;
 }
 
+
+class CreateSalesInvoicePosPaymentDto {
+  @IsString()
+  @MaxLength(4096)
+  receipt!: string;
+
+  @IsString()
+  @MaxLength(80)
+  deviceId!: string;
+
+  @IsString()
+  @MaxLength(120)
+  deviceName!: string;
+
+  @IsString()
+  @MaxLength(80)
+  terminalId!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  traceNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  rrn?: string;
+
+  @IsString()
+  @MaxLength(20)
+  responseCode!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  responseDescription?: string;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  paidAmount!: number;
+
+  @IsDateString()
+  paidAt!: string;
+}
+
 export class CreateSalesInvoiceDto {
   @IsDateString()
   issueDate: string;
@@ -80,4 +126,9 @@ export class CreateSalesInvoiceDto {
   @IsString()
   @MaxLength(2000)
   notes?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateSalesInvoicePosPaymentDto)
+  posPayment?: CreateSalesInvoicePosPaymentDto;
 }
