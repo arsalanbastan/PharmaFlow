@@ -16,7 +16,9 @@ class ManagerPriceIncreasesPage extends ConsumerWidget {
         final api = ref.read(apiClientProvider);
         final result = body == null
             ? await api.get('/api/v1$path')
-            : await api.post('/api/v1$path', body: body);
+            : path.startsWith('PATCH:')
+                ? await api.patch('/api/v1${path.substring(6)}', body: body)
+                : await api.post('/api/v1$path', body: body);
         return Map<String, dynamic>.from(result as Map);
       },
     );
