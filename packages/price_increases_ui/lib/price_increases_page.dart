@@ -121,6 +121,56 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
+  bool _isBeforeEffectiveDate(Map<String, dynamic> item) {
+    final today = Jalali.fromDateTime(DateTime.now());
+    final todayString = '${today.year}/${today.month.toString().padLeft(2, '0')}/${today.day.toString().padLeft(2, '0')}';
+    return todayString.compareTo('${item['effectiveDate']}') < 0;
+  }
+
+  Future<void> _edit(Map<String, dynamic> item) async {
+    final result = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => _CreatePage(request: widget.request, existing: item),
+      ),
+    );
+    if (result != null && mounted) await _load();
+  }
+
+  Future<void> _cancel(Map<String, dynamic> item) async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('لغو افزایش قیمت'),
+        content: TextField(
+          controller: controller,
+          maxLength: 1000,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'دلیل لغو (الزامی)'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
+          FilledButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              if (value.isNotEmpty) Navigator.pop(context, value);
+            },
+            child: const Text('ثبت لغو'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (reason == null || !mounted) return;
+    try {
+      await widget.request('/price-increases/${item['id']}/cancel', {'reason': reason});
+      await _load();
+      _message('افزایش قیمت لغو شد و در تاریخچه باقی می‌ماند.');
+    } catch (e) {
+      _message('لغو ناموفق بود: $e');
+    }
+  }
+
   Future<void> _confirm(Map<String, dynamic> item) async {
     final id = item['id'] as String;
     final accepted = await showDialog<bool>(
@@ -128,7 +178,7 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
       builder: (context) => AlertDialog(
         title: const Text('تأیید اعمال قیمت'),
         content: Text(
-          'قیمت جدید «${item['productName']}» را در سیستم اصلی اعمال کرده‌اید؟ تأیید با نام شما و زمان سرور ثبت می‌شود.',
+          '${_isBeforeEffectiveDate(item) ? 'هشدار: تاریخ اعلام‌شده برای اجرای این افزایش قیمت هنوز نرسیده است.\\n\\n' : ''}قیمت جدید «${item['productName']}» را در سیستم اصلی اعمال کرده‌اید؟ تأیید با نام شما و زمان سرور ثبت می‌شود.',
         ),
         actions: [
           TextButton(
@@ -290,6 +340,10 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
                             ),
                           ),
                           DropdownMenuItem(
+                            value: 'CANCELED',
+                            child: Text('لغوشده'),
+                          ),
+                          DropdownMenuItem(
                             value: 'CONFIRMED',
                             child: Text(
                               widget.manager
@@ -401,6 +455,11 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
                               Text(
                                 'ثبت‌کننده: ${item['createdByName']} • ${jalaliTimestamp(item['createdAt'] as String)}',
                               ),
+                              if (item['canceledAt'] != null) ...[
+                                const Text('لغوشده', style: TextStyle(color: Colors.red)),
+                                Text('دلیل: ${item['cancellationReason'] ?? ''}'),
+                                Text('لغو توسط: ${item['canceledByName'] ?? ''}'),
+                              ],
                               if (confirmations.isEmpty)
                                 const Text('هنوز تأییدی ثبت نشده است.'),
                               for (final c in confirmations)
@@ -421,7 +480,13 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
                                     ),
                                 ],
                               ),
-                              if (widget.manager)
+                              if (widget.manager && item['canceledAt'] == null)
+                                Wrap(spacing: 8, children: [
+                                  if (confirmations.isEmpty)
+                                    TextButton.icon(onPressed: () => _edit(item), icon: const Icon(Icons.edit), label: const Text('ویرایش')),
+                                  TextButton.icon(onPressed: () => _cancel(item), icon: const Icon(Icons.cancel_outlined), label: const Text('لغو')),
+                                ]),
+                              if (widget.manager && item['canceledAt'] == null)
                                 TextButton.icon(
                                   onPressed: () =>
                                       _upload(item['id'] as String),
@@ -430,7 +495,7 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
                                     'افزودن پیوست (عکس یا PDF)',
                                   ),
                                 ),
-                              if (!widget.manager && widget.canConfirm)
+                              if (!widget.manager && widget.canConfirm && item['canceledAt'] == null)
                                 FilledButton(
                                   onPressed: mine || _busy.contains(item['id'])
                                       ? null
@@ -479,13 +544,27 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
 }
 
 class _CreatePage extends StatefulWidget {
-  const _CreatePage({required this.request});
+  const _CreatePage({required this.request, this.existing});
+  final Map<String, dynamic>? existing;
   final PriceIncreaseRequest request;
   @override
   State<_CreatePage> createState() => _CreatePageState();
 }
 
 class _CreatePageState extends State<_CreatePage> {
+  @override
+  void initState() {
+    super.initState();
+    final item = widget.existing;
+    if (item != null) {
+      _name.text = '${item['productName']}';
+      _price.text = '${item['newPrice']}';
+      _date.text = '${item['effectiveDate']}';
+      _source.text = '${item['source']}';
+      _notes.text = '${item['notes'] ?? ''}';
+      _category = '${item['category']}';
+    }
+  }
   final _form = GlobalKey<FormState>();
   final _name = TextEditingController(),
       _price = TextEditingController(),
@@ -525,7 +604,7 @@ class _CreatePageState extends State<_CreatePage> {
       _error = null;
     });
     try {
-      final result = await widget.request('/price-increases', {
+      final result = await widget.request(widget.existing == null ? '/price-increases' : 'PATCH:/price-increases/${widget.existing!['id']}', {
         'productName': _name.text.trim(),
         'category': _category,
         'newPrice': normalizePriceInput(_price.text),
@@ -545,7 +624,7 @@ class _CreatePageState extends State<_CreatePage> {
   Widget build(BuildContext context) => Directionality(
     textDirection: TextDirection.rtl,
     child: Scaffold(
-      appBar: AppBar(title: const Text('ثبت افزایش قیمت')),
+      appBar: AppBar(title: Text(widget.existing == null ? 'ثبت افزایش قیمت' : 'ویرایش افزایش قیمت')),
       body: Form(
         key: _form,
         child: ListView(
