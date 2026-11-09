@@ -18,6 +18,12 @@ export class CreatePriceIncreaseDto {
   @IsString() @Length(1, 500) source!: string;
   @IsOptional() @IsString() @MaxLength(3000) notes?: string;
 }
+export class UpdatePriceIncreaseDto extends CreatePriceIncreaseDto {}
+
+export class CancelPriceIncreaseDto {
+  @IsString() @Length(1, 1000) reason!: string;
+}
+
 export class PreparePriceAttachmentDto {
   @IsString() @Length(1, 200) fileName!: string;
   @IsIn(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
