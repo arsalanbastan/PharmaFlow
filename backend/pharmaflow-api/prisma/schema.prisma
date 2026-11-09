@@ -725,6 +725,11 @@ model PriceIncrease {
   createdByUserId String @db.Uuid
   createdByName String
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  canceledAt DateTime?
+  canceledByUserId String? @db.Uuid
+  canceledByName String?
+  cancellationReason String?
   confirmations PriceIncreaseConfirmation[]
   attachments PriceIncreaseAttachment[]
   @@index([effectiveDate, createdAt])
