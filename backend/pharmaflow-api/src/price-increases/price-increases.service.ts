@@ -11,6 +11,8 @@ import { AuthPrincipal } from '../auth/auth.types';
 import { normalizeOrderSearchText } from '../orders/order-similarity';
 import {
   CreatePriceIncreaseDto,
+  UpdatePriceIncreaseDto,
+  CancelPriceIncreaseDto,
   PreparePriceAttachmentDto,
 } from './price-increases.dto';
 import { PriceIncreaseStorageService } from './price-increase-storage.service';
@@ -85,6 +87,73 @@ export class PriceIncreasesService {
     });
   }
 
+  async update(id: string, dto: UpdatePriceIncreaseDto, actor: AuthPrincipal) {
+    const productName = dto.productName.trim();
+    const source = dto.source.trim();
+    if (
+      !productName || !source ||
+      !/^\\d{1,16}(\\.\\d{1,2})?$/.test(dto.newPrice) ||
+      new Prisma.Decimal(dto.newPrice).lte(0)
+    ) throw new BadRequestException('Product, source and positive price are required.');
+    validateJalaliDate(dto.effectiveDate);
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.priceIncrease.findUnique({
+        where: { id },
+        include: { confirmations: { take: 1 } },
+      });
+      if (!current) throw new NotFoundException('Price increase not found.');
+      if (current.canceledAt) throw new BadRequestException('Canceled price increases cannot be edited.');
+      if (current.confirmations.length) throw new BadRequestException('A confirmed price increase cannot be edited; cancel it and create a corrected entry.');
+      const updated = await tx.priceIncrease.update({
+        where: { id },
+        data: {
+          productName,
+          normalizedProductName: normalizeOrderSearchText(productName),
+          category: dto.category,
+          newPrice: dto.newPrice,
+          effectiveDate: dto.effectiveDate,
+          source,
+          notes: dto.notes?.trim(),
+        },
+      });
+      await this.audit.record({
+        action: 'PRICE_INCREASE_UPDATED',
+        entityType: 'PriceIncrease',
+        entityId: id,
+        before: current,
+        after: updated,
+      }, tx);
+      return updated;
+    });
+  }
+
+  async cancel(id: string, dto: CancelPriceIncreaseDto, actor: AuthPrincipal) {
+    const reason = dto.reason.trim();
+    if (!reason) throw new BadRequestException('Cancellation reason is required.');
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.priceIncrease.findUnique({ where: { id } });
+      if (!current) throw new NotFoundException('Price increase not found.');
+      if (current.canceledAt) return current;
+      const canceled = await tx.priceIncrease.update({
+        where: { id },
+        data: {
+          canceledAt: new Date(),
+          canceledByUserId: actor.userId,
+          canceledByName: actor.displayName,
+          cancellationReason: reason,
+        },
+      });
+      await this.audit.record({
+        action: 'PRICE_INCREASE_CANCELED',
+        entityType: 'PriceIncrease',
+        entityId: id,
+        before: current,
+        after: canceled,
+      }, tx);
+      return canceled;
+    });
+  }
+
   async list(
     query: {
       q?: string;
@@ -96,7 +165,7 @@ export class PriceIncreasesService {
     },
     actor: AuthPrincipal,
   ) {
-    if (query.status && !['PENDING', 'CONFIRMED'].includes(query.status))
+    if (query.status && !['PENDING', 'CONFIRMED', 'CANCELED'].includes(query.status))
       throw new BadRequestException('Invalid status.');
     if (query.category && !['DRUG', 'GOODS'].includes(query.category))
       throw new BadRequestException('Invalid category.');
@@ -134,6 +203,7 @@ export class PriceIncreasesService {
           }
         : {}),
       ...(query.category ? { category: query.category } : {}),
+      ...(query.status === 'CANCELED' ? { canceledAt: { not: null } } : { canceledAt: null }),
       ...(query.from || query.to
         ? { effectiveDate: { gte: query.from, lte: query.to } }
         : {}),
@@ -169,8 +239,9 @@ export class PriceIncreasesService {
 
   async confirm(id: string, actor: AuthPrincipal) {
     return this.prisma.$transaction(async (tx) => {
-      if (!(await tx.priceIncrease.findUnique({ where: { id } })))
-        throw new NotFoundException('Price increase not found.');
+      const item = await tx.priceIncrease.findUnique({ where: { id } });
+      if (!item) throw new NotFoundException('Price increase not found.');
+      if (item.canceledAt) throw new BadRequestException('Canceled price increases cannot be confirmed.');
       // Unique key and skipDuplicates make concurrent retries idempotent, preserving the first server timestamp.
       const result = await tx.priceIncreaseConfirmation.createMany({
         data: [
