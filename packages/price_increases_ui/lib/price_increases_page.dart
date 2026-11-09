@@ -327,6 +327,7 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
                     SizedBox(
                       width: 160,
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: '',
                         decoration: const InputDecoration(labelText: 'وضعیت'),
                         items: [
@@ -361,6 +362,7 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
                     SizedBox(
                       width: 130,
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: '',
                         decoration: const InputDecoration(
                           labelText: 'نوع محصول',
@@ -637,6 +639,7 @@ class _CreatePageState extends State<_CreatePage> {
               decoration: const InputDecoration(labelText: 'نام دارو / کالا'),
             ),
             DropdownButtonFormField<String>(
+                        isExpanded: true,
               initialValue: _category,
               decoration: const InputDecoration(labelText: 'نوع محصول'),
               items: const [
