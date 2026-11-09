@@ -35,11 +35,14 @@ class _StaffPriceIncreasesPageState extends State<StaffPriceIncreasesPage> {
       'Authorization': 'Bearer $token',
       'Content-Type': 'application/json',
     };
-    final uri = Uri.parse('$_base$path');
+    final patch = path.startsWith('PATCH:');
+    final uri = Uri.parse('$_base${patch ? path.substring(6) : path}');
     final response =
         await (body == null
                 ? _client.get(uri, headers: headers)
-                : _client.post(uri, headers: headers, body: jsonEncode(body)))
+                : patch
+                    ? _client.patch(uri, headers: headers, body: jsonEncode(body))
+                    : _client.post(uri, headers: headers, body: jsonEncode(body)))
             .timeout(const Duration(seconds: 30));
     if (response.statusCode < 200 || response.statusCode >= 300)
       throw StateError('خطای سرور (${response.statusCode})');
