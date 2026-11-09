@@ -13,6 +13,7 @@ import '../../features/settings/presentation/pages/arsen_sync_errors_page.dart';
 import '../../features/menu/presentation/pages/menu_page.dart';
 import '../../features/orders/presentation/pages/orders_dashboard_page.dart';
 import '../../features/reports/presentation/pages/reports_page.dart';
+import '../../features/price_increases/manager_price_increases_page.dart';
 
 class AppRouter {
   AppRouter._();
@@ -24,6 +25,10 @@ class AppRouter {
     initialLocation: '/',
 
     routes: [
+      GoRoute(
+        path: '/price-increases',
+        builder: (context, state) => const ManagerPriceIncreasesPage(),
+      ),
       GoRoute(
         path: '/',
         name: 'dashboard',

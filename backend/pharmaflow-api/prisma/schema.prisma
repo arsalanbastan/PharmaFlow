@@ -712,3 +712,47 @@ model ArsenSyncError {
   @@index([lastSeenAt(sort: Desc)])
   @@map("arsen_sync_errors")
 }
+
+model PriceIncrease {
+  id String @id @default(uuid()) @db.Uuid
+  productName String
+  normalizedProductName String
+  category String
+  newPrice Decimal @db.Decimal(18, 2)
+  effectiveDate String
+  source String
+  notes String?
+  createdByUserId String @db.Uuid
+  createdByName String
+  createdAt DateTime @default(now())
+  confirmations PriceIncreaseConfirmation[]
+  attachments PriceIncreaseAttachment[]
+  @@index([effectiveDate, createdAt])
+  @@index([normalizedProductName])
+  @@map("price_increases")
+}
+
+model PriceIncreaseConfirmation {
+  id String @id @default(uuid()) @db.Uuid
+  priceIncreaseId String @db.Uuid
+  userId String @db.Uuid
+  displayName String
+  confirmedAt DateTime @default(now())
+  priceIncrease PriceIncrease @relation(fields: [priceIncreaseId], references: [id], onDelete: Restrict)
+  @@unique([priceIncreaseId, userId])
+  @@map("price_increase_confirmations")
+}
+
+model PriceIncreaseAttachment {
+  id String @id @default(uuid()) @db.Uuid
+  priceIncreaseId String @db.Uuid
+  fileName String
+  mimeType String
+  fileSize Int
+  storageKey String
+  confirmedAt DateTime?
+  createdAt DateTime @default(now())
+  priceIncrease PriceIncrease @relation(fields: [priceIncreaseId], references: [id], onDelete: Restrict)
+  @@index([priceIncreaseId])
+  @@map("price_increase_attachments")
+}
