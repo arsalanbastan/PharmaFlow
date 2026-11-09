@@ -64,5 +64,33 @@ jobs:
         working-directory: apps/mobile
       - run: flutter analyze --no-pub --no-fatal-infos lib/features/price_increases lib/core/router/app_router.dart lib/features/menu/presentation/pages/menu_page.dart
         working-directory: apps/mobile
-      - run: flutter build apk --debug
+      # This temporary Firebase configuration is used only for the debug
+      # compile check. It does not connect to production Firebase and is
+      # not suitable for installation or functional acceptance testing.
+      - name: Generate CI-only Firebase stub for manager debug compilation
+        run: |
+          mkdir -p apps/mobile/android/app/src/debug
+          cat > apps/mobile/android/app/src/debug/google-services.json <<'EOF'
+          {
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "pharmaflow-ci-only-placeholder",
+              "storage_bucket": "pharmaflow-ci-only-placeholder.appspot.com"
+            },
+            "client": [{
+              "client_info": {
+                "mobilesdk_app_id": "1:123456789012:android:0000000000000000",
+                "android_client_info": {
+                  "package_name": "com.example.pharmaflow.dev"
+                }
+              },
+              "oauth_client": [],
+              "api_key": [{"current_key": "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}],
+              "services": {"appinvite_service": {"other_platform_oauth_client": []}}
+            }],
+            "configuration_version": "1"
+          }
+          EOF
+      - name: Compile manager debug APK (CI stub; not for deployment)
+        run: flutter build apk --debug
         working-directory: apps/mobile
