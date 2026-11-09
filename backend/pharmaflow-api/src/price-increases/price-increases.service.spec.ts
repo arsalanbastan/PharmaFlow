@@ -147,7 +147,7 @@ describe('Price increases', () => {
     const result = await service.list({ status: 'PENDING', page: '2' }, actor);
     expect(prisma.priceIncrease.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { confirmations: { none: { userId: actor.userId } } },
+        where: { canceledAt: null, confirmations: { none: { userId: actor.userId } } },
         skip: 25,
         take: 25,
       }),
@@ -159,7 +159,7 @@ describe('Price increases', () => {
     prisma.priceIncrease.count = jest.fn().mockResolvedValue(0);
     await service.list({ status: 'PENDING' }, { ...actor, role: 'MANAGER' });
     expect(prisma.priceIncrease.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { confirmations: { none: {} } } }),
+      expect.objectContaining({ where: { canceledAt: null, confirmations: { none: {} } } }),
     );
   });
   it.each([
