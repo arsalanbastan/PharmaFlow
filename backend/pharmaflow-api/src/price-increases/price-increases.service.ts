@@ -92,7 +92,7 @@ export class PriceIncreasesService {
     const source = dto.source.trim();
     if (
       !productName || !source ||
-      !/^\\d{1,16}(\\.\\d{1,2})?$/.test(dto.newPrice) ||
+      !/^\d{1,16}(\.\d{1,2})?$/.test(dto.newPrice) ||
       new Prisma.Decimal(dto.newPrice).lte(0)
     ) throw new BadRequestException('Product, source and positive price are required.');
     validateJalaliDate(dto.effectiveDate);
