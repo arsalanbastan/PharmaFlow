@@ -45,6 +45,7 @@ describe('Price increases', () => {
           .fn()
           .mockImplementation(async ({ data }) => ({ id: 'item', ...data })),
         findUnique: jest.fn().mockResolvedValue({ id: 'item' }),
+        update: jest.fn().mockImplementation(async ({ data }) => ({ id: 'item', ...data })),
       },
       priceIncreaseConfirmation: {
         createMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -170,6 +171,55 @@ describe('Price increases', () => {
   ])('rejects invalid history filter %j', async (query) => {
     await expect(service.list(query, actor)).rejects.toThrow(
       BadRequestException,
+    );
+  });
+  it('allows manager editing only before staff confirmation', async () => {
+    tx.priceIncrease.findUnique.mockResolvedValue({
+      id: 'item', confirmations: [], canceledAt: null,
+      productName: 'old',
+    });
+    const updated = await service.update('item', dto, { ...actor, role: 'MANAGER' });
+    expect(updated.productName).toBe('آتورواستاتین 20');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PRICE_INCREASE_UPDATED' }), tx,
+    );
+    tx.priceIncrease.findUnique.mockResolvedValue({
+      id: 'item', confirmations: [{ userId: actor.userId }], canceledAt: null,
+    });
+    await expect(service.update('item', dto, actor)).rejects.toThrow(BadRequestException);
+  });
+  it('cancels with a reason while preserving confirmations', async () => {
+    tx.priceIncrease.findUnique.mockResolvedValue({ id: 'item', canceledAt: null });
+    await service.cancel('item', { reason: 'اطلاعیه اصلاح شد' }, { ...actor, role: 'MANAGER' });
+    expect(tx.priceIncrease.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          canceledByUserId: actor.userId,
+          cancellationReason: 'اطلاعیه اصلاح شد',
+        }),
+      }),
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PRICE_INCREASE_CANCELED' }), tx,
+    );
+  });
+  it('rejects confirmation for canceled instructions', async () => {
+    tx.priceIncrease.findUnique.mockResolvedValue({ id: 'item', canceledAt: new Date() });
+    await expect(service.confirm('item', actor)).rejects.toThrow(BadRequestException);
+    expect(tx.priceIncreaseConfirmation.createMany).not.toHaveBeenCalled();
+  });
+  it('allows employees to confirm before the scheduled date', async () => {
+    tx.priceIncrease.findUnique.mockResolvedValue({
+      id: 'item', canceledAt: null, effectiveDate: '1406/12/29',
+    });
+    await expect(service.confirm('item', actor)).resolves.toBeDefined();
+  });
+  it('filters canceled records into their own history view', async () => {
+    prisma.priceIncrease.findMany = jest.fn().mockResolvedValue([]);
+    prisma.priceIncrease.count = jest.fn().mockResolvedValue(0);
+    await service.list({ status: 'CANCELED' }, actor);
+    expect(prisma.priceIncrease.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { canceledAt: { not: null } } }),
     );
   });
   it('does not confirm an attachment that failed storage verification', async () => {
