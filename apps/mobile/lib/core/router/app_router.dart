@@ -9,6 +9,7 @@ import '../../features/dashboard/presentation/pages/jalali_commitment_calendar_p
 import '../../features/dashboard/presentation/pages/dashboard_page.dart';
 import '../../features/dashboard/presentation/pages/dashboard_test_page.dart';
 import '../../features/dashboard/presentation/pages/sync_failures_page.dart';
+import '../../features/settings/presentation/pages/arsen_sync_errors_page.dart';
 import '../../features/menu/presentation/pages/menu_page.dart';
 import '../../features/orders/presentation/pages/orders_dashboard_page.dart';
 import '../../features/reports/presentation/pages/reports_page.dart';
@@ -53,6 +54,12 @@ class AppRouter {
         path: '/jalali-calendar',
         name: 'jalali-calendar',
         builder: (context, state) => const JalaliCommitmentCalendarPage(),
+      ),
+
+      GoRoute(
+        path: '/arsen-sync-errors',
+        name: 'arsen-sync-errors',
+        builder: (context, state) => const ArsenSyncErrorsPage(),
       ),
 
       GoRoute(
