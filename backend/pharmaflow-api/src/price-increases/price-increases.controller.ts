@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Patch,
   Query,
   Req,
   UseGuards,
@@ -17,6 +18,8 @@ import { Permissions } from '../auth/permissions.decorator';
 import type { AuthenticatedRequest } from '../auth/auth-request';
 import {
   CreatePriceIncreaseDto,
+  UpdatePriceIncreaseDto,
+  CancelPriceIncreaseDto,
   PreparePriceAttachmentDto,
 } from './price-increases.dto';
 import { PriceIncreasesService } from './price-increases.service';
@@ -50,6 +53,28 @@ export class PriceIncreasesController {
   ) {
     return this.service.create(dto, req.pharmaflowUser!);
   }
+  @Patch(':id')
+  @Roles('MANAGER')
+  @Permissions('managerAppAccess')
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePriceIncreaseDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.update(id, dto, req.pharmaflowUser!);
+  }
+
+  @Post(':id/cancel')
+  @Roles('MANAGER')
+  @Permissions('managerAppAccess')
+  cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CancelPriceIncreaseDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.cancel(id, dto, req.pharmaflowUser!);
+  }
+
   @Post(':id/confirm')
   @Roles('STAFF')
   @Permissions('canCreateOrders')
