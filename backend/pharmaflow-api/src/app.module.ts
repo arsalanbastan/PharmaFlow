@@ -1,3 +1,4 @@
+import { PriceIncreasesModule } from './price-increases/price-increases.module';
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -24,6 +25,7 @@ import { StaffSettingsModule } from './staff-settings/staff-settings.module';
 @Module({
   imports: [
     PrismaModule,
+    PriceIncreasesModule,
     HealthModule,
     CompaniesModule,
     BankAccountsModule,

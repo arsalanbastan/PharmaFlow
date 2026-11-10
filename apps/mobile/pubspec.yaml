@@ -8,6 +8,8 @@ environment:
   sdk: ">=3.12.0 <4.0.0"
 
 dependencies:
+  price_increases_ui:
+    path: ../../packages/price_increases_ui
   flutter:
     sdk: flutter
   flutter_localizations:

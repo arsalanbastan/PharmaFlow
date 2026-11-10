@@ -9,6 +9,7 @@ import '../../../invoices/presentation/pages/invoices_page.dart';
 import '../../../catalog/presentation/pages/catalog_page.dart';
 import '../../../sales_invoices/presentation/pages/sales_invoices_page.dart';
 import '../../../settings/presentation/pages/settings_page.dart';
+import '../../../price_increases/manager_price_increases_page.dart';
 import '../../../../shared/app_shell/app_bottom_navigation.dart';
 import '../../../../shared/app_shell/app_scaffold.dart';
 
@@ -30,6 +31,11 @@ class MenuPage extends StatelessWidget {
         currentDestination: AppShellDestination.menu,
         body: ListView(
           children: [
+            ListTile(
+              leading: const Icon(Icons.trending_up),
+              title: const Text('افزایش قیمت‌ها'),
+              onTap: () => _open(context, const ManagerPriceIncreasesPage()),
+            ),
             ListTile(
               leading: const Icon(Icons.account_balance_outlined),
               title: const Text('حساب های بانکی', textAlign: TextAlign.right),
