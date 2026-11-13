@@ -94,7 +94,7 @@ class ManagerOrdersRepository {
     }
   }
 
-  Future<void> assign({
+  Future<ManagerOrder> assign({
     required String orderId,
     required String companyId,
     int? quantity,
@@ -118,13 +118,21 @@ class ManagerOrdersRepository {
       );
     }
 
-    await _apiClient.post(
+    final payload = await _apiClient.post(
       '${ApiConstants.ordersEndpoint}/$normalizedOrderId/assign',
       body: <String, dynamic>{
         'companyId': normalizedCompanyId,
         if (quantity != null) 'quantity': quantity,
       },
     );
+
+    if (payload is! Map<String, dynamic>) {
+      throw const ApiDecodingException(
+        'Expected a JSON object from the Order assignment endpoint.',
+      );
+    }
+
+    return ManagerOrder.fromJson(payload);
   }
 
   Future<void> updatePending({

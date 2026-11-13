@@ -24,16 +24,41 @@ final managerOrdersRepositoryProvider = Provider<ManagerOrdersRepository>((
   return ManagerOrdersRepository(ref.watch(apiClientProvider));
 });
 
-final managerOrdersProvider = FutureProvider<List<ManagerOrder>>((ref) async {
-  return ref.watch(managerOrdersRepositoryProvider).getAll();
-});
+final managerOrdersProvider =
+    AsyncNotifierProvider<ManagerOrdersNotifier, List<ManagerOrder>>(
+      ManagerOrdersNotifier.new,
+    );
+
+class ManagerOrdersNotifier extends AsyncNotifier<List<ManagerOrder>> {
+  @override
+  Future<List<ManagerOrder>> build() {
+    return ref.watch(managerOrdersRepositoryProvider).getAll();
+  }
+
+  void applyAssignment(ManagerOrder updated) {
+    final orders = state.asData?.value;
+    if (orders == null || state.isLoading) {
+      // An in-flight refresh may have started before the assignment committed.
+      ref.invalidateSelf();
+      return;
+    }
+
+    state = AsyncData([
+      for (final order in orders)
+        if (order.id == updated.id) updated else order,
+    ]);
+  }
+}
+
 const _lastAssignedCompanyIdPreferenceKey = 'manager_orders_last_company_id_v1';
 
 class _AssignableCompany {
-  const _AssignableCompany({required this.id, required this.name});
+  _AssignableCompany({required this.id, required this.name})
+    : searchName = name.toLowerCase();
 
   final String id;
   final String name;
+  final String searchName;
 }
 
 final managerOrderCompaniesProvider = FutureProvider<List<_AssignableCompany>>((
@@ -85,10 +110,7 @@ final managerOrderCompaniesProvider = FutureProvider<List<_AssignableCompany>>((
     companies.add(_AssignableCompany(id: id, name: name));
   }
 
-  companies.sort(
-    (left, right) =>
-        left.name.toLowerCase().compareTo(right.name.toLowerCase()),
-  );
+  companies.sort((left, right) => left.searchName.compareTo(right.searchName));
 
   return companies;
 });
@@ -572,22 +594,32 @@ class _OrdersDashboardContentState
     }
 
     setState(() {
-      _lastCompanyId = value;
+      _lastCompanyId ??= value;
     });
   }
 
-  Future<void> _setLastCompany(_AssignableCompany company) async {
-    if (mounted) {
-      setState(() {
-        _lastCompanyId = company.id;
-      });
+  void _onOrderAssigned(ManagerOrder order, _AssignableCompany company) {
+    if (!mounted) {
+      return;
     }
 
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(
-      _lastAssignedCompanyIdPreferenceKey,
-      company.id,
-    );
+    ref.read(managerOrdersProvider.notifier).applyAssignment(order);
+    setState(() {
+      _lastCompanyId = company.id;
+    });
+    unawaited(_saveLastCompany(company.id));
+  }
+
+  Future<void> _saveLastCompany(String companyId) async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(
+        _lastAssignedCompanyIdPreferenceKey,
+        companyId,
+      );
+    } catch (error) {
+      debugPrint('Could not save the last order company: $error');
+    }
   }
 
   void _refreshAll() {
@@ -761,7 +793,7 @@ class _OrdersDashboardContentState
                     companiesLoading: companiesAsync.isLoading,
                     companiesError: companiesAsync.hasError,
                     lastCompanyId: _lastCompanyId,
-                    onDefaultCompanyChanged: _setLastCompany,
+                    onOrderAssigned: _onOrderAssigned,
                     onSessionInvalid: widget.onSessionInvalid,
                     onRetryCompanies: () {
                       ref.invalidate(managerOrderCompaniesProvider);
@@ -1129,7 +1161,7 @@ class _DenseOrdersList extends StatelessWidget {
     required this.companiesLoading,
     required this.companiesError,
     required this.lastCompanyId,
-    required this.onDefaultCompanyChanged,
+    required this.onOrderAssigned,
     required this.onSessionInvalid,
     required this.onRetryCompanies,
   });
@@ -1140,8 +1172,8 @@ class _DenseOrdersList extends StatelessWidget {
   final bool companiesLoading;
   final bool companiesError;
   final String? lastCompanyId;
-  final Future<void> Function(_AssignableCompany company)
-  onDefaultCompanyChanged;
+  final void Function(ManagerOrder order, _AssignableCompany company)
+  onOrderAssigned;
   final Future<void> Function() onSessionInvalid;
   final VoidCallback onRetryCompanies;
 
@@ -1161,10 +1193,17 @@ class _DenseOrdersList extends StatelessWidget {
       );
     }
 
+    final indexById = {
+      for (var index = 0; index < orders.length; index++)
+        orders[index].id: index,
+    };
+
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
       itemCount: orders.length,
+      findChildIndexCallback: (key) =>
+          key is ValueKey<String> ? indexById[key.value] : null,
       itemBuilder: (context, index) {
         final order = orders[index];
 
@@ -1176,7 +1215,7 @@ class _DenseOrdersList extends StatelessWidget {
             companiesLoading: companiesLoading,
             companiesError: companiesError,
             lastCompanyId: lastCompanyId,
-            onDefaultCompanyChanged: onDefaultCompanyChanged,
+            onOrderAssigned: onOrderAssigned,
             onSessionInvalid: onSessionInvalid,
             onRetryCompanies: onRetryCompanies,
           );
@@ -1199,7 +1238,7 @@ class _DensePendingOrderRow extends ConsumerStatefulWidget {
     required this.companiesLoading,
     required this.companiesError,
     required this.lastCompanyId,
-    required this.onDefaultCompanyChanged,
+    required this.onOrderAssigned,
     required this.onSessionInvalid,
     required this.onRetryCompanies,
     super.key,
@@ -1210,8 +1249,8 @@ class _DensePendingOrderRow extends ConsumerStatefulWidget {
   final bool companiesLoading;
   final bool companiesError;
   final String? lastCompanyId;
-  final Future<void> Function(_AssignableCompany company)
-  onDefaultCompanyChanged;
+  final void Function(ManagerOrder order, _AssignableCompany company)
+  onOrderAssigned;
   final Future<void> Function() onSessionInvalid;
   final VoidCallback onRetryCompanies;
 
@@ -1249,7 +1288,7 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
     }
 
     for (final company in widget.companies) {
-      if (company.name.trim().toLowerCase() == normalized) {
+      if (company.searchName == normalized) {
         return company;
       }
     }
@@ -1335,7 +1374,7 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
     }
 
     return widget.companies
-        .where((company) => company.name.toLowerCase().contains(normalized))
+        .where((company) => company.searchName.contains(normalized))
         .take(12);
   }
 
@@ -1343,14 +1382,18 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
     TextEditingController controller,
     FocusNode focusNode,
   ) {
-    final options = _optionsFor(controller.text).toList(growable: false);
-
-    if (options.isEmpty) {
+    if (_selectedCompany != null) {
       focusNode.unfocus();
       return;
     }
 
-    final firstCompany = options.first;
+    final options = _optionsFor(controller.text).iterator;
+    if (!options.moveNext()) {
+      focusNode.unfocus();
+      return;
+    }
+
+    final firstCompany = options.current;
 
     controller.value = TextEditingValue(
       text: firstCompany.name,
@@ -1391,12 +1434,12 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
     });
 
     try {
-      await ref
+      final onOrderAssigned = widget.onOrderAssigned;
+      final updated = await ref
           .read(managerOrdersRepositoryProvider)
           .assign(orderId: widget.order.id, companyId: company.id);
 
-      await widget.onDefaultCompanyChanged(company);
-      ref.invalidate(managerOrdersProvider);
+      onOrderAssigned(updated, company);
     } on ApiHttpException catch (error) {
       if (error.statusCode == 401 || error.statusCode == 403) {
         await widget.onSessionInvalid();

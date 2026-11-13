@@ -844,7 +844,9 @@ export class OrdersService {
       return current;
     });
 
-    await this.tryCleanupPhoto(updated.id);
+    if (updated.photoStorageKey && updated.photoDeletedAt == null) {
+      void this.tryCleanupPhoto(updated.id);
+    }
 
     return updated;
   }

@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { setImmediate } from 'node:timers/promises';
 
 import { OrdersService } from './orders.service';
 
@@ -383,10 +384,12 @@ describe('OrdersService race and photo cleanup', () => {
       }),
     );
 
+    await setImmediate();
+    expect(photoStorage.deleteObject).toHaveBeenCalled();
     expect(prisma.orderRequest.updateMany).not.toHaveBeenCalled();
   });
 
-  it('clears photo metadata only after S3 deletion succeeds', async () => {
+  it('returns assignment while photo deletion is pending and then clears metadata', async () => {
     auditContext.get.mockReturnValue(managerContext);
 
     prisma.orderRequest.findFirst.mockResolvedValue({
@@ -416,6 +419,12 @@ describe('OrdersService race and photo cleanup', () => {
       photoDeletedAt: null,
     });
 
+    let finishDelete!: () => void;
+    const deletion = new Promise<void>((resolve) => {
+      finishDelete = resolve;
+    });
+    photoStorage.deleteObject.mockReturnValue(deletion);
+
     await service.assign('33333333-3333-4333-8333-333333333333', {
       companyId: '44444444-4444-4444-8444-444444444444',
     });
@@ -423,6 +432,10 @@ describe('OrdersService race and photo cleanup', () => {
     expect(photoStorage.deleteObject).toHaveBeenCalledWith(
       'order-requests/333/request.jpg',
     );
+
+    expect(prisma.orderRequest.updateMany).not.toHaveBeenCalled();
+    finishDelete();
+    await setImmediate();
 
     expect(prisma.orderRequest.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
