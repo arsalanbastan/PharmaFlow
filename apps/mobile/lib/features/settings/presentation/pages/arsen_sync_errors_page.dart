@@ -7,11 +7,12 @@ class ArsenSyncErrorsPage extends ConsumerStatefulWidget {
   const ArsenSyncErrorsPage({super.key});
 
   @override
-  ConsumerState<ArsenSyncErrorsPage> createState() => _ArsenSyncErrorsPageState();
+  ConsumerState<ArsenSyncErrorsPage> createState() =>
+      _ArsenSyncErrorsPageState();
 }
 
 class _ArsenSyncErrorsPageState extends ConsumerState<ArsenSyncErrorsPage> {
-  static const _endpoint = '/api/v1/integrations/arsen/sync-errors';
+  static const _endpoint = '/integrations/arsen/sync-errors';
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _items = [];
@@ -49,21 +50,30 @@ class _ArsenSyncErrorsPageState extends ConsumerState<ArsenSyncErrorsPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('حذف گزارش خطاها'),
-        content: const Text('فقط گزارش‌های خطای همگام‌سازی پاک می‌شوند؛ اطلاعات فاکتورها تغییر نمی‌کند.'),
+        content: const Text(
+          'فقط گزارش‌های خطای همگام‌سازی پاک می‌شوند؛ اطلاعات فاکتورها تغییر نمی‌کند.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('انصراف')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('حذف گزارش')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('حذف گزارش'),
+          ),
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
     try {
       await ref.read(apiClientProvider).delete(_endpoint);
+      if (!mounted) return;
       await _load();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('گزارش خطاها پاک شد.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('گزارش خطاها پاک شد.')));
       }
     } catch (_) {
       if (mounted) {
@@ -82,46 +92,64 @@ class _ArsenSyncErrorsPageState extends ConsumerState<ArsenSyncErrorsPage> {
         appBar: AppBar(
           title: const Text('خطاهای همگام‌سازی آرسن'),
           actions: [
-            IconButton(onPressed: _load, tooltip: 'بروزرسانی', icon: const Icon(Icons.refresh)),
-            IconButton(onPressed: _items.isEmpty ? null : _clear, tooltip: 'حذف گزارش', icon: const Icon(Icons.delete_outline)),
+            IconButton(
+              onPressed: _load,
+              tooltip: 'بروزرسانی',
+              icon: const Icon(Icons.refresh),
+            ),
+            IconButton(
+              onPressed: _items.isEmpty ? null : _clear,
+              tooltip: 'حذف گزارش',
+              icon: const Icon(Icons.delete_outline),
+            ),
           ],
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Text(_error!),
                     const SizedBox(height: 8),
-                    FilledButton(onPressed: _load, child: const Text('تلاش مجدد')),
-                  ]))
-                : _items.isEmpty
-                    ? const Center(child: Text('خطای ثبت‌شده‌ای وجود ندارد.'))
-                    : ListView.separated(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: _items.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final item = _items[index];
-                          return Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('فاکتور آرسن: ${item['arsenFactorId'] ?? '-'}',
-                                      style: Theme.of(context).textTheme.titleMedium),
-                                  const SizedBox(height: 6),
-                                  Text('${item['message'] ?? 'علت خطا ثبت نشده است.'}'),
-                                  const SizedBox(height: 8),
-                                  Text('نوع خطا: ${item['errorKind'] ?? '-'}'),
-                                  Text('تعداد تکرار: ${item['occurrences'] ?? 1}'),
-                                  Text('آخرین مشاهده: ${item['lastSeenAt'] ?? '-'}'),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                    FilledButton(
+                      onPressed: _load,
+                      child: const Text('تلاش مجدد'),
+                    ),
+                  ],
+                ),
+              )
+            : _items.isEmpty
+            ? const Center(child: Text('خطای ثبت‌شده‌ای وجود ندارد.'))
+            : ListView.separated(
+                padding: const EdgeInsets.all(12),
+                itemCount: _items.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final item = _items[index];
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'فاکتور آرسن: ${item['arsenFactorId'] ?? '-'}',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 6),
+                          Text('${item['message'] ?? 'علت خطا ثبت نشده است.'}'),
+                          const SizedBox(height: 8),
+                          Text('نوع خطا: ${item['errorKind'] ?? '-'}'),
+                          Text('تعداد تکرار: ${item['occurrences'] ?? 1}'),
+                          Text('آخرین مشاهده: ${item['lastSeenAt'] ?? '-'}'),
+                        ],
                       ),
+                    ),
+                  );
+                },
+              ),
       ),
     );
   }
