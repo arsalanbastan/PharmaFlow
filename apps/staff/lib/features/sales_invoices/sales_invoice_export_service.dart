@@ -12,7 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 
 import 'sales_invoice.dart';
-import 'amount_words.dart';
+import 'package:sales_invoices_ui/amount_words.dart';
 
 class SalesInvoiceExportService {
   const SalesInvoiceExportService();
