@@ -26,6 +26,13 @@ export class ArsenSyncController {
     return this.arsenSyncService.ingestCompanies(body.companies);
   }
 
+  @Post('sync-errors')
+  recordSyncErrors(
+    @Body() body: { errors: Array<{ arsenFactorId: number; errorKind: string; message: string }> },
+  ) {
+    return this.arsenSyncService.recordSyncErrors(body.errors ?? []);
+  }
+
   @Post('items/batch')
   ingestItems(@Body() body: ArsenCatalogItemBatchDto) {
     return this.arsenSyncService.ingestCatalogItems(body.items);

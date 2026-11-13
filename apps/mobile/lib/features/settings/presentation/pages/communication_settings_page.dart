@@ -161,6 +161,12 @@ class CommunicationSettingsPage extends ConsumerWidget {
                       ),
                       const SizedBox(height: 8),
                       OutlinedButton.icon(
+                        onPressed: () => context.pushNamed('arsen-sync-errors'),
+                        icon: const Icon(Icons.report_gmailerrorred_outlined),
+                        label: const Text('گزارش خطاهای فاکتورهای آرسن'),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
                         onPressed: () => _onBootstrapPressed(context, ref),
                         icon: const Icon(Icons.storage_outlined),
                         label: const Text('Bootstrap Local Database'),

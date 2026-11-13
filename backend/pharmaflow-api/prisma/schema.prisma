@@ -752,3 +752,16 @@ model PriceIncreaseAttachment {
   @@index([priceIncreaseId])
   @@map("price_increase_attachments")
 }
+
+model ArsenSyncError {
+  id           String   @id @default(uuid()) @db.Uuid
+  arsenFactorId Int      @unique
+  errorKind    String
+  message      String   @db.Text
+  occurrences  Int      @default(1)
+  firstSeenAt  DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+
+  @@index([lastSeenAt(sort: Desc)])
+  @@map("arsen_sync_errors")
+}
