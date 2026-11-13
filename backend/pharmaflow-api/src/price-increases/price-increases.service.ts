@@ -11,6 +11,7 @@ import { AuthPrincipal } from '../auth/auth.types';
 import { normalizeOrderSearchText } from '../orders/order-similarity';
 import {
   CreatePriceIncreaseDto,
+  ConfirmPriceIncreaseDto,
   UpdatePriceIncreaseDto,
   CancelPriceIncreaseDto,
   PreparePriceAttachmentDto,
@@ -50,6 +51,7 @@ export class PriceIncreasesService {
   async create(dto: CreatePriceIncreaseDto, actor: AuthPrincipal) {
     const productName = dto.productName.trim();
     const source = dto.source.trim();
+    const productItems = [...new Set(dto.productItems?.map((item) => item.trim()).filter(Boolean))];
     if (
       !productName ||
       !source ||
@@ -64,7 +66,8 @@ export class PriceIncreasesService {
       const item = await tx.priceIncrease.create({
         data: {
           productName,
-          normalizedProductName: normalizeOrderSearchText(productName),
+          productItems,
+          normalizedProductName: normalizeOrderSearchText([productName, ...productItems].join(' ')),
           category: dto.category,
           newPrice: dto.newPrice,
           effectiveDate: dto.effectiveDate,
@@ -90,6 +93,7 @@ export class PriceIncreasesService {
   async update(id: string, dto: UpdatePriceIncreaseDto, actor: AuthPrincipal) {
     const productName = dto.productName.trim();
     const source = dto.source.trim();
+    const productItems = [...new Set(dto.productItems?.map((item) => item.trim()).filter(Boolean))];
     if (
       !productName || !source ||
       !/^\d{1,16}(\.\d{1,2})?$/.test(dto.newPrice) ||
@@ -97,6 +101,7 @@ export class PriceIncreasesService {
     ) throw new BadRequestException('Product, source and positive price are required.');
     validateJalaliDate(dto.effectiveDate);
     return this.prisma.$transaction(async (tx) => {
+      await this.lockNotice(tx, id);
       const current = await tx.priceIncrease.findUnique({
         where: { id },
         include: { confirmations: { take: 1 } },
@@ -108,7 +113,8 @@ export class PriceIncreasesService {
         where: { id },
         data: {
           productName,
-          normalizedProductName: normalizeOrderSearchText(productName),
+          productItems,
+          normalizedProductName: normalizeOrderSearchText([productName, ...productItems].join(' ')),
           category: dto.category,
           newPrice: dto.newPrice,
           effectiveDate: dto.effectiveDate,
@@ -131,6 +137,7 @@ export class PriceIncreasesService {
     const reason = dto.reason.trim();
     if (!reason) throw new BadRequestException('Cancellation reason is required.');
     return this.prisma.$transaction(async (tx) => {
+      await this.lockNotice(tx, id);
       const current = await tx.priceIncrease.findUnique({ where: { id } });
       if (!current) throw new NotFoundException('Price increase not found.');
       if (current.canceledAt) return current;
@@ -176,8 +183,6 @@ export class PriceIncreasesService {
     const page = Number(query.page ?? 1);
     if (!Number.isSafeInteger(page) || page < 1 || page > 100000)
       throw new BadRequestException('Invalid page.');
-    // Staff status is per employee. Manager status reflects whether anyone has confirmed.
-    const scope = actor.role === 'STAFF' ? { userId: actor.userId } : {};
     const where: Prisma.PriceIncreaseWhereInput = {
       ...(query.q?.trim()
         ? {
@@ -205,14 +210,24 @@ export class PriceIncreasesService {
       ...(query.category ? { category: query.category } : {}),
       ...(query.status === 'CANCELED' ? { canceledAt: { not: null } } : { canceledAt: null }),
       ...(query.from || query.to
-        ? { effectiveDate: { gte: query.from, lte: query.to } }
+        ? { effectiveDate: { gte: query.from || undefined, lte: query.to || undefined } }
         : {}),
-      ...(query.status === 'PENDING'
-        ? { confirmations: { none: scope } }
-        : query.status === 'CONFIRMED'
-          ? { confirmations: { some: scope } }
-          : {}),
     };
+    // The item count is row-specific. Compute completed notice IDs in SQL so
+    // filtering and pagination apply to the same set.
+    if (query.status === 'PENDING' || query.status === 'CONFIRMED') {
+      const completed = await this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT p.id
+        FROM price_increases p
+        JOIN price_increase_confirmations c ON c."priceIncreaseId" = p.id
+        WHERE p."canceledAt" IS NULL
+        ${actor.role === 'STAFF' ? Prisma.sql`AND c."userId" = ${actor.userId}::uuid` : Prisma.empty}
+        GROUP BY p.id
+        HAVING COUNT(DISTINCT c."itemIndex") = GREATEST(cardinality(p."productItems"), 1)
+      `;
+      const ids = completed.map((record) => record.id);
+      where.id = query.status === 'CONFIRMED' ? { in: ids } : { notIn: ids };
+    }
     const [items, total] = await this.prisma.$transaction([
       this.prisma.priceIncrease.findMany({
         where,
@@ -237,11 +252,17 @@ export class PriceIncreasesService {
     return { items, total, page, pageSize: 25, currentUserId: actor.userId };
   }
 
-  async confirm(id: string, actor: AuthPrincipal) {
+  async confirm(id: string, actor: AuthPrincipal, dto: ConfirmPriceIncreaseDto = {}) {
     return this.prisma.$transaction(async (tx) => {
+      await this.lockNotice(tx, id);
       const item = await tx.priceIncrease.findUnique({ where: { id } });
       if (!item) throw new NotFoundException('Price increase not found.');
       if (item.canceledAt) throw new BadRequestException('Canceled price increases cannot be confirmed.');
+      const itemIndex = dto.itemIndex ?? -1;
+      const itemCount = item.productItems?.length ?? 0;
+      if (itemCount === 0 ? itemIndex !== -1 : itemIndex < 0 || itemIndex >= itemCount) {
+        throw new BadRequestException('Select a valid item to confirm.');
+      }
       // Unique key and skipDuplicates make concurrent retries idempotent, preserving the first server timestamp.
       const result = await tx.priceIncreaseConfirmation.createMany({
         data: [
@@ -249,6 +270,8 @@ export class PriceIncreasesService {
             priceIncreaseId: id,
             userId: actor.userId,
             displayName: actor.displayName,
+            itemIndex,
+            note: dto.note?.trim() || null,
           },
         ],
         skipDuplicates: true,
@@ -256,9 +279,10 @@ export class PriceIncreasesService {
       const confirmation = await tx.priceIncreaseConfirmation.findUniqueOrThrow(
         {
           where: {
-            priceIncreaseId_userId: {
+            priceIncreaseId_userId_itemIndex: {
               priceIncreaseId: id,
               userId: actor.userId,
+              itemIndex,
             },
           },
         },
@@ -275,6 +299,10 @@ export class PriceIncreasesService {
         );
       return confirmation;
     });
+  }
+
+  private async lockNotice(tx: Prisma.TransactionClient, id: string) {
+    await tx.$queryRaw`SELECT id FROM price_increases WHERE id = ${id}::uuid FOR UPDATE`;
   }
 
   async prepare(id: string, dto: PreparePriceAttachmentDto) {

@@ -123,6 +123,48 @@ export class OrdersService {
     };
   }
 
+  async getDuplicateMatches(id: string) {
+    this.assertManager(this.requireAuthenticatedActor());
+    const order = await this.requireOrder(id);
+
+    if (!order.possibleDuplicate) {
+      return { matches: [] };
+    }
+
+    // Older warnings only stored a boolean. Look up active matches for them.
+    if (order.duplicateMatchIds.length === 0) {
+      return {
+        matches: await this.findDuplicateMatches(
+          order.category,
+          order.normalizedItemText,
+          id,
+        ),
+      };
+    }
+
+    const matches = await this.prisma.orderRequest.findMany({
+      where: { id: { in: order.duplicateMatchIds } },
+      select: {
+        id: true,
+        category: true,
+        itemText: true,
+        requestedQuantity: true,
+        orderedQuantity: true,
+        status: true,
+        requestedByName: true,
+        createdAt: true,
+        assignedCompany: { select: { id: true, name: true } },
+      },
+    });
+    const matchesById = new Map(matches.map((match) => [match.id, match]));
+    return {
+      matches: order.duplicateMatchIds.flatMap((matchId) => {
+        const match = matchesById.get(matchId);
+        return match ? [match] : [];
+      }),
+    };
+  }
+
   async create(dto: CreateOrderRequestDto) {
     const actor = this.requireAuthenticatedActor();
 
@@ -172,6 +214,7 @@ export class OrdersService {
       notes: this.trimOrNull(dto.notes),
       status: 'PENDING',
       possibleDuplicate: duplicateMatches.length > 0,
+      duplicateMatchIds: duplicateMatches.map((match) => match.id),
       requestedByName: actor.displayName,
       requestedByUserId: actor.userId,
     };
@@ -637,9 +680,10 @@ export class OrdersService {
     const duplicateMatches = await this.findDuplicateMatches(
       dto.category,
       existing.normalizedItemText,
+      id,
     );
 
-    const possibleDuplicate = duplicateMatches.some((match) => match.id !== id);
+    const possibleDuplicate = duplicateMatches.length > 0;
 
     return this.prisma.$transaction(async (tx) => {
       const previous = await tx.orderRequest.findUnique({
@@ -655,6 +699,7 @@ export class OrdersService {
         data: {
           category: dto.category,
           possibleDuplicate,
+          duplicateMatchIds: duplicateMatches.map((match) => match.id),
         },
         include: {
           assignedCompany: {
@@ -693,9 +738,10 @@ export class OrdersService {
     const duplicateMatches = await this.findDuplicateMatches(
       dto.category,
       normalizedItemText,
+      id,
     );
 
-    const possibleDuplicate = duplicateMatches.some((match) => match.id !== id);
+    const possibleDuplicate = duplicateMatches.length > 0;
 
     return this.prisma.$transaction(async (tx) => {
       const previous = await tx.orderRequest.findUnique({
@@ -717,6 +763,7 @@ export class OrdersService {
           suggestedCompanyText: this.trimOrNull(dto.suggestedCompanyText),
           notes: this.trimOrNull(dto.notes),
           possibleDuplicate,
+          duplicateMatchIds: duplicateMatches.map((match) => match.id),
         },
       });
 
@@ -1443,10 +1490,12 @@ export class OrdersService {
   private async findDuplicateMatches(
     category: string,
     normalizedItemText: string,
+    excludeId?: string,
   ) {
     const candidates = await this.prisma.orderRequest.findMany({
       where: {
         category,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
         status: {
           in: ['PENDING', 'ORDERED'],
         },

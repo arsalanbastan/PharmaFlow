@@ -28,6 +28,8 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  sales_invoices_ui:
+    path: ../../packages/sales_invoices_ui
   price_increases_ui:
     path: ../../packages/price_increases_ui
   flutter:

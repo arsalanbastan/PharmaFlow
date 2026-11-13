@@ -106,6 +106,21 @@ describe('OrdersService manager pending edit', () => {
     );
   });
 
+  it('returns recorded matches in their original order after status changes', async () => {
+    prisma.orderRequest.findFirst.mockResolvedValue({
+      ...existingPending,
+      possibleDuplicate: true,
+      duplicateMatchIds: ['first', 'second'],
+    });
+    const first = { id: 'first', status: 'RECEIVED' };
+    const second = { id: 'second', status: 'CANCELED' };
+    prisma.orderRequest.findMany.mockResolvedValue([second, first]);
+
+    await expect(service.getDuplicateMatches(existingPending.id)).resolves.toEqual({
+      matches: [first, second],
+    });
+  });
+
   it('updates all editable PENDING fields and records an audit event', async () => {
     const result = await service.updatePending(existingPending.id, {
       category: 'GOODS',
@@ -128,6 +143,7 @@ describe('OrdersService manager pending edit', () => {
         suggestedCompanyText: 'شرکت تست',
         notes: 'یادداشت جدید',
         possibleDuplicate: false,
+        duplicateMatchIds: [],
       },
     });
 

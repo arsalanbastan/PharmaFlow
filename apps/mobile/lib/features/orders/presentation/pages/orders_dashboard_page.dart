@@ -1677,14 +1677,11 @@ class _DensePendingOrderRowState extends ConsumerState<_DensePendingOrderRow> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (widget.order.possibleDuplicate) ...[
-                    const SizedBox(width: 2),
-                    Icon(
-                      Icons.warning_amber_rounded,
-                      size: 14,
-                      color: colors.error,
+                  if (widget.order.possibleDuplicate)
+                    _DuplicateOrderWarning(
+                      order: widget.order,
+                      enabled: !_busy,
                     ),
-                  ],
                   const SizedBox(width: 3),
                   Text(
                     quantityText,
@@ -2378,6 +2375,8 @@ class _DenseReadOnlyOrderRowState
               ),
             ),
           ),
+          if (order.possibleDuplicate)
+            _DuplicateOrderWarning(order: order, enabled: !_busy),
           const SizedBox(width: 5),
           Text(
             quantityText,
@@ -2400,6 +2399,98 @@ class _DenseReadOnlyOrderRowState
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DuplicateOrderWarning extends ConsumerWidget {
+  const _DuplicateOrderWarning({required this.order, required this.enabled});
+
+  final ManagerOrder order;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _DenseRowAction(
+      tooltip: 'مشاهده سفارش‌های مشابه',
+      icon: Icons.warning_amber_rounded,
+      foregroundColor: Theme.of(context).colorScheme.error,
+      onPressed: !enabled
+          ? null
+          : () {
+              final matches = ref
+                  .read(managerOrdersRepositoryProvider)
+                  .getDuplicateMatches(order.id);
+              showDialog<void>(
+                context: context,
+                builder: (dialogContext) => AlertDialog(
+                  title: const Text('سفارش‌های مشابه'),
+                  content: SizedBox(
+                    width: 420,
+                    height: MediaQuery.sizeOf(dialogContext).height * .38,
+                    child: FutureBuilder<List<ManagerOrder>>(
+                      future: matches,
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return const Text(
+                            'دریافت سفارش‌های مشابه انجام نشد. دوباره تلاش کنید.',
+                          );
+                        }
+                        final items = snapshot.data;
+                        if (items == null) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        if (items.isEmpty) {
+                          return const Text(
+                            'سفارش مشابهی برای نمایش پیدا نشد.',
+                          );
+                        }
+                        return ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: items.length,
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final match = items[index];
+                            final status = switch (match.status) {
+                              'PENDING' => 'در انتظار',
+                              'ORDERED' => 'سفارش‌شده',
+                              'RECEIVED' => 'دریافت‌شده',
+                              'CANCELED' => 'لغوشده',
+                              'DELETED' => 'حذف‌شده',
+                              _ => match.status,
+                            };
+                            final quantity =
+                                match.orderedQuantity ??
+                                match.requestedQuantity;
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(match.itemText),
+                              subtitle: Text(
+                                [
+                                  status,
+                                  if (quantity != null)
+                                    'تعداد ${_toPersianDigits(quantity.toString())}',
+                                  if (match.assignedCompanyName != null)
+                                    match.assignedCompanyName!,
+                                ].join(' • '),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('بستن'),
+                    ),
+                  ],
+                ),
+              );
+            },
     );
   }
 }

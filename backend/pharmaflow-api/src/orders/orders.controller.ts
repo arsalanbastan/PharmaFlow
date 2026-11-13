@@ -90,6 +90,12 @@ export class OrdersController {
     return this.ordersService.uploadWebPhoto(id, dto);
   }
 
+  @Get(':id/duplicate-matches')
+  @Roles('MANAGER')
+  getDuplicateMatches(@Param('id') id: string) {
+    return this.ordersService.getDuplicateMatches(id);
+  }
+
   @Get(':id/photo')
   getPhoto(@Param('id') id: string) {
     return this.ordersService.createPhotoDownload(id);

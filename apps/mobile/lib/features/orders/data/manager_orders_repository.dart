@@ -46,6 +46,19 @@ class ManagerOrdersRepository {
         .toList(growable: false);
   }
 
+  Future<List<ManagerOrder>> getDuplicateMatches(String orderId) async {
+    final payload = await _apiClient.get(
+      '${ApiConstants.ordersEndpoint}/${Uri.encodeComponent(orderId)}/duplicate-matches',
+    );
+    if (payload is! Map<String, dynamic> || payload['matches'] is! List) {
+      throw const ApiDecodingException('Expected matching orders.');
+    }
+    return (payload['matches'] as List)
+        .cast<Map<String, dynamic>>()
+        .map(ManagerOrder.fromJson)
+        .toList(growable: false);
+  }
+
   Future<ManagerOrderDetails> getById(String orderId) async {
     final normalizedOrderId = orderId.trim();
 

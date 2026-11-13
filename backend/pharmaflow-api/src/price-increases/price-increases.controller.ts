@@ -18,6 +18,7 @@ import { Permissions } from '../auth/permissions.decorator';
 import type { AuthenticatedRequest } from '../auth/auth-request';
 import {
   CreatePriceIncreaseDto,
+  ConfirmPriceIncreaseDto,
   UpdatePriceIncreaseDto,
   CancelPriceIncreaseDto,
   PreparePriceAttachmentDto,
@@ -81,8 +82,9 @@ export class PriceIncreasesController {
   confirm(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthenticatedRequest,
+    @Body() dto?: ConfirmPriceIncreaseDto,
   ) {
-    return this.service.confirm(id, req.pharmaflowUser!);
+    return this.service.confirm(id, req.pharmaflowUser!, dto);
   }
   @Post(':id/attachments/prepare')
   @Roles('MANAGER')

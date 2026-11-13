@@ -1,2 +1,1 @@
-export 'staff_pos_bridge_stub.dart'
-    if (dart.library.html) 'staff_pos_bridge_web.dart';
+export 'package:sales_invoices_ui/staff_pos_bridge.dart';

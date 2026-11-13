@@ -2,9 +2,9 @@ name: Price increase development checks
 on:
   workflow_dispatch:
   push:
-    branches: [release/price-increase-liara-20261110]
+    branches: [release/price-increase-liara-20261110, release/manager-orders-invoices-20261113]
   pull_request:
-    paths: ['apps/mobile/**', 'apps/staff/**', 'packages/price_increases_ui/**', 'backend/pharmaflow-api/**', '.github/workflows/price-increase-checks.yml']
+    paths: ['apps/mobile/**', 'apps/staff/**', 'packages/price_increases_ui/**', 'packages/sales_invoices_ui/**', 'backend/pharmaflow-api/**', '.github/workflows/price-increase-checks.yml']
 permissions:
   contents: read
 jobs:
@@ -33,7 +33,7 @@ jobs:
           cache-dependency-path: backend/pharmaflow-api/package-lock.json
       - run: npm ci
       - run: npm run build
-      - run: npm test -- --runInBand price-increases orders auth
+      - run: npm test -- --runInBand price-increases orders auth sales-invoices staff-settings
       - run: npx prisma migrate deploy
       - run: node test/price-increases.integration.cjs
   flutter:
@@ -46,7 +46,7 @@ jobs:
           java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.4'
+          flutter-version: '3.44.7'
           channel: stable
       - run: flutter pub get
         working-directory: packages/price_increases_ui
@@ -56,13 +56,18 @@ jobs:
         working-directory: apps/staff
       - run: flutter analyze --no-pub --no-fatal-infos
         working-directory: apps/staff
-      - run: flutter build web --release
+      - run: flutter build web --release --base-href /staff/
         working-directory: apps/staff
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staff-web-for-liara
+          path: apps/staff/build/web/
+          if-no-files-found: error
       - run: flutter build apk --debug
         working-directory: apps/staff
       - run: flutter pub get
         working-directory: apps/mobile
-      - run: flutter analyze --no-pub --no-fatal-infos lib/features/price_increases lib/core/router/app_router.dart lib/features/menu/presentation/pages/menu_page.dart
+      - run: flutter analyze --no-pub --no-fatal-infos lib/features/price_increases lib/features/orders lib/features/sales_invoices lib/core/router/app_router.dart lib/features/menu/presentation/pages/menu_page.dart
         working-directory: apps/mobile
       # This temporary Firebase configuration is used only for the debug
       # compile check. It does not connect to production Firebase and is

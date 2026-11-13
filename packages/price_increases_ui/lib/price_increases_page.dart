@@ -123,7 +123,8 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
 
   bool _isBeforeEffectiveDate(Map<String, dynamic> item) {
     final today = Jalali.fromDateTime(DateTime.now());
-    final todayString = '${today.year}/${today.month.toString().padLeft(2, '0')}/${today.day.toString().padLeft(2, '0')}';
+    final todayString =
+        '${today.year}/${today.month.toString().padLeft(2, '0')}/${today.day.toString().padLeft(2, '0')}';
     return todayString.compareTo('${item['effectiveDate']}') < 0;
   }
 
@@ -149,7 +150,10 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
           decoration: const InputDecoration(labelText: 'دلیل لغو (الزامی)'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('انصراف'),
+          ),
           FilledButton(
             onPressed: () {
               final value = controller.text.trim();
@@ -163,7 +167,9 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
     controller.dispose();
     if (reason == null || !mounted) return;
     try {
-      await widget.request('/price-increases/${item['id']}/cancel', {'reason': reason});
+      await widget.request('/price-increases/${item['id']}/cancel', {
+        'reason': reason,
+      });
       await _load();
       _message('افزایش قیمت لغو شد و در تاریخچه باقی می‌ماند.');
     } catch (e) {
@@ -171,14 +177,37 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
     }
   }
 
-  Future<void> _confirm(Map<String, dynamic> item) async {
+  Future<void> _confirm(
+    Map<String, dynamic> item,
+    int index,
+    String name,
+  ) async {
     final id = item['id'] as String;
+    var note = '';
     final accepted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('تأیید اعمال قیمت'),
-        content: Text(
-          '${_isBeforeEffectiveDate(item) ? 'هشدار: تاریخ اعلام‌شده برای اجرای این افزایش قیمت هنوز نرسیده است.\\n\\n' : ''}قیمت جدید «${item['productName']}» را در سیستم اصلی اعمال کرده‌اید؟ تأیید با نام شما و زمان سرور ثبت می‌شود.',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_isBeforeEffectiveDate(item))
+                const Text(
+                  'هشدار: تاریخ اجرای این افزایش قیمت هنوز نرسیده است.',
+                ),
+              Text('قیمت جدید «$name» را اعمال کرده‌اید؟'),
+              TextField(
+                maxLength: 1000,
+                maxLines: 2,
+                onChanged: (value) => note = value.trim(),
+                decoration: const InputDecoration(
+                  labelText: 'یادداشت (اختیاری)',
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -195,7 +224,10 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
     if (accepted != true || !mounted || _busy.contains(id)) return;
     setState(() => _busy.add(id));
     try {
-      await widget.request('/price-increases/$id/confirm', {});
+      await widget.request('/price-increases/$id/confirm', {
+        if (index >= 0) 'itemIndex': index,
+        if (note.isNotEmpty) 'note': note,
+      });
       await _load();
       _message('تأیید شما ثبت شد.');
     } catch (e) {
@@ -432,8 +464,16 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
                     itemBuilder: (context, index) {
                       final item = _items[index];
                       final confirmations = item['confirmations'] as List;
-                      final mine = confirmations.any(
-                        (e) => e['userId'] == _userId,
+                      final products =
+                          (item['productItems'] as List?)?.cast<String>() ??
+                          const <String>[];
+                      final confirmationItems = products.isEmpty
+                          ? {-1: item['productName'] as String}
+                          : products.asMap();
+                      bool confirmedByMe(int index) => confirmations.any(
+                        (e) =>
+                            e['userId'] == _userId &&
+                            (e['itemIndex'] ?? -1) == index,
                       );
                       return Card(
                         child: Padding(
@@ -458,15 +498,31 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
                                 'ثبت‌کننده: ${item['createdByName']} • ${jalaliTimestamp(item['createdAt'] as String)}',
                               ),
                               if (item['canceledAt'] != null) ...[
-                                const Text('لغوشده', style: TextStyle(color: Colors.red)),
-                                Text('دلیل: ${item['cancellationReason'] ?? ''}'),
-                                Text('لغو توسط: ${item['canceledByName'] ?? ''}'),
+                                const Text(
+                                  'لغوشده',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                                Text(
+                                  'دلیل: ${item['cancellationReason'] ?? ''}',
+                                ),
+                                Text(
+                                  'لغو توسط: ${item['canceledByName'] ?? ''}',
+                                ),
                               ],
                               if (confirmations.isEmpty)
                                 const Text('هنوز تأییدی ثبت نشده است.'),
+                              if (products.isNotEmpty)
+                                Text('اقلام: ${products.join('، ')}'),
                               for (final c in confirmations)
                                 SelectableText(
-                                  'تأیید: ${c['displayName']} • شناسه: ${c['userId']}\n${jalaliTimestamp(c['confirmedAt'] as String)} (زمان محلی)',
+                                  [
+                                    'تأیید: ${c['displayName']}',
+                                    if (products.isNotEmpty)
+                                      confirmationItems[c['itemIndex']] ?? '',
+                                    jalaliTimestamp(c['confirmedAt'] as String),
+                                    if ('${c['note'] ?? ''}'.isNotEmpty)
+                                      '${c['note']}',
+                                  ].join(' • '),
                                 ),
                               Wrap(
                                 children: [
@@ -483,11 +539,22 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
                                 ],
                               ),
                               if (widget.manager && item['canceledAt'] == null)
-                                Wrap(spacing: 8, children: [
-                                  if (confirmations.isEmpty)
-                                    TextButton.icon(onPressed: () => _edit(item), icon: const Icon(Icons.edit), label: const Text('ویرایش')),
-                                  TextButton.icon(onPressed: () => _cancel(item), icon: const Icon(Icons.cancel_outlined), label: const Text('لغو')),
-                                ]),
+                                Wrap(
+                                  spacing: 8,
+                                  children: [
+                                    if (confirmations.isEmpty)
+                                      TextButton.icon(
+                                        onPressed: () => _edit(item),
+                                        icon: const Icon(Icons.edit),
+                                        label: const Text('ویرایش'),
+                                      ),
+                                    TextButton.icon(
+                                      onPressed: () => _cancel(item),
+                                      icon: const Icon(Icons.cancel_outlined),
+                                      label: const Text('لغو'),
+                                    ),
+                                  ],
+                                ),
                               if (widget.manager && item['canceledAt'] == null)
                                 TextButton.icon(
                                   onPressed: () =>
@@ -497,17 +564,28 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
                                     'افزودن پیوست (عکس یا PDF)',
                                   ),
                                 ),
-                              if (!widget.manager && widget.canConfirm && item['canceledAt'] == null)
-                                FilledButton(
-                                  onPressed: mine || _busy.contains(item['id'])
-                                      ? null
-                                      : () => _confirm(item),
-                                  child: Text(
-                                    mine
-                                        ? 'تأیید شما ثبت شده'
-                                        : 'قیمت جدید را اعمال کردم',
+                              if (!widget.manager &&
+                                  widget.canConfirm &&
+                                  item['canceledAt'] == null)
+                                for (final entry in confirmationItems.entries)
+                                  FilledButton(
+                                    onPressed:
+                                        confirmedByMe(entry.key) ||
+                                            _busy.contains(item['id'])
+                                        ? null
+                                        : () => _confirm(
+                                            item,
+                                            entry.key,
+                                            entry.value,
+                                          ),
+                                    child: Text(
+                                      products.isEmpty
+                                          ? (confirmedByMe(entry.key)
+                                                ? 'تأیید شما ثبت شده'
+                                                : 'قیمت جدید را اعمال کردم')
+                                          : '${entry.value} • ${confirmedByMe(entry.key) ? 'اعمال شد' : 'تأیید اعمال'}',
+                                    ),
                                   ),
-                                ),
                             ],
                           ),
                         ),
@@ -560,6 +638,7 @@ class _CreatePageState extends State<_CreatePage> {
     final item = widget.existing;
     if (item != null) {
       _name.text = '${item['productName']}';
+      _products.text = (item['productItems'] as List?)?.join('\n') ?? '';
       _price.text = '${item['newPrice']}';
       _date.text = '${item['effectiveDate']}';
       _source.text = '${item['source']}';
@@ -567,8 +646,10 @@ class _CreatePageState extends State<_CreatePage> {
       _category = '${item['category']}';
     }
   }
+
   final _form = GlobalKey<FormState>();
   final _name = TextEditingController(),
+      _products = TextEditingController(),
       _price = TextEditingController(),
       _date = TextEditingController(),
       _source = TextEditingController(),
@@ -578,7 +659,7 @@ class _CreatePageState extends State<_CreatePage> {
   String? _error;
   @override
   void dispose() {
-    for (final c in [_name, _price, _date, _source, _notes]) {
+    for (final c in [_name, _products, _price, _date, _source, _notes]) {
       c.dispose();
     }
     super.dispose();
@@ -599,6 +680,13 @@ class _CreatePageState extends State<_CreatePage> {
     }
   }
 
+  List<String> get _productItems => _products.text
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .toSet()
+      .toList();
+
   Future<void> _save() async {
     if (_saving || !_form.currentState!.validate()) return;
     setState(() {
@@ -606,14 +694,20 @@ class _CreatePageState extends State<_CreatePage> {
       _error = null;
     });
     try {
-      final result = await widget.request(widget.existing == null ? '/price-increases' : 'PATCH:/price-increases/${widget.existing!['id']}', {
-        'productName': _name.text.trim(),
-        'category': _category,
-        'newPrice': normalizePriceInput(_price.text),
-        'effectiveDate': normalizePriceInput(_date.text),
-        'source': _source.text.trim(),
-        'notes': _notes.text.trim(),
-      });
+      final result = await widget.request(
+        widget.existing == null
+            ? '/price-increases'
+            : 'PATCH:/price-increases/${widget.existing!['id']}',
+        {
+          'productName': _name.text.trim(),
+          'productItems': _productItems,
+          'category': _category,
+          'newPrice': normalizePriceInput(_price.text),
+          'effectiveDate': normalizePriceInput(_date.text),
+          'source': _source.text.trim(),
+          'notes': _notes.text.trim(),
+        },
+      );
       if (mounted) Navigator.pop(context, result['id'] as String);
     } catch (e) {
       if (mounted) setState(() => _error = 'ثبت ناموفق بود: $e');
@@ -626,7 +720,11 @@ class _CreatePageState extends State<_CreatePage> {
   Widget build(BuildContext context) => Directionality(
     textDirection: TextDirection.rtl,
     child: Scaffold(
-      appBar: AppBar(title: Text(widget.existing == null ? 'ثبت افزایش قیمت' : 'ویرایش افزایش قیمت')),
+      appBar: AppBar(
+        title: Text(
+          widget.existing == null ? 'ثبت افزایش قیمت' : 'ویرایش افزایش قیمت',
+        ),
+      ),
       body: Form(
         key: _form,
         child: ListView(
@@ -636,10 +734,24 @@ class _CreatePageState extends State<_CreatePage> {
               controller: _name,
               maxLength: 300,
               validator: _required,
-              decoration: const InputDecoration(labelText: 'نام دارو / کالا'),
+              decoration: const InputDecoration(
+                labelText: 'نام دارو / کالا یا عنوان کلی',
+              ),
+            ),
+            TextFormField(
+              controller: _products,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'اقلام مشمول (اختیاری، هر قلم یک خط)',
+              ),
+              validator: (_) =>
+                  _productItems.length > 30 ||
+                      _productItems.any((item) => item.length > 150)
+                  ? 'حداکثر ۳۰ قلم، هر قلم حداکثر ۱۵۰ نویسه.'
+                  : null,
             ),
             DropdownButtonFormField<String>(
-                        isExpanded: true,
+              isExpanded: true,
               initialValue: _category,
               decoration: const InputDecoration(labelText: 'نوع محصول'),
               items: const [

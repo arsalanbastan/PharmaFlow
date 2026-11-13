@@ -1,4 +1,6 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsIn,
   IsInt,
   IsNumberString,
@@ -11,6 +13,12 @@ import {
 } from 'class-validator';
 export class CreatePriceIncreaseDto {
   @IsString() @Length(1, 300) productName!: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  @Length(1, 150, { each: true })
+  productItems?: string[];
   @IsIn(['DRUG', 'GOODS']) category!: string;
   // Prices use the same rial unit as catalog and sales invoices.
   @IsNumberString({ no_symbols: false }) newPrice!: string;
@@ -19,6 +27,11 @@ export class CreatePriceIncreaseDto {
   @IsOptional() @IsString() @MaxLength(3000) notes?: string;
 }
 export class UpdatePriceIncreaseDto extends CreatePriceIncreaseDto {}
+
+export class ConfirmPriceIncreaseDto {
+  @IsOptional() @IsInt() @Min(-1) @Max(29) itemIndex?: number;
+  @IsOptional() @IsString() @MaxLength(1000) note?: string;
+}
 
 export class CancelPriceIncreaseDto {
   @IsString() @Length(1, 1000) reason!: string;

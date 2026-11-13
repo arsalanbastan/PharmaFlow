@@ -40,6 +40,7 @@ describe('Price increases', () => {
     service: PriceIncreasesService;
   beforeEach(() => {
     tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       priceIncrease: {
         create: jest
           .fn()
@@ -119,6 +120,8 @@ describe('Price increases', () => {
           priceIncreaseId: 'item',
           userId: actor.userId,
           displayName: actor.displayName,
+          itemIndex: -1,
+          note: null,
         },
       ],
       skipDuplicates: true,
@@ -128,6 +131,15 @@ describe('Price increases', () => {
       expect.objectContaining({ action: 'PRICE_INCREASE_CONFIRMED' }),
       tx,
     );
+  });
+  it('stores an optional note on the chosen line of a multi-item notice', async () => {
+    tx.priceIncrease.findUnique.mockResolvedValue({ productItems: ['A', 'B'] });
+    await expect(service.confirm('item', actor)).rejects.toThrow(BadRequestException);
+    await service.confirm('item', actor, { itemIndex: 1, note: ' ثبت شد ' });
+    expect(tx.priceIncreaseConfirmation.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ itemIndex: 1, note: 'ثبت شد' })],
+      skipDuplicates: true,
+    });
   });
   it('does not rewrite or audit an existing confirmation', async () => {
     tx.priceIncreaseConfirmation.createMany.mockResolvedValue({ count: 0 });
@@ -144,22 +156,24 @@ describe('Price increases', () => {
   it('scopes staff pending results to that employee and paginates', async () => {
     prisma.priceIncrease.findMany = jest.fn().mockResolvedValue([]);
     prisma.priceIncrease.count = jest.fn().mockResolvedValue(60);
+    prisma.$queryRaw.mockResolvedValue([{ id: 'complete' }]);
     const result = await service.list({ status: 'PENDING', page: '2' }, actor);
     expect(prisma.priceIncrease.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { canceledAt: null, confirmations: { none: { userId: actor.userId } } },
+        where: { canceledAt: null, id: { notIn: ['complete'] } },
         skip: 25,
         take: 25,
       }),
     );
     expect(result.total).toBe(60);
   });
-  it('manager pending results reflect absence of any staff confirmation', async () => {
+  it('manager pending results exclude notices with every item applied', async () => {
     prisma.priceIncrease.findMany = jest.fn().mockResolvedValue([]);
     prisma.priceIncrease.count = jest.fn().mockResolvedValue(0);
+    prisma.$queryRaw.mockResolvedValue([{ id: 'complete' }]);
     await service.list({ status: 'PENDING' }, { ...actor, role: 'MANAGER' });
     expect(prisma.priceIncrease.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { canceledAt: null, confirmations: { none: {} } } }),
+      expect.objectContaining({ where: { canceledAt: null, id: { notIn: ['complete'] } } }),
     );
   });
   it.each([

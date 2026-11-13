@@ -1,26 +1,27 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shamsi_date/shamsi_date.dart';
+import 'package:sales_invoices_ui/sales_api.dart';
+import 'package:sales_invoices_ui/sales_invoice_form.dart'
+    show StaffInvoiceForm;
+
+import '../../../../core/auth/manager_app_auth_gate.dart';
+import '../../../../core/network/api_client.dart';
+import '../../data/manager_sales_pos_bridge.dart';
 
 import '../../../../shared/widgets/date_picker/pharmaflow_date_picker.dart';
-import '../../../catalog/data/manager_catalog_repository.dart';
-import '../../../catalog/domain/manager_catalog_item.dart';
-import '../../../cheques/presentation/utils/cheque_input_formatters.dart';
 import '../../../cheques/presentation/utils/cheque_text_utils.dart';
 import '../../../settings/presentation/providers/communication_settings_provider.dart';
 import '../../data/sales_invoices_repository.dart';
 import '../../domain/sales_invoice.dart';
-import '../../domain/catalog_item_details.dart';
 import '../services/sales_invoice_export_service.dart';
 
 class SalesInvoicesPage extends ConsumerStatefulWidget {
@@ -43,12 +44,6 @@ class _SalesInvoicesPageState extends ConsumerState<SalesInvoicesPage> {
 
   SalesInvoicesRepository get _repository =>
       SalesInvoicesRepository(ref.read(apiClientProvider));
-
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(() => _load(reset: true));
-  }
 
   @override
   void dispose() {
@@ -98,14 +93,48 @@ class _SalesInvoicesPageState extends ConsumerState<SalesInvoicesPage> {
     }
   }
 
-  Future<void> _openCreate() async {
-    final created = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => SalesInvoiceFormPage(repository: _repository),
-      ),
-    );
-    if (created == true && mounted) await _load(reset: true);
+  bool _showHistory = false;
+
+  SalesApi _salesApi(BuildContext context) {
+    final api = ref.read(apiClientProvider);
+    final canManage =
+        ManagerAccessScope.maybeOf(context)?.user.isManager == true;
+    return SalesApi((path, {body, method}) async {
+      final uri = Uri.parse(path);
+      final result = switch (method) {
+        'PUT' => await api.put(uri.path, body: body),
+        _ when body != null => await api.post(uri.path, body: body),
+        _ => await api.get(
+          uri.path,
+          queryParameters: uri.hasQuery ? uri.queryParameters : null,
+        ),
+      };
+      if (result is! Map<String, dynamic>) {
+        throw const ApiDecodingException('Expected a sales invoice response.');
+      }
+      return result;
+    }, canManage: () async => canManage);
   }
+
+  StaffInvoiceForm _form(BuildContext context, {VoidCallback? onHistory}) =>
+      StaffInvoiceForm(
+        api: _salesApi(context),
+        posBridgeRequest: managerSalesPosBridgeRequest,
+        onHistory: onHistory,
+        pickDate: (context, initialDate) => PharmaFlowDatePicker.show(
+          context: context,
+          initialDate: initialDate,
+          firstDate: Jalali(1390, 1, 1),
+          lastDate: Jalali(1450, 12, 29),
+        ),
+      );
+
+  void _openHistory() {
+    setState(() => _showHistory = true);
+    _load(reset: true);
+  }
+
+  void _openCreate() => setState(() => _showHistory = false);
 
   Future<void> _openProfile() async {
     final profile = await _repository.getProfile();
@@ -124,6 +153,7 @@ class _SalesInvoicesPageState extends ConsumerState<SalesInvoicesPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_showHistory) return _form(context, onHistory: _openHistory);
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -256,645 +286,6 @@ class _SalesInvoicesPageState extends ConsumerState<SalesInvoicesPage> {
           );
         },
       ),
-    );
-  }
-}
-
-class SalesInvoiceFormPage extends ConsumerStatefulWidget {
-  const SalesInvoiceFormPage({required this.repository, super.key});
-
-  final SalesInvoicesRepository repository;
-
-  @override
-  ConsumerState<SalesInvoiceFormPage> createState() =>
-      _SalesInvoiceFormPageState();
-}
-
-class _SalesInvoiceFormPageState extends ConsumerState<SalesInvoiceFormPage> {
-  final _formKey = GlobalKey<FormState>();
-  final _buyerName = TextEditingController();
-  final _buyerNationalId = TextEditingController();
-  final _buyerPhone = TextEditingController();
-  final _buyerAddress = TextEditingController();
-  final _search = TextEditingController();
-  final _searchFieldKey = GlobalKey();
-  void _showSearchAboveKeyboard() {
-    Future<void>.delayed(const Duration(milliseconds: 280), () {
-      final target = _searchFieldKey.currentContext;
-      if (mounted && target != null && target.mounted) {
-        Scrollable.ensureVisible(target, alignment: 0.1,
-            duration: const Duration(milliseconds: 220));
-      }
-    });
-  }
-  final _invoiceDiscount = TextEditingController();
-  final _notes = TextEditingController();
-  final List<_SalesDraftLine> _lines = [];
-  List<ManagerCatalogSummary> _suggestions = const [];
-  CatalogSortField _catalogSort = CatalogSortField.relevance;
-  bool _sortDescending = false;
-  List<ManagerCatalogSummary> get _sortedSuggestions => sortCatalogMatches(
-    _suggestions, field: _catalogSort, descending: _sortDescending,
-    name: (item) => item.displayName, shape: (item) => item.shapeName,
-    alternateName: (item) => item.genericName);
-  void _toggleCatalogSort(CatalogSortField field) {
-    setState(() {
-      if (_catalogSort == field) { _sortDescending = !_sortDescending; }
-      else { _catalogSort = field; _sortDescending = false; }
-    });
-  }
-  Timer? _debounce;
-  bool _searching = false;
-  bool _saving = false;
-  Jalali _issueDate = Jalali.now();
-
-  ManagerCatalogRepository get _catalog =>
-      ManagerCatalogRepository(ref.read(apiClientProvider));
-
-  @override
-  void initState() {
-    super.initState();
-    _search.addListener(_searchChanged);
-    _invoiceDiscount.addListener(_refresh);
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _search.removeListener(_searchChanged);
-    _invoiceDiscount.removeListener(_refresh);
-    for (final controller in [
-      _buyerName,
-      _buyerNationalId,
-      _buyerPhone,
-      _buyerAddress,
-      _search,
-      _invoiceDiscount,
-      _notes,
-    ]) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
-
-  void _refresh() {
-    if (mounted) setState(() {});
-  }
-
-  void _searchChanged() {
-    _debounce?.cancel();
-    final query = _search.text.trim();
-    if (query.length < 2) {
-      setState(() => _suggestions = const []);
-      return;
-    }
-    _debounce = Timer(const Duration(milliseconds: 350), () async {
-      setState(() => _searching = true);
-      try {
-        final matches = <ManagerCatalogSummary>[];
-        var page = 1;
-        while (true) {
-          final result = await _catalog.getPage(
-            query: query, active: 'ACTIVE', page: page, pageSize: 100);
-          if (!mounted || _search.text.trim() != query) return;
-          matches.addAll(result.items);
-          if (page >= result.totalPages) break;
-          page++;
-        }
-        if (mounted && _search.text.trim() == query) {
-          setState(() => _suggestions = matches);
-        }
-      } catch (_) {
-        if (mounted && _search.text.trim() == query) {
-          setState(() => _suggestions = const []);
-        }
-      } finally {
-        if (mounted && _search.text.trim() == query) {
-          setState(() => _searching = false);
-        }
-      }
-    });
-  }
-
-  Future<void> _addItem(ManagerCatalogSummary item) async {
-    if (_lines.any((line) => line.item.id == item.id)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('این قلم قبلاً به فاکتور اضافه شده است.')),
-      );
-      return;
-    }
-    final line = await showDialog<_SalesDraftLine>(
-      context: context,
-      builder: (_) => _SalesLineDialog(item: item),
-    );
-    if (line == null || !mounted) return;
-    setState(() {
-      _lines.add(line);
-      _search.clear();
-      _suggestions = const [];
-    });
-  }
-
-  Future<void> _editLine(int index) async {
-    final current = _lines[index];
-    final updated = await showDialog<_SalesDraftLine>(
-      context: context,
-      builder: (_) => _SalesLineDialog(item: current.item, initial: current),
-    );
-    if (updated != null && mounted) setState(() => _lines[index] = updated);
-  }
-
-  double get _subtotal => _lines.fold(0, (sum, line) => sum + line.total);
-  double get _discount => _parseAmount(_invoiceDiscount.text);
-  double get _payable =>
-      (_subtotal - _discount).clamp(0, double.infinity).toDouble();
-
-  Future<void> _pickDate() async {
-    final picked = await PharmaFlowDatePicker.show(
-      context: context,
-      initialDate: _issueDate,
-      firstDate: Jalali(1390, 1, 1),
-      lastDate: Jalali(1450, 12, 29),
-    );
-    if (picked != null && mounted) {
-      setState(() => _issueDate = picked);
-    }
-  }
-
-  Future<void> _save() async {
-    FocusScope.of(context).unfocus();
-    if (!_formKey.currentState!.validate()) return;
-    if (_lines.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('حداقل یک دارو یا کالا اضافه کنید.')),
-      );
-      return;
-    }
-    if (_discount > _subtotal) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تخفیف از جمع فاکتور بیشتر است.')),
-      );
-      return;
-    }
-    setState(() => _saving = true);
-    try {
-      final invoice = await widget.repository.create({
-        'issueDate': _issueDate.toDateTime().toIso8601String(),
-        'buyerName': _buyerName.text.trim(),
-        if (_buyerNationalId.text.trim().isNotEmpty)
-          'buyerNationalId': _buyerNationalId.text.trim(),
-        if (_buyerPhone.text.trim().isNotEmpty)
-          'buyerPhone': _buyerPhone.text.trim(),
-        if (_buyerAddress.text.trim().isNotEmpty)
-          'buyerAddress': _buyerAddress.text.trim(),
-        'discount': _discount,
-        if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
-        'items': _lines
-            .map(
-              (line) => {
-                'catalogItemId': line.item.id,
-                'quantity': line.quantity,
-                'unitPrice': line.unitPrice,
-                'lineDiscount': line.discount,
-              },
-            )
-            .toList(growable: false),
-      });
-      if (!mounted) return;
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => SalesInvoiceDetailsPage(
-            invoice: invoice,
-            repository: widget.repository,
-          ),
-        ),
-      );
-      if (mounted) Navigator.of(context).pop(true);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('صدور فاکتور فروش انجام نشد.')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final compactTheme = Theme.of(context).copyWith(
-      inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-        border: const OutlineInputBorder(),
-      ),
-    );
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Theme(
-        data: compactTheme,
-        child: Scaffold(
-          appBar: AppBar(title: const Text('صدور فاکتور فروش')),
-          resizeToAvoidBottomInset: true,
-          body: Form(
-            key: _formKey,
-            child: ListView(
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: const EdgeInsets.all(10),
-              children: [
-                _InvoiceFormSection(
-                  title: 'مشخصات خریدار و فاکتور',
-                  icon: Icons.person_outline,
-                  children: [
-              TextFormField(
-                controller: _buyerName,
-                decoration: const InputDecoration(
-                  labelText: 'نام خریدار / مجموعه',
-                ),
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? 'نام خریدار را وارد کنید'
-                    : null,
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _buyerNationalId,
-                      decoration: const InputDecoration(
-                        labelText: 'کد/شناسه ملی (اختیاری)',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _buyerPhone,
-                      keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(
-                        labelText: 'تلفن (اختیاری)',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _buyerAddress,
-                maxLines: 1,
-                decoration: const InputDecoration(
-                  labelText: 'نشانی خریدار (اختیاری)',
-                ),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: _pickDate,
-                icon: const Icon(Icons.calendar_month_outlined),
-                label: Text('تاریخ فاکتور: ${_formatJalali(_issueDate)}'),
-              ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _InvoiceFormSection(
-                  title: 'اقلام فاکتور',
-                  icon: Icons.inventory_2_outlined,
-                  children: [
-              TextField(
-                key: _searchFieldKey,
-                onTap: _showSearchAboveKeyboard,
-                controller: _search,
-                decoration: InputDecoration(
-                  labelText: 'جستجو و افزودن دارو / کالا',
-                  hintText: 'نام، برند یا نام ژنریک',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _searching
-                      ? const Padding(
-                          padding: EdgeInsets.all(14),
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : null,
-                ),
-              ),
-              if (_suggestions.isNotEmpty)
-                Container(
-                  margin: const EdgeInsets.only(top: 6),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Theme.of(context).dividerColor),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(children: [
-                        TextButton(onPressed: () => _toggleCatalogSort(CatalogSortField.relevance), child: const Text('ارتباط')),
-                        TextButton(onPressed: () => _toggleCatalogSort(CatalogSortField.dose), child: Text('دوز/حجم ${_catalogSort == CatalogSortField.dose ? (_sortDescending ? '↓' : '↑') : ''}')),
-                        TextButton(onPressed: () => _toggleCatalogSort(CatalogSortField.shape), child: Text('شکل ${_catalogSort == CatalogSortField.shape ? (_sortDescending ? '↓' : '↑') : ''}')),
-                      ]),
-                      SizedBox(
-                        height: 260,
-                        child: ListView.builder(
-                          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                          itemCount: _sortedSuggestions.length,
-                          itemBuilder: (context, index) {
-                            final item = _sortedSuggestions[index];
-                            return ListTile(
-                              dense: true,
-                              title: Text(item.displayName),
-                              subtitle: Text(
-                                '${catalogItemDetails(category: item.category, name: item.displayName, alternateName: item.genericName, shape: item.shapeName, unit: item.unit, packetQuantity: item.packetQuantity)}\nقیمت فروش: ${_money(item.salesPrice ?? '0')} ریال',
-                              ),
-                              isThreeLine: true,
-                              trailing: const Icon(Icons.add_circle_outline),
-                              onTap: () => _addItem(item),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              const SizedBox(height: 10),
-              if (_lines.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: Center(
-                    child: Text('هنوز قلمی به فاکتور اضافه نشده است.'),
-                  ),
-                )
-              else
-                ..._lines.asMap().entries.map((entry) {
-                  final line = entry.value;
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 5),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerLow,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListTile(
-                      dense: true,
-                      visualDensity: VisualDensity.compact,
-                      title: Text('${entry.key + 1}. ${line.item.displayName}'),
-                      subtitle: Text(
-                        'تعداد ${_quantity(line.quantity)} × ${_money(line.unitPrice.toString())} — جمع ${_money(line.total.toString())} ریال',
-                      ),
-                      onTap: () => _editLine(entry.key),
-                      trailing: IconButton(
-                        onPressed: () =>
-                            setState(() => _lines.removeAt(entry.key)),
-                        icon: const Icon(Icons.delete_outline),
-                      ),
-                    ),
-                  );
-                }),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _InvoiceFormSection(
-                  title: 'اطلاعات مالی',
-                  icon: Icons.payments_outlined,
-                  children: [
-              TextFormField(
-                controller: _invoiceDiscount,
-                keyboardType: TextInputType.number,
-                inputFormatters: const <TextInputFormatter>[
-                  ChequeAmountFormatter(),
-                ],
-                decoration: const InputDecoration(
-                  labelText: 'تخفیف کل فاکتور (ریال)',
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _notes,
-                maxLines: 1,
-                decoration: const InputDecoration(
-                  labelText: 'توضیحات',
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text('جمع اقلام: ${_money(_subtotal.toString())} ریال'),
-                      Text('تخفیف: ${_money(_discount.toString())} ریال'),
-                      const Divider(),
-                      Text(
-                        'مبلغ قابل پرداخت: ${_money(_payable.toString())} ریال',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w900),
-                      ),
-                    ],
-                ),
-              ),
-                  ],
-                ),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: _saving
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.receipt_long_outlined),
-                label: const Text('صدور و ذخیره فاکتور'),
-              ),
-              const SizedBox(height: 24),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _InvoiceFormSection extends StatelessWidget {
-  const _InvoiceFormSection({
-    required this.title,
-    required this.icon,
-    required this.children,
-  });
-
-  final String title;
-  final IconData icon;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 19),
-                const SizedBox(width: 7),
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ],
-            ),
-            const Divider(height: 16),
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SalesDraftLine {
-  const _SalesDraftLine({
-    required this.item,
-    required this.quantity,
-    required this.unitPrice,
-    required this.discount,
-  });
-
-  final ManagerCatalogSummary item;
-  final double quantity;
-  final double unitPrice;
-  final double discount;
-  double get total => (quantity * unitPrice) - discount;
-}
-
-class _SalesLineDialog extends StatefulWidget {
-  const _SalesLineDialog({required this.item, this.initial});
-  final ManagerCatalogSummary item;
-  final _SalesDraftLine? initial;
-
-  @override
-  State<_SalesLineDialog> createState() => _SalesLineDialogState();
-}
-
-class _SalesLineDialogState extends State<_SalesLineDialog> {
-  late final TextEditingController _quantityController;
-  final _quantityFocus = FocusNode();
-  late final TextEditingController _priceController;
-  late final TextEditingController _discountController;
-
-  @override
-  void initState() {
-    super.initState();
-    _quantityController = TextEditingController(
-      text: widget.initial == null ? '1' : _quantity(widget.initial!.quantity),
-    );
-    _priceController = TextEditingController(
-      text: _money(_plainAmount(
-        widget.initial?.unitPrice ??
-            double.tryParse(widget.item.salesPrice ?? '') ??
-            0,
-      )),
-    );
-    _discountController = TextEditingController(
-      text: _plainAmount(widget.initial?.discount ?? 0),
-    );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _quantityFocus.requestFocus();
-    });
-  }
-
-  @override
-  void dispose() {
-    _quantityFocus.dispose();
-    _quantityController.dispose();
-    _priceController.dispose();
-    _discountController.dispose();
-    super.dispose();
-  }
-
-  void _changeQuantity(int delta) {
-    final current = double.tryParse(_quantityController.text) ?? 1;
-    _quantityController.text = _quantity((current + delta).clamp(1, double.infinity).toDouble());
-    _quantityController.selection = TextSelection.collapsed(offset: _quantityController.text.length);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.item.displayName),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(children: [
-              IconButton(icon: const Icon(Icons.add), tooltip: 'افزایش تعداد', onPressed: () => _changeQuantity(1)),
-              Expanded(child: TextField(
-              controller: _quantityController,
-              focusNode: _quantityFocus,
-              autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(labelText: 'تعداد'),
-              )),
-              IconButton(icon: const Icon(Icons.remove), tooltip: 'کاهش تعداد', onPressed: () => _changeQuantity(-1)),
-            ]),
-            TextField(
-              controller: _priceController,
-              keyboardType: TextInputType.number,
-              inputFormatters: const <TextInputFormatter>[
-                ChequeAmountFormatter(),
-              ],
-              decoration: const InputDecoration(
-                labelText: 'قیمت واحد (قابل ویرایش)',
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-            Text(
-              amountToPersianWords(_parseAmount(_priceController.text).round()) ?? 'صفر تومان',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            TextField(
-              controller: _discountController,
-              keyboardType: TextInputType.number,
-              inputFormatters: const <TextInputFormatter>[
-                ChequeAmountFormatter(),
-              ],
-              decoration: const InputDecoration(labelText: 'تخفیف این ردیف'),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('انصراف'),
-        ),
-        FilledButton(
-          onPressed: () {
-            final quantity = double.tryParse(_quantityController.text) ?? 0;
-            final price = _parseAmount(_priceController.text);
-            final discount = _parseAmount(_discountController.text);
-            if (quantity <= 0 || price < 0 || discount > quantity * price) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('تعداد، قیمت یا تخفیف معتبر نیست.'),
-                ),
-              );
-              return;
-            }
-            Navigator.pop(
-              context,
-              _SalesDraftLine(
-                item: widget.item,
-                quantity: quantity,
-                unitPrice: price,
-                discount: discount,
-              ),
-            );
-          },
-          child: const Text('افزودن'),
-        ),
-      ],
     );
   }
 }
@@ -1049,102 +440,117 @@ class _SalesInvoiceDocument extends StatelessWidget {
       color: Colors.white,
       child: Center(
         child: Container(
-        width: 380,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: Colors.black54),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Image.asset(
-                'assets/branding/logo.png',
-                width: 100,
-                height: 82,
-                fit: BoxFit.contain,
-              ),
-            ),
-            Text(
-              invoice.sellerName,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
-            ),
-            if (invoice.sellerLegalName != null)
-              Text(
-                invoice.sellerLegalName!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11),
-              ),
-            const SizedBox(height: 6),
-            Table(
-              border: TableBorder.all(color: Colors.black54),
-              columnWidths: const {0: FlexColumnWidth(3), 1: FlexColumnWidth(2)},
-              children: [
-                _tableRow(['تاریخ فاکتور:', _jalali(invoice.issueDate)]),
-                _tableRow(['شماره فاکتور:', invoice.invoiceNumber ?? '-']),
-                _tableRow(['نوع نسخه:', 'فروش دستی']),
-                _tableRow(['نام و نام خانوادگی:', invoice.buyerName]),
-              ],
-            ),
-            Table(
-              border: TableBorder.all(color: Colors.black54),
-              columnWidths: const {
-                0: FlexColumnWidth(5),
-                1: FlexColumnWidth(1.2),
-                2: FlexColumnWidth(2.2),
-              },
-              children: [
-                _tableRow(['شرح', 'تعداد', 'مبلغ'], header: true),
-                ...invoice.items.map(
-                  (item) => _tableRow([
-                    '${item.itemName}\nفی: ${_money(item.unitPrice)}',
-                    _quantity(double.parse(item.quantity)),
-                    _money(item.lineTotal),
-                  ]),
+          width: 380,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Colors.black54),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Image.asset(
+                  'assets/branding/logo.png',
+                  width: 100,
+                  height: 82,
+                  fit: BoxFit.contain,
                 ),
-              ],
-            ),
-            _totalLine('قیمت کل اقلام', invoice.subtotal),
-            if (double.parse(invoice.discount) > 0)
-              _totalLine('تخفیف', invoice.discount),
-            Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(border: Border.all(color: Colors.black87)),
-              child: Column(
+              ),
+              Text(
+                invoice.sellerName,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (invoice.sellerLegalName != null)
+                Text(
+                  invoice.sellerLegalName!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 11),
+                ),
+              const SizedBox(height: 6),
+              Table(
+                border: TableBorder.all(color: Colors.black54),
+                columnWidths: const {
+                  0: FlexColumnWidth(3),
+                  1: FlexColumnWidth(2),
+                },
                 children: [
-                  _totalLine('قابل پرداخت', invoice.payableAmount, bold: true),
-                  if (amountToPersianWords(
-                        double.parse(invoice.payableAmount).round(),
-                      ) !=
-                      null)
-                    Text(
-                      amountToPersianWords(
-                        double.parse(invoice.payableAmount).round(),
-                      )!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
+                  _tableRow(['تاریخ فاکتور:', _jalali(invoice.issueDate)]),
+                  _tableRow(['شماره فاکتور:', invoice.invoiceNumber ?? '-']),
+                  _tableRow(['نوع نسخه:', 'فروش دستی']),
+                  _tableRow(['نام و نام خانوادگی:', invoice.buyerName]),
                 ],
               ),
-            ),
-            if (invoice.notes != null) ...[
-              const SizedBox(height: 8),
-              Text('توضیحات: ${invoice.notes}'),
-            ],
-            const SizedBox(height: 8),
-            if (invoice.sellerAddress != null)
-              Text(invoice.sellerAddress!, textAlign: TextAlign.center),
-            if (invoice.sellerPhone != null)
-              Text(
-                invoice.sellerPhone!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              Table(
+                border: TableBorder.all(color: Colors.black54),
+                columnWidths: const {
+                  0: FlexColumnWidth(5),
+                  1: FlexColumnWidth(1.2),
+                  2: FlexColumnWidth(2.2),
+                },
+                children: [
+                  _tableRow(['شرح', 'تعداد', 'مبلغ'], header: true),
+                  ...invoice.items.map(
+                    (item) => _tableRow([
+                      '${item.itemName}\nفی: ${_money(item.unitPrice)}',
+                      _quantity(double.parse(item.quantity)),
+                      _money(item.lineTotal),
+                    ]),
+                  ),
+                ],
               ),
-          ],
+              _totalLine('قیمت کل اقلام', invoice.subtotal),
+              if (double.parse(invoice.discount) > 0)
+                _totalLine('تخفیف', invoice.discount),
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.black87),
+                ),
+                child: Column(
+                  children: [
+                    _totalLine(
+                      'قابل پرداخت',
+                      invoice.payableAmount,
+                      bold: true,
+                    ),
+                    if (amountToPersianWords(
+                          double.parse(invoice.payableAmount).round(),
+                        ) !=
+                        null)
+                      Text(
+                        amountToPersianWords(
+                          double.parse(invoice.payableAmount).round(),
+                        )!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                  ],
+                ),
+              ),
+              if (invoice.notes != null) ...[
+                const SizedBox(height: 8),
+                Text('توضیحات: ${invoice.notes}'),
+              ],
+              const SizedBox(height: 8),
+              if (invoice.sellerAddress != null)
+                Text(invoice.sellerAddress!, textAlign: TextAlign.center),
+              if (invoice.sellerPhone != null)
+                Text(
+                  invoice.sellerPhone!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -1313,8 +719,6 @@ String _money(String raw) {
   }
   return buffer.toString();
 }
-
-String _plainAmount(double value) => value.round().toString();
 
 String _quantity(double value) => value == value.roundToDouble()
     ? value.toInt().toString()

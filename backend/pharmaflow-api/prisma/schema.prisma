@@ -503,6 +503,7 @@ model OrderRequest {
 
   status            String  @default("PENDING")
   possibleDuplicate Boolean @default(false)
+  duplicateMatchIds String[] @default([]) @db.Uuid
 
   assignedCompanyId String? @db.Uuid
 
@@ -704,6 +705,7 @@ model PriceIncrease {
   id String @id @default(uuid()) @db.Uuid
   productName String
   normalizedProductName String
+  productItems String[] @default([])
   category String
   newPrice Decimal @db.Decimal(18, 2)
   effectiveDate String
@@ -729,9 +731,11 @@ model PriceIncreaseConfirmation {
   priceIncreaseId String @db.Uuid
   userId String @db.Uuid
   displayName String
+  itemIndex Int @default(-1)
+  note String?
   confirmedAt DateTime @default(now())
   priceIncrease PriceIncrease @relation(fields: [priceIncreaseId], references: [id], onDelete: Restrict)
-  @@unique([priceIncreaseId, userId])
+  @@unique([priceIncreaseId, userId, itemIndex], map: "price_increase_confirmations_notice_user_item_key")
   @@map("price_increase_confirmations")
 }
 

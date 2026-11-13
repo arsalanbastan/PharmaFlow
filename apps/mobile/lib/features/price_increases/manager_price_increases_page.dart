@@ -14,11 +14,16 @@ class ManagerPriceIncreasesPage extends ConsumerWidget {
       canConfirm: user.permissions.canCreateOrders,
       request: (path, body) async {
         final api = ref.read(apiClientProvider);
+        final patch = path.startsWith('PATCH:');
+        final uri = Uri.parse(patch ? path.substring(6) : path);
         final result = body == null
-            ? await api.get('/api/v1$path')
-            : path.startsWith('PATCH:')
-                ? await api.patch('/api/v1${path.substring(6)}', body: body)
-                : await api.post('/api/v1$path', body: body);
+            ? await api.get(
+                uri.path,
+                queryParameters: uri.hasQuery ? uri.queryParameters : null,
+              )
+            : patch
+            ? await api.patch(uri.path, body: body)
+            : await api.post(uri.path, body: body);
         return Map<String, dynamic>.from(result as Map);
       },
     );
