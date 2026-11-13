@@ -32,6 +32,22 @@ const run = (actor, fn) => context.run({source:'MOBILE_APP',actorVerified:true,a
   const history=await service.list({status:'CONFIRMED',q:item.productName},manager);
   assert.equal(history.items[0].confirmations.length,2);
   assert.equal(history.items[0].confirmations[1].displayName,staff2.displayName);
+  const group = await run(manager, () => service.create({
+    productName: 'همه شربت‌های اندانسترون ' + randomUUID(),
+    productItems: ['برند اول', 'برند دوم'],
+    category: 'DRUG',
+    newPrice: '1000',
+    effectiveDate: '1405/08/18',
+    source: 'اطلاعیه',
+  }, manager));
+  await run(staff1, () => service.confirm(group.id, staff1, { itemIndex: 0, note: 'قیمت اصلاح شد' }));
+  assert.equal((await service.list({ status: 'PENDING', q: group.productName }, staff1)).total, 1);
+  assert.equal((await service.list({ status: 'CONFIRMED', q: group.productName }, manager)).total, 0);
+  await run(staff1, () => service.confirm(group.id, staff1, { itemIndex: 1 }));
+  const completed = await service.list({ status: 'CONFIRMED', q: group.productName }, staff1);
+  assert.equal(completed.total, 1);
+  assert.equal(completed.items[0].confirmations.find((row) => row.itemIndex === 0).note, 'قیمت اصلاح شد');
+  assert.equal((await service.list({ status: 'PENDING', q: group.productName }, staff2)).total, 1);
   const before=await db.priceIncrease.count();
   const failing=new PriceIncreasesService(db,{record:async()=>{throw new Error('audit failed')}},{});
   await assert.rejects(()=>failing.create({productName:'rollback test',category:'GOODS',newPrice:'10',effectiveDate:'1405/08/18',source:'test'},manager));

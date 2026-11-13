@@ -31,7 +31,10 @@ Future<StaffPosBridgeResult> managerSalesPosBridgeRequest({
 
   final client = HttpClient();
   try {
-    final result = await (() async {
+    // The configured LAN bridge speaks HTTP. Scope the Flutter policy override
+    // to this private-address request; redirects and proxy use are disabled.
+    client.findProxy = (_) => 'DIRECT';
+    return await runZoned(() async {
       final request = await client.openUrl(method, base.replace(path: path));
       request.followRedirects = false;
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
@@ -50,8 +53,9 @@ Future<StaffPosBridgeResult> managerSalesPosBridgeRequest({
         decoded['ok'] = false;
       }
       return StaffPosBridgeResult(decoded);
-    })().timeout(Duration(milliseconds: timeoutMs));
-    return result;
+    }, zoneValues: {#flutter.io.allow_http: true}).timeout(
+      Duration(milliseconds: timeoutMs),
+    );
   } on TimeoutException {
     return const StaffPosBridgeResult({'ok': false, 'code': 'BRIDGE_TIMEOUT'});
   } on FormatException {
