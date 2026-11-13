@@ -707,9 +707,6 @@ class _SalesProfileDialogState extends State<_SalesProfileDialog> {
   }
 }
 
-double _parseAmount(String raw) =>
-    double.tryParse(raw.replaceAll(',', '').trim()) ?? 0;
-
 String _money(String raw) {
   final value = double.tryParse(raw) ?? 0;
   final digits = value.round().toString();
