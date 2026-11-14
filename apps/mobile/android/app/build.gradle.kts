@@ -121,5 +121,5 @@ val preparePriceOcrAssets = tasks.register("preparePriceOcrAssets") {
     }
 }
 
-android.sourceSets.getByName("main").assets.srcDir(priceOcrAssets)
+android.sourceSets.getByName("main").assets.srcDir(priceOcrAssets.get().asFile)
 tasks.named("preBuild").configure { dependsOn(preparePriceOcrAssets) }
