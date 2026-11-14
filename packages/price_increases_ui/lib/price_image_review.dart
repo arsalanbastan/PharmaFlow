@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:math';
 
 import 'package:file_picker/file_picker.dart';
@@ -11,10 +11,13 @@ class PriceImageReview extends StatefulWidget {
   const PriceImageReview({
     required this.request,
     required this.pickDate,
+    this.readImage,
     super.key,
   });
 
   final PriceIncreaseRequest request;
+  final Future<Map<String, dynamic>?> Function(BuildContext, Uint8List)?
+  readImage;
   final Future<void> Function(BuildContext, TextEditingController) pickDate;
 
   @override
@@ -107,15 +110,8 @@ class _PriceImageReviewState extends State<PriceImageReview> {
       if (bytes == null || bytes.isEmpty || bytes.length > 6 * 1024 * 1024) {
         throw const FormatException('حداکثر حجم تصویر ۶ مگابایت است.');
       }
-      final result = await widget.request('/price-increases/extract-image', {
-        'mimeType': switch (file.extension?.toLowerCase()) {
-          'png' => 'image/png',
-          'webp' => 'image/webp',
-          _ => 'image/jpeg',
-        },
-        'imageBase64': base64Encode(bytes),
-      });
-      if (mounted) _showRows(result, file);
+      final result = await widget.readImage?.call(context, bytes);
+      if (mounted && result != null) _showRows(result, file);
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
     } finally {
@@ -234,15 +230,16 @@ class _PriceImageReviewState extends State<PriceImageReview> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                OutlinedButton.icon(
-                  onPressed: editable ? _extract : null,
-                  icon: const Icon(Icons.add_photo_alternate_outlined),
-                  label: Text(
-                    _image == null
-                        ? 'انتخاب تصویر اطلاعیه'
-                        : 'انتخاب تصویر دیگر',
+                if (widget.readImage != null)
+                  OutlinedButton.icon(
+                    onPressed: editable ? _extract : null,
+                    icon: const Icon(Icons.add_photo_alternate_outlined),
+                    label: Text(
+                      _image == null
+                          ? 'انتخاب تصویر اطلاعیه'
+                          : 'انتخاب تصویر دیگر',
+                    ),
                   ),
-                ),
                 ExpansionTile(
                   title: const Text('چسباندن متن اطلاعیه'),
                   children: [

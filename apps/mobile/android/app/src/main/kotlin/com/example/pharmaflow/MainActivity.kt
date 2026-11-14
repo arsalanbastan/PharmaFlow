@@ -167,6 +167,7 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        configurePriceOcr(flutterEngine.dartExecutor.binaryMessenger)
         configureForegroundNotificationChannel(flutterEngine)
     }
 

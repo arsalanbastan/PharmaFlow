@@ -19,7 +19,6 @@ import type { AuthenticatedRequest } from '../auth/auth-request';
 import {
   CreatePriceIncreaseDto,
   CreatePriceIncreaseBatchDto,
-  PriceImageDto,
   PriceNoticeTextDto,
   ConfirmPriceIncreaseDto,
   UpdatePriceIncreaseDto,
@@ -37,13 +36,6 @@ export class PriceIncreasesController {
     private readonly service: PriceIncreasesService,
     private readonly images: PriceImageService,
   ) {}
-
-  @Post('extract-image')
-  @Roles('MANAGER')
-  @Permissions('managerAppAccess')
-  extractImage(@Body() dto: PriceImageDto) {
-    return this.images.extract(dto);
-  }
 
   @Post('extract-text')
   @Roles('MANAGER')

@@ -48,11 +48,6 @@ export class PreparePriceAttachmentDto {
   @IsInt() @Min(1) @Max(10 * 1024 * 1024) fileSize!: number;
 }
 
-export class PriceImageDto {
-  @IsIn(['image/jpeg', 'image/png', 'image/webp']) mimeType!: string;
-  @IsString() @Length(1, 8 * 1024 * 1024) imageBase64!: string;
-}
-
 export class CreatePriceIncreaseBatchDto {
   @IsString() @Matches(/^[0-9a-f]{48}$/) requestKey!: string;
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100)

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'price_image_review.dart';
 
 import 'package:flutter/material.dart';
@@ -73,12 +75,15 @@ class PriceIncreasesPage extends StatefulWidget {
     this.canConfirm = true,
     required this.pickDate,
     this.openCreate = false,
+    this.readImage,
   });
   final PriceIncreaseRequest request;
   final bool manager;
   final bool canConfirm;
   final PriceDatePicker pickDate;
   final bool openCreate;
+  final Future<Map<String, dynamic>?> Function(BuildContext, Uint8List)?
+  readImage;
   @override
   State<PriceIncreasesPage> createState() => _PriceIncreasesPageState();
 }
@@ -357,6 +362,7 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => PriceImageReview(
+          readImage: widget.readImage,
           request: widget.request,
           pickDate: (context, controller) =>
               choosePriceDate(context, controller, widget.pickDate),

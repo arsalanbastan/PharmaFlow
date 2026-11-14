@@ -1,3 +1,5 @@
+import java.net.URI
+import java.security.MessageDigest
 import java.util.Properties
 import java.io.FileInputStream
 
@@ -76,3 +78,48 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
+}
+
+val priceOcrAssets = layout.buildDirectory.dir("generated/priceOcrAssets")
+val preparePriceOcrAssets = tasks.register("preparePriceOcrAssets") {
+    val revision = "e12c65a915945e4c28e237a9b52bc4a8f39a0cec"
+    val models = mapOf(
+        "fas" to "99e420969b5ddd2cb135b416316a7ed417c59c4faf9e0d28941348f6448114df",
+        "eng" to "8280aed0782fe27257a68ea10fe7ef324ca0f8d85bd2fd145d1c2b560bcb66ba",
+    )
+    inputs.property("revision", revision)
+    inputs.property("models", models)
+    outputs.dir(priceOcrAssets)
+    doLast {
+        val directory = priceOcrAssets.get().dir("tessdata").asFile.apply { mkdirs() }
+        fun digest(file: File) = MessageDigest.getInstance("SHA-256")
+            .digest(file.readBytes()).joinToString("") { "%02x".format(it) }
+        for ((language, expected) in models) {
+            val file = directory.resolve("$language.traineddata")
+            if (file.exists() && digest(file) == expected) continue
+            val temporary = directory.resolve("$language.download")
+            try {
+                val url = URI(
+                    "https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/$revision/$language.traineddata",
+                ).toURL()
+                val connection = url.openConnection().apply {
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                }
+                connection.getInputStream().use { input ->
+                    temporary.outputStream().use { output -> input.copyTo(output) }
+                }
+                check(digest(temporary) == expected) { "OCR asset checksum mismatch: $language" }
+                temporary.copyTo(file, overwrite = true)
+            } finally {
+                temporary.delete()
+            }
+        }
+    }
+}
+
+android.sourceSets.getByName("main").assets.srcDir(priceOcrAssets)
+tasks.named("preBuild").configure { dependsOn(preparePriceOcrAssets) }

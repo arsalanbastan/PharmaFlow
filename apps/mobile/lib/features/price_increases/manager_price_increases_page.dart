@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'offline_price_reader.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 import '../../shared/widgets/date_picker/pharmaflow_date_picker.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +22,9 @@ class ManagerPriceIncreasesPage extends ConsumerWidget {
         lastDate: Jalali(1450, 12, 29),
       ),
       openCreate: openCreate,
+      readImage: !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+          ? reviewOfflinePriceImage
+          : null,
       manager: user.role == 'MANAGER',
       canConfirm: user.permissions.canCreateOrders,
       request: (path, body) async {
