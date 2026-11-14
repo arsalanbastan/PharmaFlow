@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, type PriceIncrease } from '@prisma/client';
 import { createHash, randomUUID } from 'node:crypto';
 import { PrismaService } from '../database/prisma/prisma.service';
 import { AuditLogService } from '../audit/audit-log.service';
@@ -83,7 +83,7 @@ export class PriceIncreasesService {
           return { items: existing };
         }
       }
-      const items = [];
+      const items: PriceIncrease[] = [];
       for (const [index, { dto, productName, source, productItems }] of rows.entries()) {
         const item = await tx.priceIncrease.create({
           data: {
