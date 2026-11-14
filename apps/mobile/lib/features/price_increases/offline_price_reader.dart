@@ -109,6 +109,7 @@ class _PriceCellsState extends State<_PriceCells> {
           'name': values[i].replaceAll(RegExp(r'\s+'), ' ').trim(),
           'price': price,
           'unit': _unit,
+          'requiresReview': true,
           'note': price == null
               ? 'عدد خوانا نبود. قیمت مصرف‌کننده را از روی عکس وارد کنید.'
               : null,

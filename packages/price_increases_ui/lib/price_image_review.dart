@@ -35,7 +35,7 @@ class _Row {
       },
       note = data['note'] as String?,
       conflict = data['conflict'] == true,
-      included = data['conflict'] != true;
+      included = data['conflict'] != true && data['requiresReview'] != true;
 
   final TextEditingController name, price;
   final String? note;
