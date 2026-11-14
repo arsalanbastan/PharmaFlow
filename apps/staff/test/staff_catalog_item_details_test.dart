@@ -4,9 +4,9 @@ import 'package:pharmaflow_staff/features/sales_invoices/catalog_item_details.da
 void main() {
   test('tablet and suppository show their own shape and strength', () {
     expect(catalogItemDetails(category: 'DRUG', name: 'استامینوفن ۵۰۰ میلی گرم',
-        shape: 'قرص'), contains('شکل: قرص • دوز/حجم: ۵۰۰ میلی گرم'));
+        shape: 'قرص'), contains('شکل دارویی: قرص • دوز/حجم: ۵۰۰ میلی گرم'));
     expect(catalogItemDetails(category: 'DRUG', name: 'استامینوفن ۳۲۵ میلی گرم',
-        shape: 'شیاف'), contains('شکل: شیاف • دوز/حجم: ۳۲۵ میلی گرم'));
+        shape: 'شیاف'), contains('شکل دارویی: شیاف • دوز/حجم: ۳۲۵ میلی گرم'));
   });
   test('goods retain different package weights', () {
     expect(catalogItemDetails(category: 'GOODS', name: 'کالاندولا ۱۵ گرمی'),
