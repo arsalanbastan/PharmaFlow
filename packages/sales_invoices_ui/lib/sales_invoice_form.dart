@@ -102,12 +102,14 @@ class StaffInvoiceForm extends StatefulWidget {
     required this.pickDate,
     this.posBridgeRequest = staffPosBridgeRequest,
     this.onHistory,
+    this.onSharePdf,
     super.key,
   });
 
   final SalesApi api;
   final InvoiceDatePicker pickDate;
   final VoidCallback? onHistory;
+  final Future<void> Function(SalesInvoiceDetails)? onSharePdf;
   final PosBridgeRequest posBridgeRequest;
   @override
   State<StaffInvoiceForm> createState() => _StaffInvoiceFormState();
@@ -975,7 +977,11 @@ class _StaffInvoiceFormState extends State<StaffInvoiceForm>
       final action = await Navigator.push<String>(
         context,
         MaterialPageRoute(
-          builder: (_) => StaffInvoiceDetails(api: widget.api, id: invoice.id),
+          builder: (_) => StaffInvoiceDetails(
+            api: widget.api,
+            id: invoice.id,
+            onSharePdf: widget.onSharePdf,
+          ),
         ),
       );
       if (mounted) {
@@ -2113,7 +2119,13 @@ class _LineDialogState extends State<_LineDialog> {
 }
 
 class StaffInvoiceDetails extends StatefulWidget {
-  const StaffInvoiceDetails({required this.api, required this.id, super.key});
+  const StaffInvoiceDetails({
+    required this.api,
+    required this.id,
+    this.onSharePdf,
+    super.key,
+  });
+  final Future<void> Function(SalesInvoiceDetails)? onSharePdf;
   final SalesApi api;
   final String id;
   @override
@@ -2215,6 +2227,21 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('خروجی تصویر انجام نشد: $error')),
         );
+      }
+    } finally {
+      if (mounted) setState(() => working = false);
+    }
+  }
+
+  Future<void> _sharePdf(SalesInvoiceDetails invoice) async {
+    setState(() => working = true);
+    try {
+      await widget.onSharePdf!(invoice);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('خروجی PDF انجام نشد: $error')));
       }
     } finally {
       if (mounted) setState(() => working = false);
@@ -2356,6 +2383,12 @@ class _StaffInvoiceDetailsState extends State<StaffInvoiceDetails> {
                   ? null
                   : () => exportImage(invoice, share: true),
             ),
+            if (widget.onSharePdf != null)
+              OutlinedButton.icon(
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                label: const Text('اشتراک‌گذاری PDF'),
+                onPressed: working ? null : () => _sharePdf(invoice),
+              ),
             FilledButton.tonalIcon(
               icon: const Icon(Icons.add),
               label: const Text('فاکتور جدید'),

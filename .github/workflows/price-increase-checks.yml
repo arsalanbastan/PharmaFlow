@@ -2,7 +2,7 @@ name: Price increase development checks
 on:
   workflow_dispatch:
   push:
-    branches: [release/price-increase-liara-20261110, release/manager-orders-invoices-20261113]
+    branches: [release/price-increase-liara-20261110, release/manager-orders-invoices-20261113, release/staff-invoices-android-20261114]
   pull_request:
     paths: ['apps/mobile/**', 'apps/staff/**', 'packages/price_increases_ui/**', 'packages/sales_invoices_ui/**', 'backend/pharmaflow-api/**', '.github/workflows/price-increase-checks.yml']
 permissions:
@@ -63,6 +63,8 @@ jobs:
           name: staff-web-for-liara
           path: apps/staff/build/web/
           if-no-files-found: error
+      - run: flutter test
+        working-directory: apps/staff
       - run: flutter build apk --debug
         working-directory: apps/staff
       - run: flutter pub get

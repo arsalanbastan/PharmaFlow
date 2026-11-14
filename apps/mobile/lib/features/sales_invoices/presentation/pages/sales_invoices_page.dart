@@ -16,7 +16,6 @@ import 'package:sales_invoices_ui/sales_invoice_form.dart'
 
 import '../../../../core/auth/manager_app_auth_gate.dart';
 import '../../../../core/network/api_client.dart';
-import '../../data/manager_sales_pos_bridge.dart';
 
 import '../../../../shared/widgets/date_picker/pharmaflow_date_picker.dart';
 import '../../../cheques/presentation/utils/cheque_text_utils.dart';
@@ -120,7 +119,6 @@ class _SalesInvoicesPageState extends ConsumerState<SalesInvoicesPage> {
   StaffInvoiceForm _form(BuildContext context, {VoidCallback? onHistory}) =>
       StaffInvoiceForm(
         api: _salesApi(context),
-        posBridgeRequest: managerSalesPosBridgeRequest,
         onHistory: onHistory,
         pickDate: (context, initialDate) => PharmaFlowDatePicker.show(
           context: context,

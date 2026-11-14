@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:sales_invoices_ui/staff_pos_bridge.dart';
+import 'staff_pos_bridge_stub.dart' show StaffPosBridgeResult;
 
-Future<StaffPosBridgeResult> managerSalesPosBridgeRequest({
+export 'staff_pos_bridge_stub.dart' show StaffPosBridgeResult;
+
+Future<StaffPosBridgeResult> staffPosBridgeRequest({
   required String baseUrl,
   required String path,
   String method = 'GET',

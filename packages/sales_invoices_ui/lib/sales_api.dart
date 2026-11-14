@@ -68,9 +68,10 @@ class SalesApi {
 
   Future<SalesInvoicePage> list({
     String query = '',
+    int page = 1,
   }) async => SalesInvoicePage.fromJson(
     await _request(
-      '/sales-invoices?page=1&pageSize=25&q=${Uri.encodeQueryComponent(query)}',
+      '/sales-invoices?page=$page&pageSize=25&q=${Uri.encodeQueryComponent(query)}',
     ),
   );
   Future<SalesInvoiceDetails> detail(String id) async =>

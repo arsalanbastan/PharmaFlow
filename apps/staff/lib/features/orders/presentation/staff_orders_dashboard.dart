@@ -24,6 +24,7 @@ class StaffOrdersDashboard extends StatefulWidget {
   const StaffOrdersDashboard({
     required this.user,
     this.onSettings,
+    this.accountActions,
     this.ordersLoader,
     this.receiveAction,
     this.editAction,
@@ -33,6 +34,7 @@ class StaffOrdersDashboard extends StatefulWidget {
 
   final StaffAuthUser user;
   final VoidCallback? onSettings;
+  final Widget? accountActions;
   final StaffActiveOrdersLoader? ordersLoader;
   final StaffOrderReceiveAction? receiveAction;
   final StaffOrderEditAction? editAction;
@@ -473,7 +475,11 @@ class StaffOrdersDashboardState extends State<StaffOrdersDashboard> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(12, 4, 12, 18),
         children: [
-          _GreetingCard(user: widget.user, onSettings: widget.onSettings),
+          _GreetingCard(
+            user: widget.user,
+            onSettings: widget.onSettings,
+            accountActions: widget.accountActions,
+          ),
           const SizedBox(height: 8),
           _OrdersSummaryCard(
             pendingCount: pendingCount,
@@ -551,10 +557,15 @@ class StaffOrdersDashboardState extends State<StaffOrdersDashboard> {
 }
 
 class _GreetingCard extends StatelessWidget {
-  const _GreetingCard({required this.user, this.onSettings});
+  const _GreetingCard({
+    required this.user,
+    this.onSettings,
+    this.accountActions,
+  });
 
   final StaffAuthUser user;
   final VoidCallback? onSettings;
+  final Widget? accountActions;
 
   @override
   Widget build(BuildContext context) {
@@ -645,6 +656,7 @@ class _GreetingCard extends StatelessWidget {
                     onPressed: onSettings,
                     icon: const Icon(Icons.settings_outlined, color: green),
                   ),
+                  if (accountActions != null) accountActions!,
                 ],
               ),
             ),

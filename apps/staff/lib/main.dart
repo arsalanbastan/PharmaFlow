@@ -258,7 +258,9 @@ class _StaffHomePageState extends State<StaffHomePage> {
           _dashboardKey.currentState?.refresh() ?? Future<void>.value(),
         );
       } else if (index == 2) {
-        unawaited(_salesPageKey.currentState?.openCreate() ?? Future<void>.value());
+        unawaited(
+          _salesPageKey.currentState?.openCreate() ?? Future<void>.value(),
+        );
       }
       return;
     }
@@ -268,8 +270,10 @@ class _StaffHomePageState extends State<StaffHomePage> {
     });
     if (index == 2) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          unawaited(_salesPageKey.currentState?.openCreate() ?? Future<void>.value());
+        if (mounted && _selectedIndex == 2) {
+          unawaited(
+            _salesPageKey.currentState?.openCreate() ?? Future<void>.value(),
+          );
         }
       });
     }
@@ -425,6 +429,30 @@ class _StaffHomePageState extends State<StaffHomePage> {
           key: _dashboardKey,
           user: widget.user,
           onSettings: _openSettings,
+          accountActions: PopupMenuButton<bool>(
+            tooltip: 'گزینه‌های حساب',
+            icon: const Icon(Icons.more_vert, color: Color(0xFF1B8A4B)),
+            onSelected: (checkUpdate) {
+              if (checkUpdate) {
+                unawaited(_checkForUpdate(silent: false));
+              } else {
+                unawaited(_logout());
+              }
+            },
+            itemBuilder: (context) => [
+              if (_updateRunner.isSupported)
+                PopupMenuItem(
+                  value: true,
+                  enabled: !_checking && !_downloading,
+                  child: Text(_checking ? 'در حال بررسی' : 'به‌روزرسانی'),
+                ),
+              PopupMenuItem(
+                value: false,
+                enabled: !_loggingOut,
+                child: Text(_loggingOut ? 'در حال خروج' : 'خروج'),
+              ),
+            ],
+          ),
         ),
       ),
       StaffOrderFormPage(embedded: true, onOrderCreated: _onOrderCreated),
@@ -438,11 +466,13 @@ class _StaffHomePageState extends State<StaffHomePage> {
         isHome: _selectedIndex == 0,
         onReturnHome: () => _selectPage(0),
         child: Scaffold(
-          appBar: _selectedIndex == 0
+          appBar: _selectedIndex == 0 || _selectedIndex == 2
               ? null
               : AppBar(
                   centerTitle: true,
-                  title: Text(_selectedIndex == 1 ? 'ثبت درخواست جدید' : _selectedIndex == 2 ? 'فاکتورهای فروش' : 'افزایش قیمت‌ها'),
+                  title: Text(
+                    _selectedIndex == 1 ? 'ثبت درخواست جدید' : 'افزایش قیمت‌ها',
+                  ),
                 ),
           body: IndexedStack(index: _selectedIndex, children: pages),
           bottomNavigationBar: SafeArea(
@@ -468,12 +498,7 @@ class _StaffHomePageState extends State<StaffHomePage> {
                   ),
                 _StaffBottomMenu(
                   selectedIndex: _selectedIndex,
-                  showUpdate: _updateRunner.isSupported,
-                  checkingUpdate: _checking || _downloading,
-                  loggingOut: _loggingOut,
                   onSelect: _selectPage,
-                  onUpdate: () => _checkForUpdate(silent: false),
-                  onLogout: _logout,
                 ),
               ],
             ),
@@ -485,23 +510,10 @@ class _StaffHomePageState extends State<StaffHomePage> {
 }
 
 class _StaffBottomMenu extends StatelessWidget {
-  const _StaffBottomMenu({
-    required this.selectedIndex,
-    required this.showUpdate,
-    required this.checkingUpdate,
-    required this.loggingOut,
-    required this.onSelect,
-    required this.onUpdate,
-    required this.onLogout,
-  });
+  const _StaffBottomMenu({required this.selectedIndex, required this.onSelect});
 
   final int selectedIndex;
-  final bool showUpdate;
-  final bool checkingUpdate;
-  final bool loggingOut;
   final ValueChanged<int> onSelect;
-  final VoidCallback onUpdate;
-  final VoidCallback onLogout;
 
   @override
   Widget build(BuildContext context) {
@@ -539,24 +551,9 @@ class _StaffBottomMenu extends StatelessWidget {
             _StaffMenuButton(
               icon: Icons.trending_up_outlined,
               selectedIcon: Icons.trending_up,
-              label: 'افزایش قیمت',
+              label: 'افزایش قیمت‌ها',
               selected: selectedIndex == 3,
               onTap: () => onSelect(3),
-            ),
-            if (showUpdate)
-              _StaffMenuButton(
-                icon: Icons.system_update_alt_outlined,
-                selectedIcon: Icons.system_update_alt,
-                label: checkingUpdate ? 'در حال بررسی' : 'بروزرسانی',
-                selected: false,
-                onTap: checkingUpdate ? null : onUpdate,
-              ),
-            _StaffMenuButton(
-              icon: Icons.logout_outlined,
-              selectedIcon: Icons.logout,
-              label: loggingOut ? 'در حال خروج' : 'خروج',
-              selected: false,
-              onTap: loggingOut ? null : onLogout,
             ),
           ],
         ),
