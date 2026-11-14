@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:display_settings_ui/text_size_settings.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -424,66 +425,68 @@ class PharmaFlowApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       routerConfig: AppRouter.router,
       builder: (context, child) {
-        return ManagerAppAuthGate(
-          childBuilder: (authContext, user) {
-            void showDenied(String message) {
-              ScaffoldMessenger.maybeOf(
-                authContext,
-              )?.showSnackBar(SnackBar(content: Text(message)));
-            }
+        return AppTextSize(
+          child: ManagerAppAuthGate(
+            childBuilder: (authContext, user) {
+              void showDenied(String message) {
+                ScaffoldMessenger.maybeOf(
+                  authContext,
+                )?.showSnackBar(SnackBar(content: Text(message)));
+              }
 
-            return QuickActionsEdgePanel(
-              child: child ?? const SizedBox.shrink(),
-              onAddCheque: ({required bool replaceCurrent}) async {
-                if (!user.permissions.canCreateCheques) {
-                  showDenied('برای ثبت چک دسترسی ندارید.');
-                  return;
-                }
+              return QuickActionsEdgePanel(
+                child: child ?? const SizedBox.shrink(),
+                onAddCheque: ({required bool replaceCurrent}) async {
+                  if (!user.permissions.canCreateCheques) {
+                    showDenied('برای ثبت چک دسترسی ندارید.');
+                    return;
+                  }
 
-                final navigator = AppRouter.rootNavigatorKey.currentState;
+                  final navigator = AppRouter.rootNavigatorKey.currentState;
 
-                if (navigator == null) {
-                  return;
-                }
+                  if (navigator == null) {
+                    return;
+                  }
 
-                final route = MaterialPageRoute<void>(
-                  settings: const RouteSettings(name: 'quick-action-cheque'),
-                  builder: (_) => const ChequeFormPage(),
-                );
+                  final route = MaterialPageRoute<void>(
+                    settings: const RouteSettings(name: 'quick-action-cheque'),
+                    builder: (_) => const ChequeFormPage(),
+                  );
 
-                if (replaceCurrent) {
-                  await navigator.pushReplacement<void, void>(route);
-                } else {
-                  await navigator.push<void>(route);
-                }
-              },
-              onAddCashPayment: ({required bool replaceCurrent}) async {
-                if (!user.permissions.canCreateCashPayments) {
-                  showDenied('برای ثبت واریزی دسترسی ندارید.');
-                  return;
-                }
+                  if (replaceCurrent) {
+                    await navigator.pushReplacement<void, void>(route);
+                  } else {
+                    await navigator.push<void>(route);
+                  }
+                },
+                onAddCashPayment: ({required bool replaceCurrent}) async {
+                  if (!user.permissions.canCreateCashPayments) {
+                    showDenied('برای ثبت واریزی دسترسی ندارید.');
+                    return;
+                  }
 
-                final navigator = AppRouter.rootNavigatorKey.currentState;
+                  final navigator = AppRouter.rootNavigatorKey.currentState;
 
-                if (navigator == null) {
-                  return;
-                }
+                  if (navigator == null) {
+                    return;
+                  }
 
-                final route = MaterialPageRoute<void>(
-                  settings: const RouteSettings(
-                    name: 'quick-action-cash-payment',
-                  ),
-                  builder: (_) => const CashPaymentFormPage(),
-                );
+                  final route = MaterialPageRoute<void>(
+                    settings: const RouteSettings(
+                      name: 'quick-action-cash-payment',
+                    ),
+                    builder: (_) => const CashPaymentFormPage(),
+                  );
 
-                if (replaceCurrent) {
-                  await navigator.pushReplacement<void, void>(route);
-                } else {
-                  await navigator.push<void>(route);
-                }
-              },
-            );
-          },
+                  if (replaceCurrent) {
+                    await navigator.pushReplacement<void, void>(route);
+                  } else {
+                    await navigator.push<void>(route);
+                  }
+                },
+              );
+            },
+          ),
         );
       },
       localizationsDelegates: const [

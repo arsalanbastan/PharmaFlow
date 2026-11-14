@@ -1,3 +1,4 @@
+import 'package:display_settings_ui/text_size_settings.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/auth/staff_auth_api_service.dart';
@@ -327,6 +328,7 @@ class _StaffSettingsPageState extends State<StaffSettingsPage> {
         body: ListView(
           padding: const EdgeInsets.all(12),
           children: [
+            const TextSizeSettingsTile(),
             _section(
               title: 'حساب کاربری',
               icon: Icons.person_outline,

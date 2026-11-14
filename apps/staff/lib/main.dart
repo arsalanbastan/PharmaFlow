@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:display_settings_ui/text_size_settings.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'core/auth/staff_auth_api_service.dart';
@@ -36,14 +38,10 @@ class PharmaFlowStaffApp extends StatelessWidget {
       theme: staffTheme.copyWith(
         textTheme: staffTheme.textTheme.apply(fontSizeFactor: 1.14),
       ),
-      builder: (context, child) {
-        final media = MediaQuery.of(context);
-        final textScale = (media.textScaler.scale(16) / 16) * 1.5;
-        return MediaQuery(
-          data: media.copyWith(textScaler: TextScaler.linear(textScale)),
-          child: child ?? const SizedBox.shrink(),
-        );
-      },
+      builder: (context, child) => AppTextSize(
+        defaultFactor: kIsWeb ? 1.5 : 1,
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: const StaffAuthGate(),
     );
   }

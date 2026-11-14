@@ -1,0 +1,11 @@
+name: display_settings_ui
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.5.5

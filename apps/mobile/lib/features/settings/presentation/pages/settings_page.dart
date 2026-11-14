@@ -1,3 +1,4 @@
+import 'package:display_settings_ui/text_size_settings.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/auth/manager_app_auth_gate.dart';
@@ -40,6 +41,7 @@ class SettingsPage extends StatelessWidget {
         appBar: AppBar(title: const Text('تنظیمات')),
         body: ListView(
           children: [
+            const TextSizeSettingsTile(),
             ListTile(
               leading: const Icon(Icons.wifi_tethering_outlined),
               title: const Text('ارتباطات', textAlign: TextAlign.right),
