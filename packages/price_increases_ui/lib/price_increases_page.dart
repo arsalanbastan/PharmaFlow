@@ -51,9 +51,14 @@ Future<void> choosePriceDate(
   PriceDatePicker picker,
 ) async {
   final parts = controller.text.split('/').map(int.tryParse).toList();
-  final initial = parts.length == 3 && parts.every((part) => part != null)
-      ? Jalali(parts[0]!, parts[1]!, parts[2]!)
-      : Jalali.now();
+  var initial = Jalali.now();
+  if (parts.length == 3 && parts.every((part) => part != null)) {
+    try {
+      initial = Jalali(parts[0]!, parts[1]!, parts[2]!);
+    } catch (_) {
+      // Open on today when an older record has an invalid date.
+    }
+  }
   final selected = await picker(context, initial);
   if (selected == null || !context.mounted) return;
   controller.text =
@@ -401,7 +406,7 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
                           child: FilledButton.tonalIcon(
                             onPressed: _import,
                             icon: const Icon(Icons.document_scanner_outlined),
-                            label: const Text('استخراج از عکس'),
+                            label: const Text('استخراج از عکس یا متن'),
                           ),
                         ),
                       TextField(

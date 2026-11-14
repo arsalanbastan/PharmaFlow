@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:shamsi_date/shamsi_date.dart';
 
 import 'price_increases_page.dart';
 
@@ -29,13 +30,16 @@ class _Row {
         'TOMAN' => 'TOMAN',
         _ => 'UNKNOWN',
       },
-      note = data['note'] as String?;
+      note = data['note'] as String?,
+      conflict = data['conflict'] == true,
+      included = data['conflict'] != true;
 
   final TextEditingController name, price;
   final String? note;
   String unit;
   String category = 'DRUG';
-  bool included = true;
+  final bool conflict;
+  bool included;
 
   String? get rial {
     final value = normalizePriceInput(price.text).replaceAll('٫', '.');
@@ -69,6 +73,7 @@ class _PriceImageReviewState extends State<PriceImageReview> {
   final _form = GlobalKey<FormState>();
   final _date = TextEditingController();
   final _source = TextEditingController();
+  final _notice = TextEditingController();
   List<_Row> _rows = [];
   PlatformFile? _image;
   bool _busy = false;
@@ -78,6 +83,7 @@ class _PriceImageReviewState extends State<PriceImageReview> {
   void dispose() {
     _date.dispose();
     _source.dispose();
+    _notice.dispose();
     for (final row in _rows) {
       row.dispose();
     }
@@ -109,27 +115,74 @@ class _PriceImageReviewState extends State<PriceImageReview> {
         },
         'imageBase64': base64Encode(bytes),
       });
-      if (!mounted) return;
-      final rows = (result['rows'] as List)
-          .map((row) => _Row(row as Map))
-          .toList();
-      if (rows.isEmpty) {
-        throw const FormatException(
-          'ردیفی در تصویر پیدا نشد. تصویر واضح‌تری انتخاب کنید.',
-        );
-      }
-      setState(() {
-        for (final row in _rows) {
-          row.dispose();
-        }
-        _rows = rows;
-        _image = file;
-      });
+      if (mounted) _showRows(result, file);
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _extractText() async {
+    final text = _notice.text.trim();
+    if (text.isEmpty) {
+      setState(() => _error = 'متن اطلاعیه را وارد کنید.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.request('/price-increases/extract-text', {
+        'text': text,
+      });
+      if (mounted) _showRows(result, null);
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _showRows(Map<String, dynamic> result, PlatformFile? file) {
+    final rows = (result['rows'] as List)
+        .map((row) => _Row(row as Map))
+        .toList();
+    if (rows.isEmpty) {
+      throw const FormatException(
+        'ردیفی پیدا نشد. متن یا تصویر واضح‌تری وارد کنید.',
+      );
+    }
+    final oldRows = _rows;
+    setState(() {
+      _rows = rows;
+      _image = file;
+      _source.text = result['source'] is String
+          ? result['source'] as String
+          : '';
+      _date.text = '';
+      final date = result['effectiveDate'];
+      if (date is String &&
+          RegExp(r'^1[3-6]\d{2}/\d{2}/\d{2}$').hasMatch(date)) {
+        final parts = date.split('/').map(int.parse).toList();
+        try {
+          final parsed = Jalali(parts[0], parts[1], parts[2]);
+          if (parsed.year == parts[0] &&
+              parsed.month == parts[1] &&
+              parsed.day == parts[2]) {
+            _date.text = date;
+          }
+        } catch (_) {
+          // The manager chooses a valid date in the calendar.
+        }
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final row in oldRows) {
+        row.dispose();
+      }
+    });
   }
 
   Future<void> _publish() async {
@@ -175,7 +228,7 @@ class _PriceImageReviewState extends State<PriceImageReview> {
       child: PopScope(
         canPop: !_busy,
         child: Scaffold(
-          appBar: AppBar(title: const Text('استخراج افزایش قیمت از عکس')),
+          appBar: AppBar(title: const Text('استخراج افزایش قیمت')),
           body: Form(
             key: _form,
             child: ListView(
@@ -190,6 +243,23 @@ class _PriceImageReviewState extends State<PriceImageReview> {
                         : 'انتخاب تصویر دیگر',
                   ),
                 ),
+                ExpansionTile(
+                  title: const Text('چسباندن متن اطلاعیه'),
+                  children: [
+                    TextField(
+                      controller: _notice,
+                      enabled: editable,
+                      minLines: 3,
+                      maxLines: 6,
+                      maxLength: 24000,
+                      decoration: const InputDecoration(labelText: 'متن پیام'),
+                    ),
+                    FilledButton.tonal(
+                      onPressed: editable ? _extractText : null,
+                      child: const Text('استخراج از متن'),
+                    ),
+                  ],
+                ),
                 if (_busy) const LinearProgressIndicator(),
                 if (_error != null)
                   Text(
@@ -198,17 +268,18 @@ class _PriceImageReviewState extends State<PriceImageReview> {
                       color: Theme.of(context).colorScheme.error,
                     ),
                   ),
-                if (_image != null) ...[
-                  ExpansionTile(
-                    title: Text(_image!.name),
-                    children: [
-                      Image.memory(
-                        _image!.bytes!,
-                        height: 360,
-                        fit: BoxFit.contain,
-                      ),
-                    ],
-                  ),
+                if (_rows.isNotEmpty) ...[
+                  if (_image != null)
+                    ExpansionTile(
+                      title: Text(_image!.name),
+                      children: [
+                        Image.memory(
+                          _image!.bytes!,
+                          height: 360,
+                          fit: BoxFit.contain,
+                        ),
+                      ],
+                    ),
                   const Text(
                     'نام، قیمت و واحد هر ردیف را با تصویر تطبیق دهید. فقط ردیف‌های انتخاب‌شده ثبت می‌شوند.',
                   ),
@@ -249,6 +320,10 @@ class _PriceImageReviewState extends State<PriceImageReview> {
                                   : (value) =>
                                         setState(() => row.included = value!),
                             ),
+                            if (row.conflict)
+                              const Text(
+                                'برای این نام چند قیمت پیدا شده. ردیف درست را بررسی و انتخاب کنید.',
+                              ),
                             if (row.note case final note? when note.isNotEmpty)
                               Text(note),
                             TextFormField(

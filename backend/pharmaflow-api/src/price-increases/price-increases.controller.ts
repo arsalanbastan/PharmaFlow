@@ -20,6 +20,7 @@ import {
   CreatePriceIncreaseDto,
   CreatePriceIncreaseBatchDto,
   PriceImageDto,
+  PriceNoticeTextDto,
   ConfirmPriceIncreaseDto,
   UpdatePriceIncreaseDto,
   CancelPriceIncreaseDto,
@@ -42,6 +43,13 @@ export class PriceIncreasesController {
   @Permissions('managerAppAccess')
   extractImage(@Body() dto: PriceImageDto) {
     return this.images.extract(dto);
+  }
+
+  @Post('extract-text')
+  @Roles('MANAGER')
+  @Permissions('managerAppAccess')
+  extractText(@Body() dto: PriceNoticeTextDto) {
+    return this.images.extractText(dto.text);
   }
 
   @Post('batch')

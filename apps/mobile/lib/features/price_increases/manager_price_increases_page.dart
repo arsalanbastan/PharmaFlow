@@ -36,7 +36,7 @@ class ManagerPriceIncreasesPage extends ConsumerWidget {
             : await api.post(
                 uri.path,
                 body: body,
-                timeout: uri.path.endsWith('/extract-image')
+                timeout: uri.path.startsWith('/price-increases/extract-')
                     ? const Duration(seconds: 75)
                     : null,
               );

@@ -59,3 +59,7 @@ export class CreatePriceIncreaseBatchDto {
   @ValidateNested({ each: true }) @Type(() => CreatePriceIncreaseDto)
   items!: CreatePriceIncreaseDto[];
 }
+
+export class PriceNoticeTextDto {
+  @IsString() @Length(1, 24000) text!: string;
+}
