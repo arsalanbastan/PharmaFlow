@@ -79,6 +79,7 @@ class ApiClient {
     Map<String, String>? headers,
     Map<String, String>? queryParameters,
     Object? body,
+    Duration? timeout,
   }) async {
     final uri = _buildUri(endpoint, queryParameters: queryParameters);
     final requestHeaders = await _buildHeaders(
@@ -93,12 +94,12 @@ class ApiClient {
             headers: requestHeaders,
             body: body == null ? null : jsonEncode(body),
           )
-          .timeout(_timeout);
+          .timeout(timeout ?? _timeout);
 
       return _handleResponse(response);
     } on TimeoutException catch (error) {
       throw ApiTimeoutException(
-        'Request timed out after ${_timeout.inSeconds} seconds.',
+        'Request timed out after ${(timeout ?? _timeout).inSeconds} seconds.',
         error,
       );
     } on SocketException catch (error) {

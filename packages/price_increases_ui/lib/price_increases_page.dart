@@ -1,3 +1,5 @@
+import 'price_image_review.dart';
+
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
@@ -41,16 +43,37 @@ String jalaliTimestamp(String value) {
   return '${j.year}/${j.month.toString().padLeft(2, '0')}/${j.day.toString().padLeft(2, '0')} ${DateFormat('HH:mm:ss').format(date)}';
 }
 
+typedef PriceDatePicker = Future<Jalali?> Function(BuildContext, Jalali);
+
+Future<void> choosePriceDate(
+  BuildContext context,
+  TextEditingController controller,
+  PriceDatePicker picker,
+) async {
+  final parts = controller.text.split('/').map(int.tryParse).toList();
+  final initial = parts.length == 3 && parts.every((part) => part != null)
+      ? Jalali(parts[0]!, parts[1]!, parts[2]!)
+      : Jalali.now();
+  final selected = await picker(context, initial);
+  if (selected == null || !context.mounted) return;
+  controller.text =
+      '${selected.year}/${selected.month.toString().padLeft(2, '0')}/${selected.day.toString().padLeft(2, '0')}';
+}
+
 class PriceIncreasesPage extends StatefulWidget {
   const PriceIncreasesPage({
     super.key,
     required this.request,
     required this.manager,
     this.canConfirm = true,
+    required this.pickDate,
+    this.openCreate = false,
   });
   final PriceIncreaseRequest request;
   final bool manager;
   final bool canConfirm;
+  final PriceDatePicker pickDate;
+  final bool openCreate;
   @override
   State<PriceIncreasesPage> createState() => _PriceIncreasesPageState();
 }
@@ -69,7 +92,7 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (!widget.openCreate || !widget.manager) _load();
   }
 
   @override
@@ -131,7 +154,11 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
   Future<void> _edit(Map<String, dynamic> item) async {
     final result = await Navigator.of(context).push<String>(
       MaterialPageRoute(
-        builder: (_) => _CreatePage(request: widget.request, existing: item),
+        builder: (_) => _CreatePage(
+          request: widget.request,
+          existing: item,
+          pickDate: widget.pickDate,
+        ),
       ),
     );
     if (result != null && mounted) await _load();
@@ -311,320 +338,426 @@ class _PriceIncreasesPageState extends State<PriceIncreasesPage> {
 
   Future<void> _create() async {
     final id = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => _CreatePage(request: widget.request)),
+      MaterialPageRoute(
+        builder: (_) =>
+            _CreatePage(request: widget.request, pickDate: widget.pickDate),
+      ),
     );
     if (id != null && mounted) {
       await _load(reset: true);
     }
   }
 
-  @override
-  Widget build(BuildContext context) => Directionality(
-    textDirection: TextDirection.rtl,
-    child: Scaffold(
-      appBar: AppBar(
-        title: const Text('افزایش قیمت‌ها'),
-        actions: [
-          IconButton(
-            onPressed: _loading ? null : () => _load(),
-            icon: const Icon(Icons.refresh),
-            tooltip: 'بروزرسانی',
-          ),
-        ],
+  Future<void> _import() async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => PriceImageReview(
+          request: widget.request,
+          pickDate: (context, controller) =>
+              choosePriceDate(context, controller, widget.pickDate),
+        ),
       ),
-      floatingActionButton: widget.manager
-          ? FloatingActionButton.extended(
-              onPressed: _create,
-              icon: const Icon(Icons.add),
-              label: const Text('ثبت افزایش قیمت'),
-            )
-          : null,
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _search,
-                  decoration: const InputDecoration(
-                    labelText: 'جست‌وجوی محصول، منبع، توضیح یا تأییدکننده',
-                  ),
-                  onSubmitted: (_) => _load(reset: true),
+    );
+    if (saved == true && mounted) await _load(reset: true);
+  }
+
+  Future<void> _filterDate(TextEditingController field) async {
+    await choosePriceDate(context, field, widget.pickDate);
+    if (mounted) await _load(reset: true);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.openCreate && widget.manager
+      ? _CreatePage(request: widget.request, pickDate: widget.pickDate)
+      : Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text('افزایش قیمت‌ها'),
+              actions: [
+                IconButton(
+                  onPressed: _loading ? null : () => _load(),
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'بروزرسانی',
                 ),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
+              ],
+            ),
+            floatingActionButton: widget.manager
+                ? FloatingActionButton.extended(
+                    onPressed: _create,
+                    icon: const Icon(Icons.add),
+                    label: const Text('ثبت افزایش قیمت'),
+                  )
+                : null,
+            body: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      if (widget.manager)
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: FilledButton.tonalIcon(
+                            onPressed: _import,
+                            icon: const Icon(Icons.document_scanner_outlined),
+                            label: const Text('استخراج از عکس'),
+                          ),
+                        ),
+                      TextField(
+                        controller: _search,
+                        decoration: const InputDecoration(
+                          labelText: 'جست‌وجوی افزایش قیمت',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onSubmitted: (_) => _load(reset: true),
+                      ),
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.tune),
+                        title: const Text('فیلترها و بازه تاریخ'),
+                        children: [
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 8,
+                            children: [
+                              SizedBox(
+                                width: 160,
+                                child: DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: '',
+                                  decoration: const InputDecoration(
+                                    labelText: 'وضعیت',
+                                  ),
+                                  items: [
+                                    const DropdownMenuItem(
+                                      value: '',
+                                      child: Text('همه'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'PENDING',
+                                      child: Text(
+                                        widget.manager
+                                            ? 'بدون تأیید'
+                                            : 'در انتظار تأیید من',
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'CANCELED',
+                                      child: Text('لغوشده'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'CONFIRMED',
+                                      child: Text(
+                                        widget.manager
+                                            ? 'دارای تأیید'
+                                            : 'تأییدشده توسط من',
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: (v) {
+                                    _status = v ?? '';
+                                    _load(reset: true);
+                                  },
+                                ),
+                              ),
+                              SizedBox(
+                                width: 130,
+                                child: DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: '',
+                                  decoration: const InputDecoration(
+                                    labelText: 'نوع محصول',
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: '',
+                                      child: Text('همه'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'DRUG',
+                                      child: Text('دارو'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'GOODS',
+                                      child: Text('کالا'),
+                                    ),
+                                  ],
+                                  onChanged: (v) {
+                                    _category = v ?? '';
+                                    _load(reset: true);
+                                  },
+                                ),
+                              ),
+                              SizedBox(
+                                width: 145,
+                                child: TextField(
+                                  controller: _from,
+                                  readOnly: true,
+                                  onTap: () => _filterDate(_from),
+                                  decoration: InputDecoration(
+                                    labelText: 'اجرا از (شمسی)',
+                                    prefixIcon: IconButton(
+                                      icon: const Icon(Icons.calendar_month),
+                                      onPressed: () => _filterDate(_from),
+                                    ),
+                                    suffixIcon: _from.text.isEmpty
+                                        ? null
+                                        : IconButton(
+                                            tooltip: 'پاک کردن تاریخ',
+                                            icon: const Icon(Icons.clear),
+                                            onPressed: () {
+                                              _from.clear();
+                                              _load(reset: true);
+                                            },
+                                          ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 145,
+                                child: TextField(
+                                  controller: _to,
+                                  readOnly: true,
+                                  onTap: () => _filterDate(_to),
+                                  decoration: InputDecoration(
+                                    labelText: 'اجرا تا (شمسی)',
+                                    prefixIcon: IconButton(
+                                      icon: const Icon(Icons.calendar_month),
+                                      onPressed: () => _filterDate(_to),
+                                    ),
+                                    suffixIcon: _to.text.isEmpty
+                                        ? null
+                                        : IconButton(
+                                            tooltip: 'پاک کردن تاریخ',
+                                            icon: const Icon(Icons.clear),
+                                            onPressed: () {
+                                              _to.clear();
+                                              _load(reset: true);
+                                            },
+                                          ),
+                                  ),
+                                ),
+                              ),
+                              FilledButton(
+                                onPressed: _loading
+                                    ? null
+                                    : () => _load(reset: true),
+                                child: const Text('جست‌وجو و فیلتر'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (_loading) const LinearProgressIndicator(),
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child: _error != null
+                      ? Center(
+                          child: FilledButton(
+                            onPressed: () => _load(),
+                            child: const Text('تلاش مجدد'),
+                          ),
+                        )
+                      : _items.isEmpty && !_loading
+                      ? const Center(child: Text('موردی یافت نشد.'))
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 90),
+                          itemCount: _items.length,
+                          itemBuilder: (context, index) {
+                            final item = _items[index];
+                            final confirmations = item['confirmations'] as List;
+                            final products =
+                                (item['productItems'] as List?)
+                                    ?.cast<String>() ??
+                                const <String>[];
+                            final confirmationItems = products.isEmpty
+                                ? {-1: item['productName'] as String}
+                                : products.asMap();
+                            bool confirmedByMe(int index) => confirmations.any(
+                              (e) =>
+                                  e['userId'] == _userId &&
+                                  (e['itemIndex'] ?? -1) == index,
+                            );
+                            return Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${item['productName']}',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
+                                    Text(
+                                      '${item['category'] == 'DRUG' ? 'دارو' : 'کالا'} • قیمت جدید: ${formatPrice('${item['newPrice']}')} ریال',
+                                    ),
+                                    Text(
+                                      'تاریخ اجرای شمسی: ${item['effectiveDate']}',
+                                    ),
+                                    Text('منبع: ${item['source']}'),
+                                    if ('${item['notes'] ?? ''}'.isNotEmpty)
+                                      Text('${item['notes']}'),
+                                    Text(
+                                      'ثبت‌کننده: ${item['createdByName']} • ${jalaliTimestamp(item['createdAt'] as String)}',
+                                    ),
+                                    if (item['canceledAt'] != null) ...[
+                                      const Text(
+                                        'لغوشده',
+                                        style: TextStyle(color: Colors.red),
+                                      ),
+                                      Text(
+                                        'دلیل: ${item['cancellationReason'] ?? ''}',
+                                      ),
+                                      Text(
+                                        'لغو توسط: ${item['canceledByName'] ?? ''}',
+                                      ),
+                                    ],
+                                    if (confirmations.isEmpty)
+                                      const Text('هنوز تأییدی ثبت نشده است.'),
+                                    if (products.isNotEmpty)
+                                      Text('اقلام: ${products.join('، ')}'),
+                                    for (final c in confirmations)
+                                      SelectableText(
+                                        [
+                                          'تأیید: ${c['displayName']}',
+                                          if (products.isNotEmpty)
+                                            confirmationItems[c['itemIndex']] ??
+                                                '',
+                                          jalaliTimestamp(
+                                            c['confirmedAt'] as String,
+                                          ),
+                                          if ('${c['note'] ?? ''}'.isNotEmpty)
+                                            '${c['note']}',
+                                        ].join(' • '),
+                                      ),
+                                    Wrap(
+                                      children: [
+                                        for (final attachment
+                                            in item['attachments'] as List)
+                                          TextButton.icon(
+                                            onPressed: () => _download(
+                                              item['id'] as String,
+                                              attachment as Map,
+                                            ),
+                                            icon: const Icon(Icons.attach_file),
+                                            label: Text(
+                                              '${attachment['fileName']}',
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    if (widget.manager &&
+                                        item['canceledAt'] == null)
+                                      Wrap(
+                                        spacing: 8,
+                                        children: [
+                                          if (confirmations.isEmpty)
+                                            TextButton.icon(
+                                              onPressed: () => _edit(item),
+                                              icon: const Icon(Icons.edit),
+                                              label: const Text('ویرایش'),
+                                            ),
+                                          TextButton.icon(
+                                            onPressed: () => _cancel(item),
+                                            icon: const Icon(
+                                              Icons.cancel_outlined,
+                                            ),
+                                            label: const Text('لغو'),
+                                          ),
+                                        ],
+                                      ),
+                                    if (widget.manager &&
+                                        item['canceledAt'] == null)
+                                      TextButton.icon(
+                                        onPressed: () =>
+                                            _upload(item['id'] as String),
+                                        icon: const Icon(Icons.upload_file),
+                                        label: const Text(
+                                          'افزودن پیوست (عکس یا PDF)',
+                                        ),
+                                      ),
+                                    if (!widget.manager &&
+                                        widget.canConfirm &&
+                                        item['canceledAt'] == null)
+                                      for (final entry
+                                          in confirmationItems.entries)
+                                        FilledButton(
+                                          onPressed:
+                                              confirmedByMe(entry.key) ||
+                                                  _busy.contains(item['id'])
+                                              ? null
+                                              : () => _confirm(
+                                                  item,
+                                                  entry.key,
+                                                  entry.value,
+                                                ),
+                                          child: Text(
+                                            products.isEmpty
+                                                ? (confirmedByMe(entry.key)
+                                                      ? 'تأیید شما ثبت شده'
+                                                      : 'قیمت جدید را اعمال کردم')
+                                                : '${entry.value} • ${confirmedByMe(entry.key) ? 'اعمال شد' : 'تأیید اعمال'}',
+                                          ),
+                                        ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SizedBox(
-                      width: 160,
-                      child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: '',
-                        decoration: const InputDecoration(labelText: 'وضعیت'),
-                        items: [
-                          const DropdownMenuItem(value: '', child: Text('همه')),
-                          DropdownMenuItem(
-                            value: 'PENDING',
-                            child: Text(
-                              widget.manager
-                                  ? 'بدون تأیید'
-                                  : 'در انتظار تأیید من',
-                            ),
-                          ),
-                          DropdownMenuItem(
-                            value: 'CANCELED',
-                            child: Text('لغوشده'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'CONFIRMED',
-                            child: Text(
-                              widget.manager
-                                  ? 'دارای تأیید'
-                                  : 'تأییدشده توسط من',
-                            ),
-                          ),
-                        ],
-                        onChanged: (v) {
-                          _status = v ?? '';
-                          _load(reset: true);
-                        },
-                      ),
+                    IconButton(
+                      onPressed: _loading || _page == 1
+                          ? null
+                          : () {
+                              _page--;
+                              _load();
+                            },
+                      icon: const Icon(Icons.chevron_right),
                     ),
-                    SizedBox(
-                      width: 130,
-                      child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: '',
-                        decoration: const InputDecoration(
-                          labelText: 'نوع محصول',
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: '', child: Text('همه')),
-                          DropdownMenuItem(value: 'DRUG', child: Text('دارو')),
-                          DropdownMenuItem(value: 'GOODS', child: Text('کالا')),
-                        ],
-                        onChanged: (v) {
-                          _category = v ?? '';
-                          _load(reset: true);
-                        },
-                      ),
-                    ),
-                    SizedBox(
-                      width: 145,
-                      child: TextField(
-                        controller: _from,
-                        decoration: const InputDecoration(
-                          labelText: 'اجرا از (شمسی)',
-                          hintText: '1405/01/01',
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 145,
-                      child: TextField(
-                        controller: _to,
-                        decoration: const InputDecoration(
-                          labelText: 'اجرا تا (شمسی)',
-                          hintText: '1405/12/29',
-                        ),
-                      ),
-                    ),
-                    FilledButton(
-                      onPressed: _loading ? null : () => _load(reset: true),
-                      child: const Text('جست‌وجو و فیلتر'),
+                    Text('صفحه $_page • $_total مورد'),
+                    IconButton(
+                      onPressed: _loading || _page * 25 >= _total
+                          ? null
+                          : () {
+                              _page++;
+                              _load();
+                            },
+                      icon: const Icon(Icons.chevron_left),
                     ),
                   ],
                 ),
               ],
             ),
           ),
-          if (_loading) const LinearProgressIndicator(),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
-          Expanded(
-            child: _error != null
-                ? Center(
-                    child: FilledButton(
-                      onPressed: () => _load(),
-                      child: const Text('تلاش مجدد'),
-                    ),
-                  )
-                : _items.isEmpty && !_loading
-                ? const Center(child: Text('موردی یافت نشد.'))
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 90),
-                    itemCount: _items.length,
-                    itemBuilder: (context, index) {
-                      final item = _items[index];
-                      final confirmations = item['confirmations'] as List;
-                      final products =
-                          (item['productItems'] as List?)?.cast<String>() ??
-                          const <String>[];
-                      final confirmationItems = products.isEmpty
-                          ? {-1: item['productName'] as String}
-                          : products.asMap();
-                      bool confirmedByMe(int index) => confirmations.any(
-                        (e) =>
-                            e['userId'] == _userId &&
-                            (e['itemIndex'] ?? -1) == index,
-                      );
-                      return Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${item['productName']}',
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              Text(
-                                '${item['category'] == 'DRUG' ? 'دارو' : 'کالا'} • قیمت جدید: ${formatPrice('${item['newPrice']}')} ریال',
-                              ),
-                              Text(
-                                'تاریخ اجرای شمسی: ${item['effectiveDate']}',
-                              ),
-                              Text('منبع: ${item['source']}'),
-                              if ('${item['notes'] ?? ''}'.isNotEmpty)
-                                Text('${item['notes']}'),
-                              Text(
-                                'ثبت‌کننده: ${item['createdByName']} • ${jalaliTimestamp(item['createdAt'] as String)}',
-                              ),
-                              if (item['canceledAt'] != null) ...[
-                                const Text(
-                                  'لغوشده',
-                                  style: TextStyle(color: Colors.red),
-                                ),
-                                Text(
-                                  'دلیل: ${item['cancellationReason'] ?? ''}',
-                                ),
-                                Text(
-                                  'لغو توسط: ${item['canceledByName'] ?? ''}',
-                                ),
-                              ],
-                              if (confirmations.isEmpty)
-                                const Text('هنوز تأییدی ثبت نشده است.'),
-                              if (products.isNotEmpty)
-                                Text('اقلام: ${products.join('، ')}'),
-                              for (final c in confirmations)
-                                SelectableText(
-                                  [
-                                    'تأیید: ${c['displayName']}',
-                                    if (products.isNotEmpty)
-                                      confirmationItems[c['itemIndex']] ?? '',
-                                    jalaliTimestamp(c['confirmedAt'] as String),
-                                    if ('${c['note'] ?? ''}'.isNotEmpty)
-                                      '${c['note']}',
-                                  ].join(' • '),
-                                ),
-                              Wrap(
-                                children: [
-                                  for (final attachment
-                                      in item['attachments'] as List)
-                                    TextButton.icon(
-                                      onPressed: () => _download(
-                                        item['id'] as String,
-                                        attachment as Map,
-                                      ),
-                                      icon: const Icon(Icons.attach_file),
-                                      label: Text('${attachment['fileName']}'),
-                                    ),
-                                ],
-                              ),
-                              if (widget.manager && item['canceledAt'] == null)
-                                Wrap(
-                                  spacing: 8,
-                                  children: [
-                                    if (confirmations.isEmpty)
-                                      TextButton.icon(
-                                        onPressed: () => _edit(item),
-                                        icon: const Icon(Icons.edit),
-                                        label: const Text('ویرایش'),
-                                      ),
-                                    TextButton.icon(
-                                      onPressed: () => _cancel(item),
-                                      icon: const Icon(Icons.cancel_outlined),
-                                      label: const Text('لغو'),
-                                    ),
-                                  ],
-                                ),
-                              if (widget.manager && item['canceledAt'] == null)
-                                TextButton.icon(
-                                  onPressed: () =>
-                                      _upload(item['id'] as String),
-                                  icon: const Icon(Icons.upload_file),
-                                  label: const Text(
-                                    'افزودن پیوست (عکس یا PDF)',
-                                  ),
-                                ),
-                              if (!widget.manager &&
-                                  widget.canConfirm &&
-                                  item['canceledAt'] == null)
-                                for (final entry in confirmationItems.entries)
-                                  FilledButton(
-                                    onPressed:
-                                        confirmedByMe(entry.key) ||
-                                            _busy.contains(item['id'])
-                                        ? null
-                                        : () => _confirm(
-                                            item,
-                                            entry.key,
-                                            entry.value,
-                                          ),
-                                    child: Text(
-                                      products.isEmpty
-                                          ? (confirmedByMe(entry.key)
-                                                ? 'تأیید شما ثبت شده'
-                                                : 'قیمت جدید را اعمال کردم')
-                                          : '${entry.value} • ${confirmedByMe(entry.key) ? 'اعمال شد' : 'تأیید اعمال'}',
-                                    ),
-                                  ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButton(
-                onPressed: _loading || _page == 1
-                    ? null
-                    : () {
-                        _page--;
-                        _load();
-                      },
-                icon: const Icon(Icons.chevron_right),
-              ),
-              Text('صفحه $_page • $_total مورد'),
-              IconButton(
-                onPressed: _loading || _page * 25 >= _total
-                    ? null
-                    : () {
-                        _page++;
-                        _load();
-                      },
-                icon: const Icon(Icons.chevron_left),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ),
-  );
+        );
 }
 
 class _CreatePage extends StatefulWidget {
-  const _CreatePage({required this.request, this.existing});
+  const _CreatePage({
+    required this.request,
+    required this.pickDate,
+    this.existing,
+  });
+  final PriceDatePicker pickDate;
   final Map<String, dynamic>? existing;
   final PriceIncreaseRequest request;
   @override
@@ -776,6 +909,8 @@ class _CreatePageState extends State<_CreatePage> {
             ),
             TextFormField(
               controller: _date,
+              readOnly: true,
+              onTap: () => choosePriceDate(context, _date, widget.pickDate),
               textDirection: TextDirection.ltr,
               validator: _validateDate,
               decoration: const InputDecoration(

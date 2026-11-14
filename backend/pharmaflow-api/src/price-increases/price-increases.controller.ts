@@ -18,18 +18,38 @@ import { Permissions } from '../auth/permissions.decorator';
 import type { AuthenticatedRequest } from '../auth/auth-request';
 import {
   CreatePriceIncreaseDto,
+  CreatePriceIncreaseBatchDto,
+  PriceImageDto,
   ConfirmPriceIncreaseDto,
   UpdatePriceIncreaseDto,
   CancelPriceIncreaseDto,
   PreparePriceAttachmentDto,
 } from './price-increases.dto';
+import { PriceImageService } from './price-image.service';
 import { PriceIncreasesService } from './price-increases.service';
 
 @Controller('api/v1/price-increases')
 @UseGuards(AuthGuard, RolesGuard, PermissionsGuard)
 @Roles('MANAGER', 'STAFF')
 export class PriceIncreasesController {
-  constructor(private readonly service: PriceIncreasesService) {}
+  constructor(
+    private readonly service: PriceIncreasesService,
+    private readonly images: PriceImageService,
+  ) {}
+
+  @Post('extract-image')
+  @Roles('MANAGER')
+  @Permissions('managerAppAccess')
+  extractImage(@Body() dto: PriceImageDto) {
+    return this.images.extract(dto);
+  }
+
+  @Post('batch')
+  @Roles('MANAGER')
+  @Permissions('managerAppAccess')
+  createBatch(@Body() dto: CreatePriceIncreaseBatchDto, @Req() req: AuthenticatedRequest) {
+    return this.service.createBatch(dto.items, req.pharmaflowUser!, dto.requestKey);
+  }
   @Get()
   list(
     @Query('q') q: string,

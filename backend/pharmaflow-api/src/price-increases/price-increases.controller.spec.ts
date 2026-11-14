@@ -5,6 +5,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { PriceIncreasesController } from './price-increases.controller';
+import { PriceImageService } from './price-image.service';
 import { PriceIncreasesService } from './price-increases.service';
 
 const id = 'b36c99fa-714b-4ab3-a36e-13632a32a398';
@@ -22,6 +23,7 @@ describe('Price increase HTTP access boundary', () => {
     const module = await Test.createTestingModule({
       controllers: [PriceIncreasesController],
       providers: [
+        PriceImageService,
         { provide: PriceIncreasesService, useValue: service },
         RolesGuard,
         PermissionsGuard,

@@ -1,3 +1,5 @@
+import 'package:shamsi_date/shamsi_date.dart';
+import '../../shared/widgets/date_picker/pharmaflow_date_picker.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -41,8 +43,8 @@ class _StaffPriceIncreasesPageState extends State<StaffPriceIncreasesPage> {
         await (body == null
                 ? _client.get(uri, headers: headers)
                 : patch
-                    ? _client.patch(uri, headers: headers, body: jsonEncode(body))
-                    : _client.post(uri, headers: headers, body: jsonEncode(body)))
+                ? _client.patch(uri, headers: headers, body: jsonEncode(body))
+                : _client.post(uri, headers: headers, body: jsonEncode(body)))
             .timeout(const Duration(seconds: 30));
     if (response.statusCode < 200 || response.statusCode >= 300)
       throw StateError('خطای سرور (${response.statusCode})');
@@ -54,6 +56,12 @@ class _StaffPriceIncreasesPageState extends State<StaffPriceIncreasesPage> {
   @override
   Widget build(BuildContext context) => PriceIncreasesPage(
     request: _request,
+    pickDate: (context, initial) => PharmaFlowDatePicker.show(
+      context: context,
+      initialDate: initial,
+      firstDate: Jalali(1390, 1, 1),
+      lastDate: Jalali(1450, 12, 29),
+    ),
     manager: false,
     canConfirm: widget.canConfirm,
   );

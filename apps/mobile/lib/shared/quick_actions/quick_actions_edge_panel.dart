@@ -9,11 +9,15 @@ class QuickActionsEdgePanel extends StatefulWidget {
     required this.child,
     required this.onAddCheque,
     required this.onAddCashPayment,
+    this.onAddPriceIncrease,
+    this.onAddSalesInvoice,
   });
 
   final Widget child;
   final QuickActionLauncher onAddCheque;
   final QuickActionLauncher onAddCashPayment;
+  final QuickActionLauncher? onAddPriceIncrease;
+  final QuickActionLauncher? onAddSalesInvoice;
 
   @override
   State<QuickActionsEdgePanel> createState() => _QuickActionsEdgePanelState();
@@ -155,6 +159,13 @@ class _QuickActionsEdgePanelState extends State<QuickActionsEdgePanel> {
                             onAddCheque: () => _run(widget.onAddCheque),
                             onAddCashPayment: () =>
                                 _run(widget.onAddCashPayment),
+                            onAddPriceIncrease:
+                                widget.onAddPriceIncrease == null
+                                ? null
+                                : () => _run(widget.onAddPriceIncrease!),
+                            onAddSalesInvoice: widget.onAddSalesInvoice == null
+                                ? null
+                                : () => _run(widget.onAddSalesInvoice!),
                           )
                         : _CollapsedHandle(
                             key: const ValueKey('quick-actions-collapsed'),
@@ -241,11 +252,15 @@ class _ExpandedPanel extends StatelessWidget {
     required this.onClose,
     required this.onAddCheque,
     required this.onAddCashPayment,
+    this.onAddPriceIncrease,
+    this.onAddSalesInvoice,
   });
 
   final VoidCallback onClose;
   final VoidCallback onAddCheque;
   final VoidCallback onAddCashPayment;
+  final VoidCallback? onAddPriceIncrease;
+  final VoidCallback? onAddSalesInvoice;
 
   @override
   Widget build(BuildContext context) {
@@ -296,6 +311,22 @@ class _ExpandedPanel extends StatelessWidget {
                   label: 'ثبت واریزی',
                   onTap: onAddCashPayment,
                 ),
+                if (onAddPriceIncrease != null) ...[
+                  const SizedBox(height: 6),
+                  _QuickActionTile(
+                    icon: Icons.trending_up,
+                    label: 'ثبت افزایش قیمت',
+                    onTap: onAddPriceIncrease!,
+                  ),
+                ],
+                if (onAddSalesInvoice != null) ...[
+                  const SizedBox(height: 6),
+                  _QuickActionTile(
+                    icon: Icons.point_of_sale_outlined,
+                    label: 'فاکتور فروش',
+                    onTap: onAddSalesInvoice!,
+                  ),
+                ],
               ],
             ),
           ),

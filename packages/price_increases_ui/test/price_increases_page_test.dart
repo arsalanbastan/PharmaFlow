@@ -50,7 +50,13 @@ void main() {
     }
 
     await tester.pumpWidget(
-      MaterialApp(home: PriceIncreasesPage(request: request, manager: false)),
+      MaterialApp(
+        home: PriceIncreasesPage(
+          request: request,
+          manager: false,
+          pickDate: (_, _) async => null,
+        ),
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.text('داروی آزمایشی'), findsOneWidget);
@@ -72,6 +78,7 @@ void main() {
       MaterialApp(
         home: PriceIncreasesPage(
           manager: false,
+          pickDate: (_, _) async => null,
           request: (path, body) async => throw StateError('offline'),
         ),
       ),

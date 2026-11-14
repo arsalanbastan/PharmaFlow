@@ -1,3 +1,5 @@
+import 'features/price_increases/manager_price_increases_page.dart';
+import 'features/sales_invoices/presentation/pages/sales_invoices_page.dart';
 import 'dart:async';
 
 import 'package:display_settings_ui/text_size_settings.dart';
@@ -434,8 +436,27 @@ class PharmaFlowApp extends StatelessWidget {
                 )?.showSnackBar(SnackBar(content: Text(message)));
               }
 
+              Future<void> openForm(Widget page, bool replaceCurrent) async {
+                final navigator = AppRouter.rootNavigatorKey.currentState;
+                if (navigator == null) return;
+                final route = MaterialPageRoute<void>(builder: (_) => page);
+                if (replaceCurrent) {
+                  await navigator.pushReplacement<void, void>(route);
+                } else {
+                  await navigator.push<void>(route);
+                }
+              }
+
               return QuickActionsEdgePanel(
                 child: child ?? const SizedBox.shrink(),
+                onAddSalesInvoice: ({required replaceCurrent}) =>
+                    openForm(const SalesInvoicesPage(), replaceCurrent),
+                onAddPriceIncrease: user.isManager
+                    ? ({required replaceCurrent}) => openForm(
+                        const ManagerPriceIncreasesPage(openCreate: true),
+                        replaceCurrent,
+                      )
+                    : null,
                 onAddCheque: ({required bool replaceCurrent}) async {
                   if (!user.permissions.canCreateCheques) {
                     showDenied('برای ثبت چک دسترسی ندارید.');

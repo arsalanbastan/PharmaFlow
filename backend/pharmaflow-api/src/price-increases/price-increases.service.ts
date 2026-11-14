@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { PrismaService } from '../database/prisma/prisma.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { AuthPrincipal } from '../auth/auth.types';
@@ -49,6 +49,73 @@ export class PriceIncreasesService {
   ) {}
 
   async create(dto: CreatePriceIncreaseDto, actor: AuthPrincipal) {
+    return (await this.createBatch([dto], actor)).items[0];
+  }
+
+  async createBatch(
+    dtos: CreatePriceIncreaseDto[],
+    actor: AuthPrincipal,
+    requestKey?: string,
+  ) {
+    for (const date of new Set(dtos.map((dto) => dto.effectiveDate))) {
+      validateJalaliDate(date);
+    }
+    const rows = dtos.map((dto) => ({ dto, ...this.prepareRow(dto) }));
+    const ids = requestKey
+      ? rows.map((_, index) => {
+          const hash = createHash('sha256')
+            .update(`${actor.userId}:${requestKey}:${index}`)
+            .digest('hex');
+          return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+        })
+      : null;
+    return this.prisma.$transaction(async (tx) => {
+      if (requestKey && ids) {
+        await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${actor.userId + ':' + requestKey}, 0))`;
+        const existing = await tx.priceIncrease.findMany({ where: { id: { in: ids } } });
+        if (existing.length) {
+          if (existing.length !== rows.length || rows.some(({ dto, productName, source }, index) => {
+            const item = existing.find((entry) => entry.id === ids[index]);
+            return !item || item.productName !== productName || item.source !== source ||
+              item.category !== dto.category || item.effectiveDate !== dto.effectiveDate ||
+              !item.newPrice.equals(dto.newPrice);
+          })) throw new BadRequestException('این درخواست قبلاً با اطلاعات دیگری ثبت شده است.');
+          return { items: existing };
+        }
+      }
+      const items = [];
+      for (const [index, { dto, productName, source, productItems }] of rows.entries()) {
+        const item = await tx.priceIncrease.create({
+          data: {
+            ...(ids && { id: ids[index] }),
+            productName,
+            productItems,
+            normalizedProductName: normalizeOrderSearchText([productName, ...productItems].join(' ')),
+            category: dto.category,
+            newPrice: dto.newPrice,
+            effectiveDate: dto.effectiveDate,
+            source,
+            notes: dto.notes?.trim(),
+            createdByUserId: actor.userId,
+            createdByName: actor.displayName,
+          },
+        });
+        await this.audit.record(
+          {
+            action: 'PRICE_INCREASE_CREATED',
+            entityType: 'PriceIncrease',
+            entityId: item.id,
+            after: item,
+          },
+          tx,
+        );
+        items.push(item);
+      }
+      return { items };
+    });
+  }
+
+  private prepareRow(dto: CreatePriceIncreaseDto) {
     const productName = dto.productName.trim();
     const source = dto.source.trim();
     const productItems = [...new Set(dto.productItems?.map((item) => item.trim()).filter(Boolean))];
@@ -61,33 +128,7 @@ export class PriceIncreasesService {
       throw new BadRequestException(
         'Product, source and positive price are required.',
       );
-    validateJalaliDate(dto.effectiveDate);
-    return this.prisma.$transaction(async (tx) => {
-      const item = await tx.priceIncrease.create({
-        data: {
-          productName,
-          productItems,
-          normalizedProductName: normalizeOrderSearchText([productName, ...productItems].join(' ')),
-          category: dto.category,
-          newPrice: dto.newPrice,
-          effectiveDate: dto.effectiveDate,
-          source,
-          notes: dto.notes?.trim(),
-          createdByUserId: actor.userId,
-          createdByName: actor.displayName,
-        },
-      });
-      await this.audit.record(
-        {
-          action: 'PRICE_INCREASE_CREATED',
-          entityType: 'PriceIncrease',
-          entityId: item.id,
-          after: item,
-        },
-        tx,
-      );
-      return item;
-    });
+    return { productName, source, productItems };
   }
 
   async update(id: string, dto: UpdatePriceIncreaseDto, actor: AuthPrincipal) {

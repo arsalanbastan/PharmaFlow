@@ -48,6 +48,17 @@ const run = (actor, fn) => context.run({source:'MOBILE_APP',actorVerified:true,a
   assert.equal(completed.total, 1);
   assert.equal(completed.items[0].confirmations.find((row) => row.itemIndex === 0).note, 'قیمت اصلاح شد');
   assert.equal((await service.list({ status: 'PENDING', q: group.productName }, staff2)).total, 1);
+  const requestKey = randomUUID().replaceAll('-', '') + '0'.repeat(16);
+  const common = { category: 'GOODS', effectiveDate: '1405/08/18', source: 'تصویر آزمایشی' };
+  const rows = [
+    { ...common, productName: 'کالای اول', newPrice: '12000' },
+    { ...common, productName: 'کالای دوم', newPrice: '35000' },
+  ];
+  const requests = await Promise.all(Array.from({ length: 3 }, () =>
+    run(manager, () => service.createBatch(rows, manager, requestKey))));
+  const ids = requests[0].items.map((row) => row.id);
+  for (const result of requests) assert.deepEqual(result.items.map((row) => row.id).sort(), [...ids].sort());
+  assert.equal(await db.auditLog.count({ where: { entityId: { in: ids }, action: 'PRICE_INCREASE_CREATED' } }), 2);
   const before=await db.priceIncrease.count();
   const failing=new PriceIncreasesService(db,{record:async()=>{throw new Error('audit failed')}},{});
   await assert.rejects(()=>failing.create({productName:'rollback test',category:'GOODS',newPrice:'10',effectiveDate:'1405/08/18',source:'test'},manager));

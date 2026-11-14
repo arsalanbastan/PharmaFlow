@@ -2,7 +2,7 @@ name: Price increase development checks
 on:
   workflow_dispatch:
   push:
-    branches: [release/price-increase-liara-20261110, release/manager-orders-invoices-20261113, release/staff-invoices-android-20261114, release/text-size-20261114]
+    branches: [release/price-increase-liara-20261110, release/manager-orders-invoices-20261113, release/staff-invoices-android-20261114, release/text-size-20261114, feature/price-image-import-20261114]
   pull_request:
     paths: ['apps/mobile/**', 'apps/staff/**', 'packages/price_increases_ui/**', 'packages/sales_invoices_ui/**', 'packages/display_settings_ui/**', 'backend/pharmaflow-api/**', '.github/workflows/price-increase-checks.yml']
 permissions:
@@ -70,6 +70,8 @@ jobs:
       - run: flutter pub get
         working-directory: apps/mobile
       - run: flutter analyze --no-pub --no-fatal-infos lib/features/price_increases lib/features/orders lib/features/sales_invoices lib/core/router/app_router.dart lib/features/menu/presentation/pages/menu_page.dart
+        working-directory: apps/mobile
+      - run: flutter test test/quick_actions_edge_panel_test.dart
         working-directory: apps/mobile
       # This temporary Firebase configuration is used only for the debug
       # compile check. It does not connect to production Firebase and is
